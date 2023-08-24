@@ -1,0 +1,12 @@
+/Library/*
+/Logs/*
+/Temp/*
+/UserSettings/*
+/.idea/*
+/obj/*
+*.csproj
+*.sln
+.DS_Store
+
+*.bytes
+*.ply
