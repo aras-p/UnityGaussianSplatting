@@ -25,6 +25,8 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void Start()
     {
+        if (UnsafeUtility.SizeOf<InputVertex>() != 248)
+            throw new Exception("InputVertex size mismatch");
         var inputVerts = m_DataFile.GetData<InputVertex>();
         m_VertexCount = inputVerts.Length;
         
@@ -43,11 +45,14 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void OnDestroy()
     {
-        m_DataBuffer.Dispose();
+        if (m_DataBuffer != null)
+            m_DataBuffer.Dispose();
     }
 
     public void Update()
     {
-        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Points, 1, m_VertexCount);
+        if (m_DataBuffer == null)
+            return;
+        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 36, m_VertexCount);
     }
 }
