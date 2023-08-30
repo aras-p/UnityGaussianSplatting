@@ -59,6 +59,42 @@ static const int kCubeIndices[36] =
     2, 3, 6, 3, 7, 6
 };
 
+static const float SH_C0 = 0.28209479177387814f;
+static const float SH_C1 = 0.4886025119029199f;
+static const float SH_C2[] = {
+	1.0925484305920792f,
+	-1.0925484305920792f,
+	0.31539156525252005f,
+	-1.0925484305920792f,
+	0.5462742152960396f
+};
+static const float SH_C3[] = {
+	-0.5900435899266435f,
+	2.890611442640554f,
+	-0.4570457994644658f,
+	0.3731763325901154f,
+	-0.4570457994644658f,
+	1.445305721320277f,
+	-0.5900435899266435f
+};
+
+half3 ShadeSH(InputSplat splat, float3 dir)
+{
+    // ambient band
+    half3 res = SH_C0 * splat.dc0;
+    // 1st degree
+    res = res - splat.sh0 * (dir.y * SH_C1) + splat.sh1 * (dir.z * SH_C1) - splat.sh2 * (dir.x * SH_C1);
+    // 2nd degree
+    res = res +
+        (SH_C2[0] * dir.x * dir.y) * splat.sh4 +
+		(SH_C2[1] * dir.y * dir.z) * splat.sh5 +
+		(SH_C2[2] * (2.0f * dir.z * dir.z - dir.x * dir.x - dir.y * dir.y)) * splat.sh6 +
+		(SH_C2[3] * dir.x * dir.z) * splat.sh7 +
+		(SH_C2[4] * (dir.x * dir.x - dir.y * dir.y)) * splat.sh8;    
+    //@TODO others
+    return saturate(res + 0.5);
+}
+
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
@@ -72,9 +108,11 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
     boxPos = QuatRotateVector(boxPos * boxSize, boxRot);
     float3 worldPos = splat.pos + boxPos;
+
+    float3 viewDir = normalize(UnityWorldSpaceViewDir(worldPos));
     
     o.vertex = UnityObjectToClipPos(worldPos);
-    o.col.rgb = saturate(splat.dc0 * 0.5 + 0.5);
+    o.col.rgb = ShadeSH(splat, viewDir);
     o.col.a = Sigmoid(splat.opacity); //@TODO: move offline
     o.psize = 10;
     return o;
