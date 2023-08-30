@@ -1,0 +1,24 @@
+#define GROUP_SIZE 1024
+
+#pragma kernel CSCalcDistances
+
+StructuredBuffer<float3> _InputPositions;
+float4x4 _WorldToCameraMatrix;
+RWStructuredBuffer<uint> _SplatSortDistances;
+RWStructuredBuffer<uint> _SplatSortKeys;
+uint _SplatCount;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCalcDistances (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    _SplatSortKeys[idx] = idx;
+    float3 pos = mul(_WorldToCameraMatrix, float4(_InputPositions[idx], 1)).xyz;
+    // make distance radix sort friendly from http://stereopsis.com/radix.html
+    uint fu = asuint(-pos.z);
+    uint mask = -((int)(fu >> 31)) | 0x80000000;
+    _SplatSortDistances[idx] = fu ^ mask;
+}
