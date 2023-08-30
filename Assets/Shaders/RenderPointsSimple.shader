@@ -7,7 +7,7 @@ Shader "Unlit/RenderPointsSimple"
         Pass
         {
             ZWrite Off
-            Blend SrcAlpha OneMinusSrcAlpha
+            Blend OneMinusDstAlpha One
             Cull Front
             
 CGPROGRAM
@@ -82,7 +82,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
-    return i.col;
+    return half4(i.col.rgb * i.col.a, i.col.a);
 }
 ENDCG
         }
