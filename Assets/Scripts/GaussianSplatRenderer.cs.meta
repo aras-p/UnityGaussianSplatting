@@ -3,7 +3,11 @@ guid: c12d929a7f62c48adbe9ff45c9a33ff0
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - m_DataFile: {instanceID: 0}
+  - m_Material: {fileID: 2100000, guid: c997de094bd0b4213b3b99a55969f48b, type: 2}
+  - m_CSSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}
+  - m_CSGpuSort: {fileID: 7200000, guid: e6e2efa91deac4ac38e81763e4d34687, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

@@ -25,7 +25,7 @@ public class SyntheticParams : MonoBehaviour
     [MenuItem("Tools/Generate Synthetic Data")]
     public static void GenSynData()
     {
-        var folderPath = EditorUtility.SaveFolderPanel("Save PLY from scene", "", "synthetic");
+        var folderPath = EditorUtility.SaveFolderPanel("Save PLY from scene", "Assets/Models", "synthetic");
         if (string.IsNullOrWhiteSpace(folderPath))
             return;
         System.IO.Directory.CreateDirectory(folderPath);
@@ -145,8 +145,8 @@ public class SyntheticParams : MonoBehaviour
             GaussianSplatRenderer.InputSplat dat = default;
             dat.pos = tr.position;
             dat.rot = tr.rotation;
-            dat.rot = new Quaternion(dat.rot.w, dat.rot.x, dat.rot.y, dat.rot.w);
-            dat.scale = tr.lossyScale;
+            dat.rot = new Quaternion(dat.rot.w, dat.rot.x, dat.rot.y, dat.rot.z);
+            dat.scale = tr.lossyScale * 0.25f;
             dat.scale = new Vector3(Mathf.Log(dat.scale.x), Mathf.Log(dat.scale.y), Mathf.Log(dat.scale.z));
             dat.opacity = InvSigmoid(spl.m_Color.a);
             //@TODO proper SH
@@ -156,5 +156,12 @@ public class SyntheticParams : MonoBehaviour
         }
         fs.Write(splatData.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
         fs.Dispose();
+
+        fs = new FileStream($"{folderPath}/point_cloud/iteration_7000/point_cloud.bytes", FileMode.Create,
+            FileAccess.Write);
+        fs.Write(splatData.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
+        fs.Dispose();
+
+        AssetDatabase.Refresh();
     }
 }
