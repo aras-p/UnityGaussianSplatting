@@ -18,7 +18,7 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     _SplatSortKeys[idx] = idx;
     float3 pos = mul(_WorldToCameraMatrix, float4(_InputPositions[idx], 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html
-    uint fu = asuint(-pos.z);
+    uint fu = asuint(pos.z);
     uint mask = -((int)(fu >> 31)) | 0x80000000;
     _SplatSortDistances[idx] = fu ^ mask;
 }
