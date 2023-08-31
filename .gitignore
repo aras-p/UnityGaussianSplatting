@@ -10,3 +10,4 @@
 
 *.bytes
 *.ply
+/synthetic/*

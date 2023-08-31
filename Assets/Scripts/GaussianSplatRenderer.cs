@@ -14,7 +14,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public ComputeShader m_CSGpuSort;
 
     // input file expected to be in this format
-    struct InputSplat
+    public struct InputSplat
     {
         public Vector3 pos;
         public Vector3 nor;
