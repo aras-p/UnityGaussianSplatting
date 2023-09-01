@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -116,5 +118,74 @@ public class GaussianSplatRenderer : MonoBehaviour
         CommandBuffer cmd = new CommandBuffer {name = "GPUSort"};
         m_Sorter.Dispatch(cmd, m_SorterArgs);
         Graphics.ExecuteCommandBuffer(cmd);
+    }
+
+    [Serializable]
+    public class JsonCamera
+    {
+        public int id;
+        public string img_name;
+        public int width;
+        public int height;
+        public float[] position;
+        public float[] rotx;
+        public float[] roty;
+        public float[] rotz;
+        public float fx;
+        public float fy;
+    }
+
+    [Serializable]
+    public class JsonCameras
+    {
+        public JsonCamera[] cameras;
+    }
+
+    [MenuItem("Tools/Import Cameras")]
+    public static void ImportCameras()
+    {
+        var existingCams = FindObjectsOfType<GameObject>()
+            .Where(c => c.name.StartsWith("ImportedCam-", StringComparison.Ordinal));
+        Debug.Log($"Existing cams: {existingCams.Count()}");
+        foreach (var cam in existingCams)
+            DestroyImmediate(cam);
+
+        string json = System.IO.File.ReadAllText("Assets/Models/bicycle_cameras.json");
+        // JsonUtility does not support 2D arrays, so mogrify that into something else
+        string num = "([\\-\\d\\.]+)";
+        string vec = $"\\[{num},\\s*{num},\\s*{num}\\]";
+        json = System.Text.RegularExpressions.Regex.Replace(json,
+            $"\"rotation\": \\[{vec},\\s*{vec},\\s*{vec}\\]",
+            "\"rotx\":[$1,$2,$3], \"roty\":[$4,$5,$6], \"rotz\":[$7,$8,$9]"
+        );
+        json = $"{{ \"cameras\": {json} }}";
+        var cameras = JsonUtility.FromJson<JsonCameras>(json);
+        Debug.Log($"Json had {cameras.cameras.Length} cameras");
+
+        foreach (var data in cameras.cameras)
+        {
+            var go = new GameObject($"ImportedCam-{data.id}", typeof(Camera));
+            var cam = go.GetComponent<Camera>();
+            cam.enabled = false;
+            cam.nearClipPlane = 0.5f;
+            cam.farClipPlane = 10;
+            cam.fieldOfView = 25;
+            var tr = go.transform;
+            var pos = new Vector3(data.position[0], data.position[1], data.position[2]);
+
+            // the matrix is a "view matrix", not "camera matrix" lol
+            var axisx = new Vector3(data.rotx[0], data.roty[0], data.rotz[0]);
+            var axisy = new Vector3(data.rotx[1], data.roty[1], data.rotz[1]);
+            var axisz = new Vector3(data.rotx[2], data.roty[2], data.rotz[2]);
+
+            pos.z *= -1;
+            axisy *= -1;
+            axisx.z *= -1;
+            axisy.z *= -1;
+            axisz.z *= -1;
+
+            tr.position = pos;
+            tr.LookAt(tr.position + axisz, axisy);
+        }
     }
 }

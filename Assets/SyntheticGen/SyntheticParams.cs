@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -22,6 +23,13 @@ public class SyntheticParams : MonoBehaviour
         return Mathf.Log(v / (1.0f - v));
     }
 
+    public struct InputPoint
+    {
+        public Vector3 pos;
+        public Vector3 nor;
+        public Color32 col;
+    }
+
     [MenuItem("Tools/Generate Synthetic Data")]
     public static void GenSynData()
     {
@@ -31,25 +39,50 @@ public class SyntheticParams : MonoBehaviour
         System.IO.Directory.CreateDirectory(folderPath);
 
         // cameras.json
-        var cameras = FindObjectsOfType<Camera>();
+        var cameras = FindObjectsOfType<Camera>().OrderBy(c => c.gameObject.name).ToArray();
         var cameraJsons = new List<string>();
         int camIndex = 0;
         foreach (var cam in cameras)
         {
             var tr = cam.transform;
+            var pos = tr.position;
+            var dirX = tr.right;
+            var dirY = tr.up;
+            var dirZ = tr.forward;
+
+            pos.z *= -1;
+            dirY *= -1;
+            dirX.z *= -1;
+            dirY.z *= -1;
+            dirZ.z *= -1;
+            string json = $@"
+{{""id"":{camIndex},
+""img_name"":""dummy{camIndex}"",
+""width"":1960,
+""height"":1090,
+""position"":[{pos.x}, {pos.y}, {pos.z}],
+""rotation"":[
+    [{dirX.x}, {dirY.x}, {dirZ.x}],
+    [{dirX.y}, {dirY.y}, {dirZ.y}],
+    [{dirX.z}, {dirY.z}, {dirZ.z}]],
+""fx"":1160.3,
+""fy"":1160.5
+}}";
+            /*
             string json = $@"
 {{""id"":{camIndex},
 ""img_name"":""dummy{camIndex}"",
 ""width"":4946,
 ""height"":3286,
-""position"":[{tr.position.x}, {tr.position.y}, {tr.position.z}],
+""position"":[{-tr.position.x}, {-tr.position.y}, {-tr.position.z}],
 ""rotation"":[
-    [{tr.right.x}, {tr.right.y}, {tr.right.z}],
-    [{tr.up.x}, {tr.up.y}, {tr.up.z}],
-    [{tr.forward.x}, {tr.forward.y}, {tr.forward.z}]],
+    [{dirX.x}, {dirY.x}, {dirZ.x}],
+    [{dirX.y}, {dirY.y}, {dirZ.y}],
+    [{dirX.z}, {dirY.z}, {dirZ.z}]],
 ""fx"":4627.3,
 ""fy"":4649.5
 }}";
+*/
             cameraJsons.Add(json);
             ++camIndex;
         }
@@ -135,6 +168,7 @@ public class SyntheticParams : MonoBehaviour
         fs.Write(Encoding.UTF8.GetBytes("property float rot_3\n"));
         fs.Write(Encoding.UTF8.GetBytes("end_header\n"));
 
+        NativeArray<InputPoint> pointData = new NativeArray<InputPoint>(splats.Length, Allocator.Temp);
         NativeArray<GaussianSplatRenderer.InputSplat> splatData =
             new NativeArray<GaussianSplatRenderer.InputSplat>(splats.Length, Allocator.Temp);
         for (var si = 0; si < splats.Length; ++si)
@@ -144,17 +178,46 @@ public class SyntheticParams : MonoBehaviour
 
             GaussianSplatRenderer.InputSplat dat = default;
             dat.pos = tr.position;
+            dat.pos.z *= -1;
             dat.rot = tr.rotation;
+            // mirrored around Z axis
+            dat.rot.x *= -1;
+            dat.rot.y *= -1;
+            // swizzle into their expected order
             dat.rot = new Quaternion(dat.rot.w, dat.rot.x, dat.rot.y, dat.rot.z);
             dat.scale = tr.lossyScale * 0.25f;
             dat.scale = new Vector3(Mathf.Log(dat.scale.x), Mathf.Log(dat.scale.y), Mathf.Log(dat.scale.z));
             dat.opacity = InvSigmoid(spl.m_Color.a);
             //@TODO proper SH
-            dat.dc0 = new Vector3(0.5f, 0.5f, 0.5f);
+            dat.dc0 = new Vector3(2.0f, 1.0f, 0.5f);
 
             splatData[si] = dat;
+
+            InputPoint pt = default;
+            pt.pos = dat.pos;
+            pt.col = Color.white;
+            pointData[si] = pt;
         }
         fs.Write(splatData.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
+        fs.Dispose();
+
+        fs = new FileStream($"{folderPath}/input.ply", FileMode.Create,
+            FileAccess.Write);
+        fs.Write(Encoding.UTF8.GetBytes("ply\n"));
+        fs.Write(Encoding.UTF8.GetBytes("format binary_little_endian 1.0\n"));
+        fs.Write(Encoding.UTF8.GetBytes($"element vertex {splats.Length}\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float x\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float y\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float z\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float nx\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float ny\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property float nz\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property uchar red\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property uchar green\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property uchar blue\n"));
+        fs.Write(Encoding.UTF8.GetBytes("property uchar alpha\n"));
+        fs.Write(Encoding.UTF8.GetBytes("end_header\n"));
+        fs.Write(pointData.Reinterpret<byte>(UnsafeUtility.SizeOf<InputPoint>()));
         fs.Dispose();
 
         fs = new FileStream($"{folderPath}/point_cloud/iteration_7000/point_cloud.bytes", FileMode.Create,
