@@ -115,8 +115,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     float3 boxSize = exp(splat.scale) * 2.0; //@TODO: move exp offline
 
     boxLocalPos *= boxSize;
-    float3 boxPos = QuatRotateVector(boxLocalPos, boxRot);
-    float3 worldPos = splat.pos + boxPos;
+    float3 boxPos = QuatRotateVector(boxLocalPos, boxRot); boxPos.z *= -1;
+    float3 worldPos = splat.pos * float3(1,1,-1) + boxPos;
 
     float3 viewDir = normalize(UnityWorldSpaceViewDir(worldPos));
 
