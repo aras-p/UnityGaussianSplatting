@@ -1,5 +1,9 @@
-Shader "Unlit/RenderPointsSimple"
+Shader "Gaussian Splatting/Render Splats"
 {
+    Properties
+    {
+        _SplatScale("Splat Scale", Range(0.1,3.0)) = 1.0
+    }
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
@@ -166,6 +170,8 @@ float3 CalcConic(float3 cov2d)
     return float3(cov2d.z, -cov2d.y, cov2d.x) * rcp(det);
 }
 
+float _SplatScale;
+
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
@@ -176,15 +182,15 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     float3 boxLocalPos = float3(boxIdx&1, (boxIdx>>1)&1, (boxIdx>>2)&1) * 2.0 - 1.0;
     float4 boxRot = normalize(splat.rot.yzwx); //@TODO: move normalize and swizzle offline
     float3 boxSize = exp(splat.scale); //@TODO: move exp offline
-    boxSize *= 2;
+    boxSize *= _SplatScale;
 
     float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
 
     #if 0
-    boxLocalPos *= boxSize * 2;
+    boxLocalPos *= boxSize * 4;
     float3 boxPos = QuatRotateVector(boxLocalPos, boxRot);
     #else
-    float3 boxPos = mul(splatRotScaleMat, boxLocalPos) * 2;
+    float3 boxPos = mul(splatRotScaleMat, boxLocalPos) * 4;
     #endif
     boxPos.z *= -1;
 
@@ -201,7 +207,6 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
     float3 cov3d0, cov3d1;
-    splatRotScaleMat *= 0.5;
     splatRotScaleMat[2] *= -1;
     CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
     float3 cov2d = CalcCovariance2D(centerWorldPos, cov3d0, cov3d1);
@@ -216,7 +221,7 @@ half4 frag (v2f i) : SV_Target
     d.y *= _ProjectionParams.x;
     float pwr = -0.5 * (i.conic.x * d.x*d.x + i.conic.z * d.y*d.y) + i.conic.y * d.x*d.y;
     i.col.a *= saturate(exp(pwr));
-    if (i.col.a < 0.5/255.0)
+    if (i.col.a < 1.0/255.0)
         discard;
 
     half4 res = half4(i.col.rgb * i.col.a, i.col.a);

@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: RenderPointsSimple
+  m_Name: RenderGaussianSplats
   m_Shader: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -24,6 +24,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs: []
     m_Ints: []
-    m_Floats: []
+    m_Floats:
+    - _SplatScale: 1
     m_Colors: []
   m_BuildTextureStacks: []
