@@ -19,7 +19,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public ComputeShader m_CSSplatUtilities;
     public ComputeShader m_CSGpuSort;
 
-    // input file expected to be in this format
+    // input file splat data is expected to be in this format
     public struct InputSplat
     {
         public Vector3 pos;
@@ -30,17 +30,23 @@ public class GaussianSplatRenderer : MonoBehaviour
         public Vector3 scale;
         public Quaternion rot;
     }
-    
-    private int m_SplatCount;
-    private Bounds m_Bounds;
-    
-    private GraphicsBuffer m_GpuData;
-    private GraphicsBuffer m_GpuPositions;
-    private GraphicsBuffer m_GpuSortDistances;
-    private GraphicsBuffer m_GpuSortKeys;
 
-    private IslandGPUSort m_Sorter;
-    private IslandGPUSort.Args m_SorterArgs;
+    int m_SplatCount;
+    Bounds m_Bounds;
+    NativeArray<InputSplat> m_SplatData;
+
+    GraphicsBuffer m_GpuData;
+    GraphicsBuffer m_GpuPositions;
+    GraphicsBuffer m_GpuSortDistances;
+    GraphicsBuffer m_GpuSortKeys;
+
+    IslandGPUSort m_Sorter;
+    IslandGPUSort.Args m_SorterArgs;
+
+    public int splatCount => m_SplatCount;
+    public Bounds bounds => m_Bounds;
+    public NativeArray<InputSplat> splatData => m_SplatData;
+    public GraphicsBuffer gpuSplatData => m_GpuData;
 
     public void OnEnable()
     {
@@ -52,16 +58,16 @@ public class GaussianSplatRenderer : MonoBehaviour
         PLYFileReader.ReadFile(plyPath, out m_SplatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
         if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
             throw new Exception($"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplat>()} file has {vertexStride}");
-        var inputSplats = verticesRawData.Reinterpret<InputSplat>(1);
+        m_SplatData = verticesRawData.Reinterpret<InputSplat>(1);
 
-        m_SplatCount = inputSplats.Length / m_ScaleDown;
+        m_SplatCount = m_SplatData.Length / m_ScaleDown;
         
         Debug.Log($"Input Splats: {m_SplatCount}");
-        m_Bounds = new Bounds(inputSplats[0].pos, Vector3.zero);
+        m_Bounds = new Bounds(m_SplatData[0].pos, Vector3.zero);
         NativeArray<Vector3> inputPositions = new NativeArray<Vector3>(m_SplatCount, Allocator.Temp);
         for (var i = 0; i < m_SplatCount; ++i)
         {
-            var pos = inputSplats[i].pos;
+            var pos = m_SplatData[i].pos;
             inputPositions[i] = pos;
             m_Bounds.Encapsulate(pos);
         }
@@ -71,7 +77,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         inputPositions.Dispose();
 
         m_GpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, UnsafeUtility.SizeOf<InputSplat>());
-        m_GpuData.SetData(inputSplats, 0, 0, m_SplatCount);
+        m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
 
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
         m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
@@ -85,12 +91,11 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_SorterArgs.count = (uint)m_SplatCount;
         m_SorterArgs.resources = IslandGPUSort.SupportResources.Load(m_SplatCount);
         m_Material.SetBuffer("_OrderBuffer", m_SorterArgs.resources.sortBufferValues);
-
-        verticesRawData.Dispose();
     }
 
     public void OnDisable()
     {
+        m_SplatData.Dispose();
         m_GpuData?.Dispose();
         m_GpuPositions?.Dispose();
         m_GpuSortDistances?.Dispose();
