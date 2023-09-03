@@ -8,6 +8,4 @@
 *.sln
 .DS_Store
 
-*.bytes
-*.ply
-/synthetic/*
+/Assets/Models~/*

@@ -338,7 +338,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_PointCloudFolder: Assets/Models/synthetic
+  m_PointCloudFolder: Assets/Models~/bicycle
   m_ScaleDown: 1
   m_Material: {fileID: 2100000, guid: c997de094bd0b4213b3b99a55969f48b, type: 2}
   m_CSSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}

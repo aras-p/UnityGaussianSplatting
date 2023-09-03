@@ -33,7 +33,7 @@ public class SyntheticParams : MonoBehaviour
     [MenuItem("Tools/Generate Synthetic Data")]
     public static void GenSynData()
     {
-        var folderPath = EditorUtility.SaveFolderPanel("Save PLY from scene", "Assets/Models", "synthetic");
+        var folderPath = EditorUtility.SaveFolderPanel("Save PLY from scene", "Assets/Models~", "synthetic");
         if (string.IsNullOrWhiteSpace(folderPath))
             return;
         System.IO.Directory.CreateDirectory(folderPath);
