@@ -1,3 +1,7 @@
+using System;
+using System.Dynamic;
+using System.Linq;
+using System.Reflection;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -33,7 +37,8 @@ public class GaussianSplatRendererEditor : Editor
     };
 
     int m_CachedSplatCount;
-    Vector2[] m_CachedDataRanges;
+    Vector2[] m_CachedDataRanges = new Vector2[kFieldNames.Length];
+    Material m_Material;
 
     public override void OnInspectorGUI()
     {
@@ -42,22 +47,47 @@ public class GaussianSplatRendererEditor : Editor
         var gs = target as GaussianSplatRenderer;
         if (!gs)
             return;
-        var splatCount = gs.splatCount;
-        if (splatCount == 0)
-            return;
 
         EditorGUILayout.Space();
-        using var disabled = new EditorGUI.DisabledScope(true);
-        EditorGUILayout.IntField("Splats", splatCount);
-        EditorGUILayout.Vector3Field("Center", gs.bounds.center);
-        EditorGUILayout.Vector3Field("Extent", gs.bounds.extents);
+
+        var splatCount = gs.splatCount;
+        if (splatCount != 0)
+        {
+            using var disabled = new EditorGUI.DisabledScope(true);
+            EditorGUILayout.IntField("Splats", splatCount);
+            EditorGUILayout.Vector3Field("Center", gs.bounds.center);
+            EditorGUILayout.Vector3Field("Extent", gs.bounds.extents);
+        }
 
         CacheDataRanges();
-        if (m_CachedDataRanges != null)
+
+        if (!m_Material)
+            m_Material = new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/Scripts/Editor/DrawSplatDataRanges.shader"));
+        if (!m_Material)
+            return;
+
+        float rowHeight = 12;
+        var distRect = GUILayoutUtility.GetRect(100, kFieldNames.Length * rowHeight);
+        var graphRect = new Rect(distRect.x+60, distRect.y, distRect.width-90, distRect.height);
+        GUI.Box(graphRect, GUIContent.none);
+        for (int bi = 0; bi < kFieldNames.Length; ++bi)
         {
-            for (int bi = 0; bi < kFieldNames.Length; ++bi)
+            var rowRect = new Rect(distRect.x, distRect.y + bi * rowHeight, distRect.width, rowHeight);
+            GUI.Label(new Rect(rowRect.x, rowRect.y, 30, rowRect.height), kFieldNames[bi], EditorStyles.miniLabel);
+            GUI.Label(new Rect(rowRect.x+30, rowRect.y, 30, rowRect.height), m_CachedDataRanges[bi].x.ToString("F2"), EditorStyles.miniLabel);
+            GUI.Label(new Rect(rowRect.xMax-30, rowRect.y, 30, rowRect.height), m_CachedDataRanges[bi].y.ToString("F2"), EditorStyles.miniLabel);
+        }
+
+        using (new GUI.ClipScope(graphRect))
+        {
+            if (Event.current.type == EventType.Repaint)
             {
-                EditorGUILayout.Vector2Field(kFieldNames[bi], m_CachedDataRanges[bi]);
+                m_Material.SetBuffer("_InputData", gs.gpuSplatData);
+                m_Material.SetVector("_Params", new Vector4(graphRect.width, graphRect.height, rowHeight, m_CachedDataRanges.Length));
+                m_Material.SetFloatArray("_DataMin", m_CachedDataRanges.Select(f => f.x).ToArray());
+                m_Material.SetFloatArray("_DataMax", m_CachedDataRanges.Select(f => f.y).ToArray());
+                m_Material.SetPass(0);
+                Graphics.DrawProceduralNow(MeshTopology.Points, splatCount, m_CachedDataRanges.Length);
             }
         }
     }
@@ -66,12 +96,9 @@ public class GaussianSplatRendererEditor : Editor
     {
         var gs = target as GaussianSplatRenderer;
         if (gs == null)
-        {
             m_CachedSplatCount = 0;
-            m_CachedDataRanges = null;
-        }
 
-        if (m_CachedDataRanges != null && m_CachedSplatCount == gs.splatCount)
+        if (m_CachedSplatCount == gs.splatCount)
             return;
 
         if (kFieldNames.Length != UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>() / 4)
@@ -80,8 +107,6 @@ public class GaussianSplatRendererEditor : Editor
         m_CachedSplatCount = gs.splatCount;
         NativeArray<float> floatData =
             gs.splatData.Reinterpret<float>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>());
-        m_CachedDataRanges = new Vector2[kFieldNames.Length];
-
         // Doing this in Burst, since regular Mono for 3.6M splats takes 7.2 seconds, whereas Burst takes 0.2s...
         fixed (void* dst = m_CachedDataRanges)
         {
