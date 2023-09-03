@@ -13,27 +13,27 @@ public class GaussianSplatRendererEditor : Editor
 {
     const int kRowHeight = 12;
     static string[] kFieldNames = {
-        "px", "py", "pz",
-        "nx", "ny", "nz",
-        "dc0r", "dc0g", "dc0b",
-        "sh0r", "sh0g", "s0b",
-        "sh1r", "sh1g", "sh1b",
-        "sh2r", "sh2g", "sh2b",
-        "sh3r", "sh3g", "sh3b",
-        "sh4r", "sh4g", "sh4b",
-        "sh5r", "sh5g", "sh5b",
-        "sh6r", "sh6g", "sh6b",
-        "sh7r", "sh7g", "sh7b",
-        "sh8r", "sh8g", "sh8b",
-        "sh9r", "sh9g", "sh9b",
-        "sh10r", "sh10g", "sh10b",
-        "sh11r", "sh11g", "sh11b",
-        "sh12r", "sh12g", "sh12b",
-        "sh13r", "sh13g", "sh13b",
-        "sh14r", "sh14g", "sh14b",
-        "op",
-        "sx", "sy", "sz",
-        "rw", "rx", "ry", "rz",
+        "px", "py", "pz", // 0
+        "nx", "ny", "nz", // 3
+        "dc0r", "dc0g", "dc0b", // 6
+        "sh0r", "sh0g", "sh0b", // 9
+        "sh1r", "sh1g", "sh1b", // 12
+        "sh2r", "sh2g", "sh2b", // 15
+        "sh3r", "sh3g", "sh3b", // 18
+        "sh4r", "sh4g", "sh4b", // 21
+        "sh5r", "sh5g", "sh5b", // 24
+        "sh6r", "sh6g", "sh6b", // 27
+        "sh7r", "sh7g", "sh7b", // 30
+        "sh8r", "sh8g", "sh8b", // 33
+        "sh9r", "sh9g", "sh9b", // 36
+        "shAr", "shAg", "shAb", // 39
+        "shBr", "shBg", "shBb", // 42
+        "shCr", "shCg", "shCb", // 45
+        "shDr", "shDg", "shDb", // 48
+        "shEr", "shEg", "shEb", // 51
+        "op", // 54
+        "sx", "sy", "sz", // 55
+        "rw", "rx", "ry", "rz", // 58
     };
 
     Vector2[] m_CachedDataRanges;
@@ -73,19 +73,24 @@ public class GaussianSplatRendererEditor : Editor
         if (m_StatsTexture && m_CachedDataRanges != null)
         {
             var distRect = GUILayoutUtility.GetRect(100, kFieldNames.Length * kRowHeight);
-            var graphRect = new Rect(distRect.x + 60, distRect.y, distRect.width - 90, distRect.height);
+            var graphRect = new Rect(distRect.x + 70, distRect.y, distRect.width - 110, distRect.height);
             GUI.Box(graphRect, GUIContent.none);
             for (int bi = 0; bi < kFieldNames.Length; ++bi)
             {
                 var rowRect = new Rect(distRect.x, distRect.y + bi * kRowHeight, distRect.width, kRowHeight);
                 GUI.Label(new Rect(rowRect.x, rowRect.y, 30, rowRect.height), kFieldNames[bi], EditorStyles.miniLabel);
-                GUI.Label(new Rect(rowRect.x + 30, rowRect.y, 30, rowRect.height),
-                    m_CachedDataRanges[bi].x.ToString("F2"), EditorStyles.miniLabel);
-                GUI.Label(new Rect(rowRect.xMax - 30, rowRect.y, 30, rowRect.height),
-                    m_CachedDataRanges[bi].y.ToString("F2"), EditorStyles.miniLabel);
+                GUI.Label(new Rect(rowRect.x + 30, rowRect.y, 40, rowRect.height),
+                    m_CachedDataRanges[bi].x.ToString("F3"), EditorStyles.miniLabel);
+                GUI.Label(new Rect(rowRect.xMax - 40, rowRect.y, 40, rowRect.height),
+                    m_CachedDataRanges[bi].y.ToString("F3"), EditorStyles.miniLabel);
             }
             GUI.DrawTexture(graphRect, m_StatsTexture, ScaleMode.StretchToFill);
         }
+    }
+
+    struct Color64
+    {
+        public ushort r, g, b, a;
     }
 
     [BurstCompile]
@@ -93,11 +98,28 @@ public class GaussianSplatRendererEditor : Editor
     {
         public int pixelsWidth;
         public int pixelsHeight;
-        [NativeDisableParallelForRestriction] public NativeArray<Color32> pixels;
+        [NativeDisableParallelForRestriction] public NativeArray<Color64> pixels;
         public NativeArray<Vector2> ranges;
         [ReadOnly] public NativeArray<float> data;
         public int itemCount;
         public int itemStrideInFloats;
+
+        static float AdjustVal(float val, int fieldIndex)
+        {
+            if (fieldIndex >= 55 && fieldIndex < 58) // scale: exp
+            {
+                //val = math.exp(val);
+                //val = math.sqrt(val);
+                //val = math.sqrt(val);
+            }
+
+            if (fieldIndex == 54) // opacity: sigmoid
+            {
+                //val = math.rcp(1.0f + math.exp(-val));
+            }
+
+            return val;
+        }
 
         public void Execute(int fieldIndex)
         {
@@ -106,7 +128,7 @@ public class GaussianSplatRendererEditor : Editor
             int idx = fieldIndex;
             for (int si = 0; si < itemCount; ++si)
             {
-                float val = data[idx];
+                float val = AdjustVal(data[idx], fieldIndex);
                 range.x = math.min(range.x, val);
                 range.y = math.max(range.y, val);
                 idx += itemStrideInFloats;
@@ -117,18 +139,18 @@ public class GaussianSplatRendererEditor : Editor
             idx = fieldIndex;
             for (int si = 0; si < itemCount; ++si)
             {
-                float val = data[idx];
+                float val = AdjustVal(data[idx], fieldIndex);
                 val = math.unlerp(range.x, range.y, val);
                 val = math.saturate(val);
                 int px = (int) math.floor(val * pixelsWidth);
-                int py = pixelsHeight - 1 - (fieldIndex * kRowHeight + 1 + (si % (kRowHeight - 2)));
+                int py = pixelsHeight - 2 - (fieldIndex * kRowHeight + 1 + (si % (kRowHeight - 4)));
                 int pidx = py * pixelsWidth + px;
 
-                Color32 col = pixels[pidx];
-                col.r = (byte)math.min(255, col.r + 3);
-                col.g = (byte)math.min(255, col.g + 2);
-                col.b = (byte)math.min(255, col.b + 1);
-                col.a = 255;
+                Color64 col = pixels[pidx];
+                col.r = (ushort)math.min(0xFFFF, col.r + 23);
+                col.g = (ushort)math.min(0xFFFF, col.g + 7);
+                col.b = (ushort)math.min(0xFFFF, col.b + 1);
+                col.a = 0xFFFF;
                 pixels[pidx] = col;
 
                 idx += itemStrideInFloats;
@@ -153,8 +175,8 @@ public class GaussianSplatRendererEditor : Editor
         int fieldCount = itemSizeBytes / 4;
 
         if (!m_StatsTexture)
-            m_StatsTexture = new Texture2D(512, fieldCount * kRowHeight, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None);
-        NativeArray<Color32> statsPixels = new(m_StatsTexture.width * m_StatsTexture.height, Allocator.TempJob);
+            m_StatsTexture = new Texture2D(512, fieldCount * kRowHeight, GraphicsFormat.R16G16B16A16_UNorm, TextureCreationFlags.None);
+        NativeArray<Color64> statsPixels = new(m_StatsTexture.width * m_StatsTexture.height, Allocator.TempJob);
         NativeArray<Vector2> statsRanges = new(fieldCount, Allocator.TempJob);
 
         CalcStatsJob job;
