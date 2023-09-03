@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -8,7 +9,10 @@ using UnityEngine.Rendering;
 
 public class GaussianSplatRenderer : MonoBehaviour
 {
-    public TextAsset m_DataFile;
+    const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
+
+    [FolderPicker(kPointCloudPly)]
+    public string m_PointCloudFolder;
     [Range(1,30)]
     public int m_ScaleDown = 10;
     public Material m_Material;
@@ -40,11 +44,15 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void OnEnable()
     {
-        if (m_DataFile == null || m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
+        if (m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
             return;
-        if (UnsafeUtility.SizeOf<InputSplat>() != 248)
-            throw new Exception("InputVertex size mismatch");
-        var inputSplats = m_DataFile.GetData<InputSplat>();
+        string plyPath = $"{m_PointCloudFolder}/{kPointCloudPly}";
+        if (!File.Exists(plyPath))
+            return;
+        PLYFileReader.ReadFile(plyPath, out m_SplatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
+        if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
+            throw new Exception($"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplat>()} file has {vertexStride}");
+        var inputSplats = verticesRawData.Reinterpret<InputSplat>(1);
 
         m_SplatCount = inputSplats.Length / m_ScaleDown;
         
@@ -77,6 +85,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_SorterArgs.count = (uint)m_SplatCount;
         m_SorterArgs.resources = IslandGPUSort.SupportResources.Load(m_SplatCount);
         m_Material.SetBuffer("_OrderBuffer", m_SorterArgs.resources.sortBufferValues);
+
+        verticesRawData.Dispose();
     }
 
     public void OnDisable()
