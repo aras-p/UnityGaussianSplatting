@@ -1,15 +1,14 @@
 using System;
 using System.IO;
-using System.Linq;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 public class GaussianSplatRenderer : MonoBehaviour
 {
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
+    const string kCamerasJson = "cameras.json";
 
     [FolderPicker(kPointCloudPly)]
     public string m_PointCloudFolder;
@@ -31,9 +30,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         public Quaternion rot;
     }
 
+    public struct CameraData
+    {
+        public Vector3 pos;
+        public Vector3 axisX, axisY, axisZ;
+        public float fov;
+    }
+
     int m_SplatCount;
     Bounds m_Bounds;
     NativeArray<InputSplat> m_SplatData;
+    CameraData[] m_Cameras;
 
     GraphicsBuffer m_GpuData;
     GraphicsBuffer m_GpuPositions;
@@ -48,6 +55,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public Bounds bounds => m_Bounds;
     public NativeArray<InputSplat> splatData => m_SplatData;
     public GraphicsBuffer gpuSplatData => m_GpuData;
+    public CameraData[] cameras => m_Cameras;
 
     public static NativeArray<InputSplat> LoadPLYSplatFile(string folder)
     {
@@ -62,14 +70,63 @@ public class GaussianSplatRenderer : MonoBehaviour
         return verticesRawData.Reinterpret<InputSplat>(1);
     }
 
+    static CameraData[] LoadJsonCamerasFile(string folder)
+    {
+        string path = $"{folder}/{kCamerasJson}";
+        if (!File.Exists(path))
+            return null;
+
+        string json = File.ReadAllText(path);
+        // JsonUtility does not support 2D arrays, so mogrify that into something else, argh
+        string num = "([\\-\\d\\.]+)";
+        string vec = $"\\[{num},\\s*{num},\\s*{num}\\]";
+        json = System.Text.RegularExpressions.Regex.Replace(json,
+            $"\"rotation\": \\[{vec},\\s*{vec},\\s*{vec}\\]",
+            "\"rotx\":[$1,$2,$3], \"roty\":[$4,$5,$6], \"rotz\":[$7,$8,$9]"
+        );
+        json = $"{{ \"cameras\": {json} }}";
+        var jsonCameras = JsonUtility.FromJson<JsonCameras>(json);
+        var result = new CameraData[jsonCameras.cameras.Length];
+        for (var camIndex = 0; camIndex < jsonCameras.cameras.Length; camIndex++)
+        {
+            var jsonCam = jsonCameras.cameras[camIndex];
+            var pos = new Vector3(jsonCam.position[0], jsonCam.position[1], jsonCam.position[2]);
+            // the matrix is a "view matrix", not "camera matrix" lol
+            var axisx = new Vector3(jsonCam.rotx[0], jsonCam.roty[0], jsonCam.rotz[0]);
+            var axisy = new Vector3(jsonCam.rotx[1], jsonCam.roty[1], jsonCam.rotz[1]);
+            var axisz = new Vector3(jsonCam.rotx[2], jsonCam.roty[2], jsonCam.rotz[2]);
+
+            pos.z *= -1;
+            axisy *= -1;
+            axisx.z *= -1;
+            axisy.z *= -1;
+            axisz.z *= -1;
+
+            var cam = new CameraData
+            {
+                pos = pos,
+                axisX = axisx,
+                axisY = axisy,
+                axisZ = axisz,
+                fov = 25 //@TODO
+            };
+            result[camIndex] = cam;
+        }
+
+        return result;
+    }
+
     public void OnEnable()
     {
+        Camera.onPreCull += OnPreCullCamera;
+
+        m_Cameras = null;
         if (m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
             return;
+        m_Cameras = LoadJsonCamerasFile(m_PointCloudFolder);
         m_SplatData = LoadPLYSplatFile(m_PointCloudFolder);
         m_SplatCount = m_SplatData.Length / m_ScaleDown;
-        
-        Debug.Log($"Input Splats: {m_SplatCount}");
+
         m_Bounds = new Bounds(m_SplatData[0].pos, Vector3.zero);
         NativeArray<Vector3> inputPositions = new NativeArray<Vector3>(m_SplatCount, Allocator.Temp);
         for (var i = 0; i < m_SplatCount; ++i)
@@ -88,7 +145,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
         m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
-        
+
         m_Material.SetBuffer("_DataBuffer", m_GpuData);
         m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
 
@@ -100,8 +157,18 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_Material.SetBuffer("_OrderBuffer", m_SorterArgs.resources.sortBufferValues);
     }
 
+    void OnPreCullCamera(Camera cam)
+    {
+        if (m_GpuData == null)
+            return;
+
+        SortPoints(cam);
+        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 36, m_SplatCount, cam);
+    }
+
     public void OnDisable()
     {
+        Camera.onPreCull -= OnPreCullCamera;
         m_SplatData.Dispose();
         m_GpuData?.Dispose();
         m_GpuPositions?.Dispose();
@@ -110,23 +177,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_SorterArgs.resources.Dispose();
     }
 
-    public void Update()
+    void SortPoints(Camera cam)
     {
-        if (m_GpuData == null)
-            return;
-
-        SortPoints();
-        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 36, m_SplatCount);
-    }
-
-    void SortPoints()
-    {
-        var cam = Camera.current;
-        if (cam == null)
-            cam = Camera.main;
-        if (cam == null)
-            return;
-
         // calculate distance to the camera for each splat
         m_CSSplatUtilities.SetBuffer(0, "_InputPositions", m_GpuPositions);
         m_CSSplatUtilities.SetBuffer(0, "_SplatSortDistances", m_GpuSortDistances);
@@ -161,53 +213,5 @@ public class GaussianSplatRenderer : MonoBehaviour
     public class JsonCameras
     {
         public JsonCamera[] cameras;
-    }
-
-    [MenuItem("Tools/Import Cameras")]
-    public static void ImportCameras()
-    {
-        var existingCams = FindObjectsOfType<GameObject>()
-            .Where(c => c.name.StartsWith("ImportedCam-", StringComparison.Ordinal));
-        Debug.Log($"Existing cams: {existingCams.Count()}");
-        foreach (var cam in existingCams)
-            DestroyImmediate(cam);
-
-        string json = System.IO.File.ReadAllText("Assets/Models/bicycle_cameras.json");
-        // JsonUtility does not support 2D arrays, so mogrify that into something else
-        string num = "([\\-\\d\\.]+)";
-        string vec = $"\\[{num},\\s*{num},\\s*{num}\\]";
-        json = System.Text.RegularExpressions.Regex.Replace(json,
-            $"\"rotation\": \\[{vec},\\s*{vec},\\s*{vec}\\]",
-            "\"rotx\":[$1,$2,$3], \"roty\":[$4,$5,$6], \"rotz\":[$7,$8,$9]"
-        );
-        json = $"{{ \"cameras\": {json} }}";
-        var cameras = JsonUtility.FromJson<JsonCameras>(json);
-        Debug.Log($"Json had {cameras.cameras.Length} cameras");
-
-        foreach (var data in cameras.cameras)
-        {
-            var go = new GameObject($"ImportedCam-{data.id}", typeof(Camera));
-            var cam = go.GetComponent<Camera>();
-            cam.enabled = false;
-            cam.nearClipPlane = 0.5f;
-            cam.farClipPlane = 10;
-            cam.fieldOfView = 25;
-            var tr = go.transform;
-            var pos = new Vector3(data.position[0], data.position[1], data.position[2]);
-
-            // the matrix is a "view matrix", not "camera matrix" lol
-            var axisx = new Vector3(data.rotx[0], data.roty[0], data.rotz[0]);
-            var axisy = new Vector3(data.rotx[1], data.roty[1], data.rotz[1]);
-            var axisz = new Vector3(data.rotx[2], data.roty[2], data.rotz[2]);
-
-            pos.z *= -1;
-            axisy *= -1;
-            axisx.z *= -1;
-            axisy.z *= -1;
-            axisz.z *= -1;
-
-            tr.position = pos;
-            tr.LookAt(tr.position + axisz, axisy);
-        }
     }
 }

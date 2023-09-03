@@ -38,6 +38,7 @@ public class GaussianSplatRendererEditor : Editor
 
     Vector2[] m_CachedDataRanges;
     Texture2D m_StatsTexture;
+    int m_CameraIndex = 0;
 
     public void OnDestroy()
     {
@@ -53,6 +54,25 @@ public class GaussianSplatRendererEditor : Editor
             return;
 
         EditorGUILayout.Space();
+
+        var cameras = gs.cameras;
+        if (cameras != null && cameras.Length != 0)
+        {
+            var camIndex = EditorGUILayout.IntSlider("Camera", m_CameraIndex, 0, cameras.Length - 1);
+            camIndex = math.clamp(camIndex, 0, cameras.Length - 1);
+            if (camIndex != m_CameraIndex)
+            {
+                m_CameraIndex = camIndex;
+
+                Camera mainCam = Camera.main;
+                if (mainCam != null)
+                {
+                    var cam = cameras[camIndex];
+                    mainCam.transform.position = cam.pos;
+                    mainCam.transform.LookAt(cam.pos + cam.axisZ, cam.axisY);
+                }
+            }
+        }
 
         var splatCount = gs.splatCount;
         if (splatCount != 0)
