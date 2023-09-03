@@ -8,10 +8,13 @@ using UnityEngine.Rendering;
 public class GaussianSplatRenderer : MonoBehaviour
 {
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
+    const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
 
     [FolderPicker(kPointCloudPly)]
     public string m_PointCloudFolder;
+
+    public bool m_Use30kVersion = false;
     [Range(1,30)]
     public int m_ScaleDown = 10;
     public Material m_Material;
@@ -57,10 +60,10 @@ public class GaussianSplatRenderer : MonoBehaviour
     public GraphicsBuffer gpuSplatData => m_GpuData;
     public CameraData[] cameras => m_Cameras;
 
-    public static NativeArray<InputSplat> LoadPLYSplatFile(string folder)
+    public static NativeArray<InputSplat> LoadPLYSplatFile(string folder, bool use30k)
     {
         NativeArray<InputSplat> data = default;
-        string plyPath = $"{folder}/{kPointCloudPly}";
+        string plyPath = $"{folder}/{(use30k ? kPointCloud30kPly : kPointCloudPly)}";
         if (!File.Exists(plyPath))
             return data;
         int splatCount = 0;
@@ -124,7 +127,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
             return;
         m_Cameras = LoadJsonCamerasFile(m_PointCloudFolder);
-        m_SplatData = LoadPLYSplatFile(m_PointCloudFolder);
+        m_SplatData = LoadPLYSplatFile(m_PointCloudFolder, m_Use30kVersion);
         m_SplatCount = m_SplatData.Length / m_ScaleDown;
 
         m_Bounds = new Bounds(m_SplatData[0].pos, Vector3.zero);

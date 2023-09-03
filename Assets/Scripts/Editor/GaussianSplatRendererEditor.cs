@@ -85,7 +85,7 @@ public class GaussianSplatRendererEditor : Editor
 
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Calc Stats"))
-            CalcStats(gs.pointCloudFolder);
+            CalcStats(gs.pointCloudFolder, gs.m_Use30kVersion);
         if (GUILayout.Button("Clear Stats", GUILayout.ExpandWidth(false)))
             ClearStats();
         GUILayout.EndHorizontal();
@@ -184,10 +184,10 @@ public class GaussianSplatRendererEditor : Editor
         if (m_StatsTexture)
             DestroyImmediate(m_StatsTexture);
     }
-    void CalcStats(string pointCloudFolder)
+    void CalcStats(string pointCloudFolder, bool use30k)
     {
         ClearStats();
-        NativeArray<GaussianSplatRenderer.InputSplat> splats = GaussianSplatRenderer.LoadPLYSplatFile(pointCloudFolder);
+        NativeArray<GaussianSplatRenderer.InputSplat> splats = GaussianSplatRenderer.LoadPLYSplatFile(pointCloudFolder, use30k);
         if (!splats.IsCreated)
             return;
 
