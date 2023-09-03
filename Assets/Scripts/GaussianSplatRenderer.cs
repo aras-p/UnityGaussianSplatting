@@ -43,23 +43,30 @@ public class GaussianSplatRenderer : MonoBehaviour
     IslandGPUSort m_Sorter;
     IslandGPUSort.Args m_SorterArgs;
 
+    public string pointCloudFolder => m_PointCloudFolder;
     public int splatCount => m_SplatCount;
     public Bounds bounds => m_Bounds;
     public NativeArray<InputSplat> splatData => m_SplatData;
     public GraphicsBuffer gpuSplatData => m_GpuData;
 
+    public static NativeArray<InputSplat> LoadPLYSplatFile(string folder)
+    {
+        NativeArray<InputSplat> data = default;
+        string plyPath = $"{folder}/{kPointCloudPly}";
+        if (!File.Exists(plyPath))
+            return data;
+        int splatCount = 0;
+        PLYFileReader.ReadFile(plyPath, out splatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
+        if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
+            throw new Exception($"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplat>()} file has {vertexStride}");
+        return verticesRawData.Reinterpret<InputSplat>(1);
+    }
+
     public void OnEnable()
     {
         if (m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
             return;
-        string plyPath = $"{m_PointCloudFolder}/{kPointCloudPly}";
-        if (!File.Exists(plyPath))
-            return;
-        PLYFileReader.ReadFile(plyPath, out m_SplatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
-        if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
-            throw new Exception($"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplat>()} file has {vertexStride}");
-        m_SplatData = verticesRawData.Reinterpret<InputSplat>(1);
-
+        m_SplatData = LoadPLYSplatFile(m_PointCloudFolder);
         m_SplatCount = m_SplatData.Length / m_ScaleDown;
         
         Debug.Log($"Input Splats: {m_SplatCount}");

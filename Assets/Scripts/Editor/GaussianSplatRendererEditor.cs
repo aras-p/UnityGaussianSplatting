@@ -1,17 +1,17 @@
-using System;
-using System.Dynamic;
-using System.Linq;
-using System.Reflection;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 
 [CustomEditor(typeof(GaussianSplatRenderer))]
 [BurstCompile]
 public class GaussianSplatRendererEditor : Editor
 {
+    const int kRowHeight = 12;
     static string[] kFieldNames = {
         "px", "py", "pz",
         "nx", "ny", "nz",
@@ -36,9 +36,13 @@ public class GaussianSplatRendererEditor : Editor
         "rw", "rx", "ry", "rz",
     };
 
-    int m_CachedSplatCount;
-    Vector2[] m_CachedDataRanges = new Vector2[kFieldNames.Length];
-    Material m_Material;
+    Vector2[] m_CachedDataRanges;
+    Texture2D m_StatsTexture;
+
+    public void OnDestroy()
+    {
+        if (m_StatsTexture) DestroyImmediate(m_StatsTexture);
+    }
 
     public override void OnInspectorGUI()
     {
@@ -59,79 +63,118 @@ public class GaussianSplatRendererEditor : Editor
             EditorGUILayout.Vector3Field("Extent", gs.bounds.extents);
         }
 
-        CacheDataRanges();
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Calc Stats"))
+            CalcStats(gs.pointCloudFolder);
+        if (GUILayout.Button("Clear Stats", GUILayout.ExpandWidth(false)))
+            ClearStats();
+        GUILayout.EndHorizontal();
 
-        if (!m_Material)
-            m_Material = new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/Scripts/Editor/DrawSplatDataRanges.shader"));
-        if (!m_Material)
-            return;
-
-        float rowHeight = 12;
-        var distRect = GUILayoutUtility.GetRect(100, kFieldNames.Length * rowHeight);
-        var graphRect = new Rect(distRect.x+60, distRect.y, distRect.width-90, distRect.height);
-        GUI.Box(graphRect, GUIContent.none);
-        for (int bi = 0; bi < kFieldNames.Length; ++bi)
+        if (m_StatsTexture && m_CachedDataRanges != null)
         {
-            var rowRect = new Rect(distRect.x, distRect.y + bi * rowHeight, distRect.width, rowHeight);
-            GUI.Label(new Rect(rowRect.x, rowRect.y, 30, rowRect.height), kFieldNames[bi], EditorStyles.miniLabel);
-            GUI.Label(new Rect(rowRect.x+30, rowRect.y, 30, rowRect.height), m_CachedDataRanges[bi].x.ToString("F2"), EditorStyles.miniLabel);
-            GUI.Label(new Rect(rowRect.xMax-30, rowRect.y, 30, rowRect.height), m_CachedDataRanges[bi].y.ToString("F2"), EditorStyles.miniLabel);
-        }
-
-        using (new GUI.ClipScope(graphRect))
-        {
-            if (Event.current.type == EventType.Repaint)
+            var distRect = GUILayoutUtility.GetRect(100, kFieldNames.Length * kRowHeight);
+            var graphRect = new Rect(distRect.x + 60, distRect.y, distRect.width - 90, distRect.height);
+            GUI.Box(graphRect, GUIContent.none);
+            for (int bi = 0; bi < kFieldNames.Length; ++bi)
             {
-                m_Material.SetBuffer("_InputData", gs.gpuSplatData);
-                m_Material.SetVector("_Params", new Vector4(graphRect.width, graphRect.height, rowHeight, m_CachedDataRanges.Length));
-                m_Material.SetFloatArray("_DataMin", m_CachedDataRanges.Select(f => f.x).ToArray());
-                m_Material.SetFloatArray("_DataMax", m_CachedDataRanges.Select(f => f.y).ToArray());
-                m_Material.SetPass(0);
-                Graphics.DrawProceduralNow(MeshTopology.Points, splatCount, m_CachedDataRanges.Length);
+                var rowRect = new Rect(distRect.x, distRect.y + bi * kRowHeight, distRect.width, kRowHeight);
+                GUI.Label(new Rect(rowRect.x, rowRect.y, 30, rowRect.height), kFieldNames[bi], EditorStyles.miniLabel);
+                GUI.Label(new Rect(rowRect.x + 30, rowRect.y, 30, rowRect.height),
+                    m_CachedDataRanges[bi].x.ToString("F2"), EditorStyles.miniLabel);
+                GUI.Label(new Rect(rowRect.xMax - 30, rowRect.y, 30, rowRect.height),
+                    m_CachedDataRanges[bi].y.ToString("F2"), EditorStyles.miniLabel);
             }
-        }
-    }
-
-    unsafe void CacheDataRanges()
-    {
-        var gs = target as GaussianSplatRenderer;
-        if (gs == null)
-            m_CachedSplatCount = 0;
-
-        if (m_CachedSplatCount == gs.splatCount)
-            return;
-
-        if (kFieldNames.Length != UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>() / 4)
-            Debug.LogWarning("Field names array does not match expected size");
-
-        m_CachedSplatCount = gs.splatCount;
-        NativeArray<float> floatData =
-            gs.splatData.Reinterpret<float>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>());
-        // Doing this in Burst, since regular Mono for 3.6M splats takes 7.2 seconds, whereas Burst takes 0.2s...
-        fixed (void* dst = m_CachedDataRanges)
-        {
-            CalcDataRanges(gs.splatCount, kFieldNames.Length, (float*)floatData.GetUnsafeReadOnlyPtr(), (float*)dst);
+            GUI.DrawTexture(graphRect, m_StatsTexture, ScaleMode.StretchToFill);
         }
     }
 
     [BurstCompile]
-    static unsafe void CalcDataRanges(int splatCount, int fieldCount, float* data, float* ranges)
+    struct CalcStatsJob : IJobParallelFor
     {
-        for (int i = 0; i < fieldCount; ++i)
+        public int pixelsWidth;
+        public int pixelsHeight;
+        [NativeDisableParallelForRestriction] public NativeArray<Color32> pixels;
+        public NativeArray<Vector2> ranges;
+        [ReadOnly] public NativeArray<float> data;
+        public int itemCount;
+        public int itemStrideInFloats;
+
+        public void Execute(int fieldIndex)
         {
-            ranges[i * 2 + 0] = float.PositiveInfinity;
-            ranges[i * 2 + 1] = float.NegativeInfinity;
-        }
-        int idx = 0;
-        for (int si = 0; si < splatCount; ++si)
-        {
-            for (int bi = 0; bi < fieldCount; ++bi)
+            // find min/max
+            Vector2 range = new Vector2(float.PositiveInfinity, float.NegativeInfinity);
+            int idx = fieldIndex;
+            for (int si = 0; si < itemCount; ++si)
             {
                 float val = data[idx];
-                ranges[bi * 2 + 0] = Mathf.Min(ranges[bi * 2 + 0], val);
-                ranges[bi * 2 + 1] = Mathf.Max(ranges[bi * 2 + 1], val);
-                ++idx;
+                range.x = math.min(range.x, val);
+                range.y = math.max(range.y, val);
+                idx += itemStrideInFloats;
+            }
+            ranges[fieldIndex] = range;
+
+            // fill texture with value distribution over the range
+            idx = fieldIndex;
+            for (int si = 0; si < itemCount; ++si)
+            {
+                float val = data[idx];
+                val = math.unlerp(range.x, range.y, val);
+                val = math.saturate(val);
+                int px = (int) math.floor(val * pixelsWidth);
+                int py = pixelsHeight - 1 - (fieldIndex * kRowHeight + 1 + (si % (kRowHeight - 2)));
+                int pidx = py * pixelsWidth + px;
+
+                Color32 col = pixels[pidx];
+                col.r = (byte)math.min(255, col.r + 3);
+                col.g = (byte)math.min(255, col.g + 2);
+                col.b = (byte)math.min(255, col.b + 1);
+                col.a = 255;
+                pixels[pidx] = col;
+
+                idx += itemStrideInFloats;
             }
         }
+    }
+
+    void ClearStats()
+    {
+        m_CachedDataRanges = null;
+        if (m_StatsTexture)
+            DestroyImmediate(m_StatsTexture);
+    }
+    void CalcStats(string pointCloudFolder)
+    {
+        ClearStats();
+        NativeArray<GaussianSplatRenderer.InputSplat> splats = GaussianSplatRenderer.LoadPLYSplatFile(pointCloudFolder);
+        if (!splats.IsCreated)
+            return;
+
+        int itemSizeBytes = UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>();
+        int fieldCount = itemSizeBytes / 4;
+
+        if (!m_StatsTexture)
+            m_StatsTexture = new Texture2D(512, fieldCount * kRowHeight, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None);
+        NativeArray<Color32> statsPixels = new(m_StatsTexture.width * m_StatsTexture.height, Allocator.TempJob);
+        NativeArray<Vector2> statsRanges = new(fieldCount, Allocator.TempJob);
+
+        CalcStatsJob job;
+        job.pixelsWidth = m_StatsTexture.width;
+        job.pixelsHeight = m_StatsTexture.height;
+        job.pixels = statsPixels;
+        job.ranges = statsRanges;
+        job.data = splats.Reinterpret<float>(itemSizeBytes);
+        job.itemCount = splats.Length;
+        job.itemStrideInFloats = fieldCount;
+        job.Schedule(fieldCount, 1).Complete();
+
+        m_StatsTexture.SetPixelData(statsPixels, 0);
+        m_StatsTexture.Apply(false);
+        m_CachedDataRanges = new Vector2[fieldCount];
+        for (int i = 0; i < fieldCount; ++i)
+            m_CachedDataRanges[i] = statsRanges[i];
+
+        statsPixels.Dispose();
+        statsRanges.Dispose();
+        splats.Dispose();
     }
 }
