@@ -1,11 +1,34 @@
 #include <stdio.h>
 #include <vector>
+#include <algorithm>
 #include "compressors.h"
 #include "compression_helpers.h"
 #include "filters.h"
 #include "systeminfo.h"
 #include <math.h>
 #include <memory>
+
+/*
+Initial, just raw data compression on bicycle_7k, bicycle_30k, truck_7k:
+Compressor     SizeGB CTimeS  DTimeS   Ratio   CGB/s   DGB/s
+		 Raw   2.652
+  zstd-bd_n1   2.406   3.461   2.662   1.102   0.766   0.996
+   zstd-bd_1   2.178   4.031   2.964   1.218   0.658   0.894
+	  lz4-bd   2.413   2.934   2.615   1.099   0.904   1.014
+	 zstd_n1   2.456   3.905   0.386   1.080   0.679   6.870
+	  zstd_1   2.323   5.903   2.340   1.142   0.449   1.133
+		 lz4   2.501   2.289   0.353   1.060   1.159   7.514
+
+Morton3D reorder by 21 bits per axis: saves ~50MB raw, ~150-200MB bytedelta
+Compressor     SizeGB CTimeS  DTimeS   Ratio   CGB/s   DGB/s
+		 Raw   2.652
+  zstd-bd_n1   2.164   4.375   3.007   1.225   0.606   0.882
+   zstd-bd_1   2.043   5.524   3.278   1.298   0.480   0.809
+	  lz4-bd   2.207   3.677   2.578   1.201   0.721   1.029
+	 zstd_n1   2.405   3.741   0.380   1.102   0.709   6.982
+	  zstd_1   2.271   6.087   2.309   1.167   0.436   1.148
+		 lz4   2.473   2.292   0.342   1.072   1.157   7.752
+*/
 
 #define SOKOL_TIME_IMPL
 #include "../libs/sokol_time.h"
@@ -221,15 +244,14 @@ static std::vector<CompressorConfig> g_Compressors;
 
 static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 {
-	g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta, kBSize1M });
-	g_Compressors.push_back({ g_CompLZ4.get(), &g_FilterByteDelta, kBSize1M });
+	//g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta, kBSize1M });
+	//g_Compressors.push_back({ g_CompLZ4.get(), &g_FilterByteDelta, kBSize1M });
 
 	g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta });
 	g_Compressors.push_back({ g_CompLZ4.get(), &g_FilterByteDelta });
 
 	g_Compressors.push_back({ g_CompZstd.get() });
 	g_Compressors.push_back({ g_CompLZ4.get() });
-
 
 	size_t maxFloats = 0, totalFloats = 0;
 	for (int tfi = 0; tfi < testFileCount; ++tfi)
@@ -353,7 +375,12 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 		for (const Result& res : levelRes)
 		{
 			char nameBuf[1000];
-			snprintf(nameBuf, sizeof(nameBuf), "%s%i", cmpName.c_str(), res.level);
+			if (levelRes.size() == 1)
+				snprintf(nameBuf, sizeof(nameBuf), "%s", cmpName.c_str());
+			else if (res.level < 0)
+				snprintf(nameBuf, sizeof(nameBuf), "%s_n%i", cmpName.c_str(), abs(res.level));
+			else
+				snprintf(nameBuf, sizeof(nameBuf), "%s_%i", cmpName.c_str(), abs(res.level));
 			double csize = (double)res.size;
 			double ctime = res.cmpTime;
 			double dtime = res.decTime;
@@ -418,22 +445,117 @@ static bool ReadPlyFile(const char* path, std::vector<float>& dst, size_t& outVe
 	return true;
 }
 
+// Based on https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
+//
+// "Insert" two 0 bits after each of the 21 low bits of x
+static uint64_t MortonPart1By2(uint64_t x)
+{
+	x &= 0x1fffff;
+	x = (x ^ (x << 32)) & 0x1f00000000ffffull;
+	x = (x ^ (x << 16)) & 0x1f0000ff0000ffull;
+	x = (x ^ (x << 8)) & 0x100f00f00f00f00full;
+	x = (x ^ (x << 4)) & 0x10c30c30c30c30c3ull;
+	x = (x ^ (x << 2)) & 0x1249249249249249ull;
+	return x;
+}
+// Encode three 21-bit integers into 3D Morton order
+static uint64_t MortonEncode3(uint64_t x, uint64_t y, uint64_t z)
+{
+	return (MortonPart1By2(z) << 2) | (MortonPart1By2(y) << 1) | MortonPart1By2(x);
+}
+
+static void ReorderData(TestFile& tf)
+{
+	// The order of data points does not matter: arrange them in 3D Morton order,
+	// both for better data delta locality, and for better runtime access
+	// (neighboring points would likely get fetched together).
+
+	// Find bounding box of positions
+	float bmin[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
+	float bmax[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+	const float* data = tf.fileData.data();
+	for (size_t i = 0, dataIdx = 0; i < tf.vertexCount; ++i, dataIdx += tf.vertexStride / 4)
+	{
+		float x = data[dataIdx + 0], y = data[dataIdx + 1], z = data[dataIdx + 2];
+		bmin[0] = std::min(bmin[0], x);
+		bmin[1] = std::min(bmin[1], y);
+		bmin[2] = std::min(bmin[2], z);
+		bmax[0] = std::max(bmin[0], x);
+		bmax[1] = std::max(bmax[1], y);
+		bmax[2] = std::max(bmax[2], z);
+	}
+	printf("- %s bounds %.2f,%.2f,%.2f .. %.2f,%.2f,%.2f\n", tf.title, bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+
+	// Compute Morton codes for the positions, and sort by them
+	std::vector<std::pair<uint64_t, size_t>> remap(tf.vertexCount);
+	const float kScaler = float((1<<21)-1);
+	for (size_t i = 0, dataIdx = 0; i < tf.vertexCount; ++i, dataIdx += tf.vertexStride / 4)
+	{
+		float x = (data[dataIdx + 0] - bmin[0]) / (bmax[0] - bmin[0]) * kScaler;
+		float y = (data[dataIdx + 1] - bmin[1]) / (bmax[1] - bmin[1]) * kScaler;
+		float z = (data[dataIdx + 2] - bmin[2]) / (bmax[2] - bmin[2]) * kScaler;
+		uint32_t ix = (uint32_t)x;
+		uint32_t iy = (uint32_t)y;
+		uint32_t iz = (uint32_t)z;
+		uint64_t code = MortonEncode3(ix, iy, iz);
+		remap[i] = { code, i };
+	}
+	std::sort(remap.begin(), remap.end(), [](const auto& a, const auto& b)
+	{
+		if (a.first != b.first)
+			return a.first < b.first;
+		return a.second < b.second;
+	});
+
+	// Reorder the data
+	std::vector<float> dst(tf.fileData.size());
+	for (size_t i = 0, idx = 0; i < tf.vertexCount; ++i)
+	{
+		size_t srcIdx = remap[i].second * (tf.vertexStride / 4);
+		for (size_t j = 0; j < tf.vertexStride / 4; ++j)
+			dst[idx + j] = data[srcIdx + j];
+		idx += tf.vertexStride / 4;
+	}
+
+	// Reverse reorder the data and check if it matches the source
+	/*
+	std::vector<float> check(tf.fileData.size());
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		size_t srcIdx = i * (tf.vertexStride / 4);
+		size_t dstIdx = remap[i].second * (tf.vertexStride / 4);
+		for (size_t j = 0; j < tf.vertexStride / 4; ++j)
+			check[dstIdx + j] = dst[srcIdx + j];
+	}
+	if (0 != memcmp(data, check.data(), check.size() * 4))
+	{
+		printf("ERROR in Morton3D remapping of %s\n", tf.title);
+	}
+	*/
+
+	tf.fileData.swap(dst);
+}
+
 int main()
 {
 	stm_setup();
 	printf("CPU: '%s' Compiler: '%s'\n", SysInfoGetCpuName().c_str(), SysInfoGetCompilerName().c_str());
 
 	TestFile testFiles[] = {
+#ifdef _DEBUG
 		{"synthetic", "../../../../../Assets/Models~/synthetic/point_cloud/iteration_7000/point_cloud.ply"},
 		{"bicycle_crop", "../../../../../Assets/Models~/bicycle_cropped/point_cloud/iteration_7000/point_cloud.ply"},
-		//{"bicycle_7k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_7000/point_cloud.ply"},
-		//{"bicycle_30k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_30000/point_cloud.ply"},
-		//{"truck_7k", "../../../../../Assets/Models~/truck/point_cloud/iteration_7000/point_cloud.ply"},
+#else
+		{"bicycle_7k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_7000/point_cloud.ply"},
+		{"bicycle_30k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_30000/point_cloud.ply"},
+		{"truck_7k", "../../../../../Assets/Models~/truck/point_cloud/iteration_7000/point_cloud.ply"},
+#endif
 	};
 	for (auto& tf : testFiles)
 	{
 		if (!ReadPlyFile(tf.path, tf.fileData, tf.vertexCount, tf.vertexStride))
 			return 1;
+		ReorderData(tf);
 	}
 	TestCompressors(std::size(testFiles), testFiles);
 	return 0;

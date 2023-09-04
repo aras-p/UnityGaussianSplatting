@@ -12,9 +12,9 @@ static std::vector<int> GetGenericLevelRange(CompressionFormat format)
     switch (format)
     {
     case kCompressionZstd:
-        return { -5, -1, 1, 5, 9 };
+        return { -1, 1 };
     case kCompressionLZ4:
-        return { -5, 0, 1, 9 };
+        return { 0 };
     default:
         return { 0 };
     }
