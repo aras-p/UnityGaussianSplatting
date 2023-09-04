@@ -55,39 +55,12 @@ public class SyntheticParams : MonoBehaviour
             dirX.z *= -1;
             dirY.z *= -1;
             dirZ.z *= -1;
-            string json = $@"
-{{""id"":{camIndex},
-""img_name"":""dummy{camIndex}"",
-""width"":1960,
-""height"":1090,
-""position"":[{pos.x}, {pos.y}, {pos.z}],
-""rotation"":[
-    [{dirX.x}, {dirY.x}, {dirZ.x}],
-    [{dirX.y}, {dirY.y}, {dirZ.y}],
-    [{dirX.z}, {dirY.z}, {dirZ.z}]],
-""fx"":1160.3,
-""fy"":1160.5
-}}";
-            /*
-            string json = $@"
-{{""id"":{camIndex},
-""img_name"":""dummy{camIndex}"",
-""width"":4946,
-""height"":3286,
-""position"":[{-tr.position.x}, {-tr.position.y}, {-tr.position.z}],
-""rotation"":[
-    [{dirX.x}, {dirY.x}, {dirZ.x}],
-    [{dirX.y}, {dirY.y}, {dirZ.y}],
-    [{dirX.z}, {dirY.z}, {dirZ.z}]],
-""fx"":4627.3,
-""fy"":4649.5
-}}";
-*/
+            string json = $@"{{""id"":{camIndex}, ""img_name"":""dummy{camIndex}"", ""width"":1960, ""height"":1090, ""position"":[{pos.x}, {pos.y}, {pos.z}], ""rotation"":[[{dirX.x}, {dirY.x}, {dirZ.x}], [{dirX.y}, {dirY.y}, {dirZ.y}], [{dirX.z}, {dirY.z}, {dirZ.z}]], ""fx"":1160.3, ""fy"":1160.5}}";
             cameraJsons.Add(json);
             ++camIndex;
         }
 
-        var allCameraJsons = "[\n" + string.Join(",", cameraJsons) + "\n]";
+        var allCameraJsons = "[\n" + string.Join(",\n", cameraJsons) + "\n]";
         File.WriteAllText($"{folderPath}/cameras.json", allCameraJsons);
 
         // cfg_args

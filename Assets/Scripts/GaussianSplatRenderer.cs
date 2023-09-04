@@ -117,7 +117,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         string num = "([\\-\\d\\.]+)";
         string vec = $"\\[{num},\\s*{num},\\s*{num}\\]";
         json = System.Text.RegularExpressions.Regex.Replace(json,
-            $"\"rotation\": \\[{vec},\\s*{vec},\\s*{vec}\\]",
+            $"\"rotation\":\\s*\\[{vec},\\s*{vec},\\s*{vec}\\]",
             "\"rotx\":[$1,$2,$3], \"roty\":[$4,$5,$6], \"rotz\":[$7,$8,$9]"
         );
         json = $"{{ \"cameras\": {json} }}";
