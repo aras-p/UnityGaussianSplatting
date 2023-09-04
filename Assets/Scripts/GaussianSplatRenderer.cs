@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+[BurstCompile]
 public class GaussianSplatRenderer : MonoBehaviour
 {
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
@@ -60,7 +62,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public GraphicsBuffer gpuSplatData => m_GpuData;
     public CameraData[] cameras => m_Cameras;
 
-    public static NativeArray<InputSplat> LoadPLYSplatFile(string folder, bool use30k)
+    public static unsafe NativeArray<InputSplat> LoadPLYSplatFile(string folder, bool use30k)
     {
         NativeArray<InputSplat> data = default;
         string plyPath = $"{folder}/{(use30k ? kPointCloud30kPly : kPointCloudPly)}";
@@ -70,7 +72,38 @@ public class GaussianSplatRenderer : MonoBehaviour
         PLYFileReader.ReadFile(plyPath, out splatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
         if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
             throw new Exception($"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplat>()} file has {vertexStride}");
+
+        // reorder SHs
+        NativeArray<float> floatData = verticesRawData.Reinterpret<float>(1);
+        ReorderSHs(splatCount, (float*)floatData.GetUnsafePtr());
+
+
         return verticesRawData.Reinterpret<InputSplat>(1);
+    }
+
+    [BurstCompile]
+    static unsafe void ReorderSHs(int splatCount, float* data)
+    {
+        int splatStride = UnsafeUtility.SizeOf<InputSplat>() / 4;
+        int shStartOffset = 9, shCount = 15;
+        float* tmp = stackalloc float[shCount * 3];
+        int idx = shStartOffset;
+        for (int i = 0; i < splatCount; ++i)
+        {
+            for (int j = 0; j < shCount; ++j)
+            {
+                tmp[j * 3 + 0] = data[idx];
+                tmp[j * 3 + 1] = data[idx + shCount];
+                tmp[j * 3 + 2] = data[idx + shCount * 2];
+            }
+
+            for (int j = 0; j < shCount * 3; ++j)
+            {
+                data[idx + j] = tmp[j];
+            }
+
+            idx += splatStride;
+        }
     }
 
     static CameraData[] LoadJsonCamerasFile(string folder)
