@@ -12,7 +12,7 @@ Shader "Gaussian Splatting/Render Splats"
         {
             ZWrite Off
             Blend OneMinusDstAlpha One
-            Cull Front
+            Cull Off
             
 CGPROGRAM
 #pragma vertex vert
@@ -41,17 +41,6 @@ struct v2f
     float2 centerScreenPos : TEXCOORD3;
     float3 conic : TEXCOORD4;
     float4 vertex : SV_POSITION;
-};
-
-static const int kCubeIndices[36] =
-{
-    //@TODO: cube face flip opts from https://twitter.com/SebAaltonen/status/1315985267258519553?lang=en
-    0, 1, 2, 1, 3, 2,
-    4, 6, 5, 5, 6, 7,
-    0, 2, 4, 4, 2, 6,
-    1, 5, 3, 5, 7, 3,
-    0, 4, 1, 4, 5, 1,
-    2, 3, 6, 3, 7, 6
 };
 
 static const float SH_C0 = 0.2820948;
@@ -112,40 +101,55 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     instID = _OrderBuffer[instID];
     InputSplat splat = _DataBuffer[instID];
 
-    int boxIdx = kCubeIndices[vtxID];
-    float3 boxLocalPos = float3(boxIdx&1, (boxIdx>>1)&1, (boxIdx>>2)&1) * 2.0 - 1.0;
     float4 boxRot = normalize(splat.rot.yzwx); //@TODO: move normalize and swizzle offline
     float3 boxSize = exp(splat.scale); //@TODO: move exp offline
     boxSize *= _SplatScale;
 
     float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
 
-    #if 0
-    boxLocalPos *= boxSize * 2;
-    float3 boxPos = QuatRotateVector(boxLocalPos, boxRot);
-    #else
-    float3 boxPos = mul(splatRotScaleMat, boxLocalPos) * 2;
-    #endif
-    boxPos.z *= -1;
-
     float3 centerWorldPos = splat.pos * float3(1,1,-1);
-    float3 worldPos = centerWorldPos + boxPos;
 
-    float3 viewDir = normalize(UnityWorldSpaceViewDir(worldPos));
+    float3 viewDir = normalize(UnityWorldSpaceViewDir(centerWorldPos));
 
-    o.vertex = UnityObjectToClipPos(worldPos);
     o.col.rgb = ShadeSH(splat, viewDir);
     o.col.a = Sigmoid(splat.opacity); //@TODO: move offline
 
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
-    o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
+	bool behindCam = centerClipPos.w <= 0;
+	centerClipPos /= centerClipPos.w;
+    o.centerScreenPos = (centerClipPos.xy * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
     float3 cov3d0, cov3d1;
     splatRotScaleMat[2] *= -1;
     CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
     float3 cov2d = CalcCovariance2D(centerWorldPos, cov3d0, cov3d1);
-    o.conic = CalcConic(cov2d);
+    //o.conic = CalcConic(cov2d);
 
+	// conic
+    float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
+	float3 conic = float3(cov2d.z, -cov2d.y, cov2d.x) * rcp(det);
+	o.conic = conic;
+
+	// make the quad in screenspace the required size to cover the extents
+	// of the 2D splat.
+	//@TODO: should be possible to orient the quad to cover an elongated
+	// splat tighter
+
+	// two bits per vertex index to result in 0,1,2,1,3,2 from lowest:
+	// 0b1011'0110'0100
+	uint quadIndices = 0xB64;
+	uint idx = quadIndices >> (vtxID * 2);
+    float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
+
+	float mid = 0.5f * (cov2d.x + cov2d.z);
+	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
+	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
+	float radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
+
+	float2 deltaScreenPos = quadPos * radius * 2 / _ScreenParams.xy;
+	o.vertex = float4(centerClipPos.xy + deltaScreenPos, 1, 1);
+	if (behindCam)
+		o.vertex = 0;
     return o;
 }
 

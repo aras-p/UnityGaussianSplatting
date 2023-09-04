@@ -203,7 +203,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             return;
 
         SortPoints(cam);
-        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 36, m_SplatCount, cam);
+        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 6, m_SplatCount, cam);
     }
 
     public void OnDisable()
