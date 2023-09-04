@@ -172,6 +172,10 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_Bounds.Encapsulate(pos);
         }
 
+        var bcen = m_Bounds.center;
+        bcen.z *= -1;
+        m_Bounds.center = bcen;
+
         m_GpuPositions = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 12);
         m_GpuPositions.SetData(inputPositions);
         inputPositions.Dispose();
