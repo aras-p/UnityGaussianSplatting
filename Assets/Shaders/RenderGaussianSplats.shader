@@ -64,7 +64,7 @@ static const float SH_C3[] = {
 
 half3 ShadeSH(InputSplat splat, float3 dir)
 {
-    dir.z *= -1;
+	dir *= -1;
 
     float x = dir.x, y = dir.y, z = dir.z;
 
