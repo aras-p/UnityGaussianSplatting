@@ -26,8 +26,8 @@ struct InputSplat
 {
     float3 pos;
     float3 nor;
-    float3 dc0;
-    float3 sh0, sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, sh10, sh11, sh12, sh13, sh14;
+    float3 sh0;
+    float3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, sh10, sh11, sh12, sh13, sh14, sh15;
     float opacity;
     float3 scale;
     float4 rot;
@@ -75,21 +75,33 @@ static const float SH_C3[] = {
 
 half3 ShadeSH(InputSplat splat, float3 dir)
 {
-    dir = -dir;
+    dir.z *= -1;
+
+    float x = dir.x, y = dir.y, z = dir.z;
 
     // ambient band
-    half3 res = SH_C0 * splat.dc0;
+    half3 res = SH_C0 * splat.sh0;
     // 1st degree
-    res = res - splat.sh0 * (dir.y * SH_C1) + splat.sh1 * (dir.z * SH_C1) - splat.sh2 * (dir.x * SH_C1);
+    res += - splat.sh1 * (y * SH_C1) + splat.sh2 * (z * SH_C1) - splat.sh3 * (x * SH_C1);
     // 2nd degree
-    res = res +
-        (SH_C2[0] * dir.x * dir.y) * splat.sh4 +
-		(SH_C2[1] * dir.y * dir.z) * splat.sh5 +
-		(SH_C2[2] * (2 * dir.z * dir.z - dir.x * dir.x - dir.y * dir.y)) * splat.sh6 +
-		(SH_C2[3] * dir.x * dir.z) * splat.sh7 +
-		(SH_C2[4] * (dir.x * dir.x - dir.y * dir.y)) * splat.sh8;
-    //@TODO 3rd degree
-    return saturate(res + 0.5);
+    float xx = x * x, yy = y * y, zz = z * z;
+    float xy = x * y, yz = y * z, xz = x * z;
+    res +=
+        (SH_C2[0] * xy) * splat.sh4 +
+		(SH_C2[1] * yz) * splat.sh5 +
+		(SH_C2[2] * (2 * zz - xx - yy)) * splat.sh6 +
+		(SH_C2[3] * xz) * splat.sh7 +
+		(SH_C2[4] * (xx - yy)) * splat.sh8;
+    // 3rd degree
+    res +=
+		(SH_C3[0] * y * (3 * xx - yy)) * splat.sh9 +
+		(SH_C3[1] * xy * z) * splat.sh10 +
+		(SH_C3[2] * y * (4 * zz - xx - yy)) * splat.sh11 +
+		(SH_C3[3] * z * (2 * zz - 3 * xx - 3 * yy)) * splat.sh12 +
+		(SH_C3[4] * x * (4 * zz - xx - yy)) * splat.sh13 +
+		(SH_C3[5] * z * (xx - yy)) * splat.sh14 +
+		(SH_C3[6] * x * (xx - 3.0f * yy)) * splat.sh15;
+    return max(res + 0.5, 0);
 }
 
 float _SplatScale;
