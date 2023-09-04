@@ -15,7 +15,7 @@ Both the sorting and the "just draw each splat as a particle" are simple to impl
 
 ## Usage
 
-- Within Unity, there's a `Scene.unity` that has a `GaussianSplatRenderer` script attached to it.
+- Within Unity (2022.3), there's a `Scene.unity` that has a `GaussianSplatRenderer` script attached to it.
 - You need to point it to a "model" directory (the paper [github page](https://github.com/graphdeco-inria/gaussian-splatting) has a "pre-trained models" link to some). The model directory is expected to contain `cameras.json` and
   `point_cloud/iteration_7000/point_cloud.ply` inside of it.
 - Press play.
