@@ -8,7 +8,7 @@ I've decided to try to implement the realtime visualization part (i.e. the one t
 ![Screenshot](/Screenshot01.png?raw=true "Screenshot")
 
 The original paper code has a purely CUDA-based realtime renderer; other
-people have done WebGPU based visualizers and so on (e.g. [cvlab-epfl/gaussian-splatting-web](https://github.com/cvlab-epfl/gaussian-splatting-web)).
+people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://github.com/cvlab-epfl/gaussian-splatting-web), Taichi at [wanmeihuali](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting), etc.).
 
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
 - The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as a screenspace aligned rectangle that covers the extents of it.
