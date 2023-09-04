@@ -53,7 +53,7 @@ struct TestFile
 {
 	const char* title = nullptr;
 	const char* path = nullptr;
-	std::vector<float> fileData;
+	std::vector<uint8_t> fileData;
 	size_t vertexCount = 0;
 	size_t vertexStride = 0;
 };
@@ -111,13 +111,13 @@ struct CompressorConfig
 
 	uint8_t* CompressWhole(const TestFile& tf, int level, size_t& outCompressedSize)
 	{
-		const float* srcData = tf.fileData.data();
+		const uint8_t* srcData = tf.fileData.data();
 		uint8_t* filterBuffer = nullptr;
 		if (filter)
 		{
-			filterBuffer = new uint8_t[4 * tf.fileData.size()];
-			filter->filterFunc((const uint8_t*)srcData, filterBuffer, tf.vertexStride, tf.vertexCount);
-			srcData = (const float*)filterBuffer;
+			filterBuffer = new uint8_t[tf.fileData.size()];
+			filter->filterFunc(srcData, filterBuffer, tf.vertexStride, tf.vertexCount);
+			srcData = filterBuffer;
 		}
 
 		outCompressedSize = 0;
@@ -139,8 +139,8 @@ struct CompressorConfig
 		if (filter)
 			filterBuffer = new uint8_t[blockSize];
 
-		const size_t dataSize = 4 * tf.fileData.size();
-		const uint8_t* srcData = (const uint8_t*)tf.fileData.data();
+		const size_t dataSize = tf.fileData.size();
+		const uint8_t* srcData = tf.fileData.data();
 		uint8_t* compressed = new uint8_t[dataSize + 4];
 		size_t srcOffset = 0;
 		size_t cmpOffset = 0;
@@ -153,7 +153,7 @@ struct CompressorConfig
 			}
 			size_t thisCmpSize = 0;
 			uint8_t* thisCmp = cmp->Compress(level,
-				(const float*)(filter ? filterBuffer : srcData + srcOffset),
+				(filter ? filterBuffer : srcData + srcOffset),
 				thisBlockSize / tf.vertexStride,
 				tf.vertexStride,
 				thisCmpSize);
@@ -180,21 +180,21 @@ struct CompressorConfig
 		return compressed;
 	}
 
-	void DecompressWhole(const TestFile& tf, const uint8_t* compressed, size_t compressedSize, float* dst)
+	void DecompressWhole(const TestFile& tf, const uint8_t* compressed, size_t compressedSize, uint8_t* dst)
 	{
 		uint8_t* filterBuffer = nullptr;
 		if (filter)
-			filterBuffer = new uint8_t[4 * tf.fileData.size()];
-		cmp->Decompress(compressed, compressedSize, filter == nullptr ? dst : (float*)filterBuffer, tf.vertexCount, tf.vertexStride);
+			filterBuffer = new uint8_t[tf.fileData.size()];
+		cmp->Decompress(compressed, compressedSize, filter == nullptr ? dst : filterBuffer, tf.vertexCount, tf.vertexStride);
 
 		if (filter)
 		{
-			filter->unfilterFunc(filterBuffer, (uint8_t*)dst, tf.vertexStride, tf.vertexCount);
+			filter->unfilterFunc(filterBuffer, dst, tf.vertexStride, tf.vertexCount);
 			delete[] filterBuffer;
 		}
 	}
 
-	void Decompress(const TestFile& tf, const uint8_t* compressed, size_t compressedSize, float* dst)
+	void Decompress(const TestFile& tf, const uint8_t* compressed, size_t compressedSize, uint8_t* dst)
 	{
 		if (blockSizeEnum == kBSizeNone)
 		{
@@ -218,8 +218,8 @@ struct CompressorConfig
 		if (filter)
 			filterBuffer = new uint8_t[blockSize];
 
-		uint8_t* dstData = (uint8_t*)dst;
-		const size_t dataSize = 4 * tf.fileData.size();
+		uint8_t* dstData = dst;
+		const size_t dataSize = tf.fileData.size();
 		
 		size_t cmpOffset = 0;
 		size_t dstOffset = 0;
@@ -228,7 +228,7 @@ struct CompressorConfig
 			size_t thisBlockSize = std::min(blockSize, dataSize - dstOffset);
 
 			uint32_t thisCmpSize = *(const uint32_t*)(compressed + cmpOffset);
-			cmp->Decompress(compressed + cmpOffset + 4, thisCmpSize, (float*)(filter == nullptr ? dstData + dstOffset : filterBuffer), thisBlockSize / tf.vertexStride, tf.vertexStride);
+			cmp->Decompress(compressed + cmpOffset + 4, thisCmpSize, (filter == nullptr ? dstData + dstOffset : filterBuffer), thisBlockSize / tf.vertexStride, tf.vertexStride);
 
 			if (filter)
 				filter->unfilterFunc(filterBuffer, dstData + dstOffset, tf.vertexStride, thisBlockSize / tf.vertexStride);
@@ -253,15 +253,15 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 	g_Compressors.push_back({ g_CompZstd.get() });
 	g_Compressors.push_back({ g_CompLZ4.get() });
 
-	size_t maxFloats = 0, totalFloats = 0;
+	size_t maxSize = 0, totalSize = 0;
 	for (int tfi = 0; tfi < testFileCount; ++tfi)
 	{
-		size_t floats = testFiles[tfi].fileData.size();
-		maxFloats = std::max(maxFloats, floats);
-		totalFloats += floats;
+		size_t size = testFiles[tfi].fileData.size();
+		maxSize = std::max(maxSize, size);
+		totalSize += size;
 	}
 
-	std::vector<float> decompressed(maxFloats);
+	std::vector<uint8_t> decompressed(maxSize);
 
 	struct Result
 	{
@@ -298,7 +298,7 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 				{
 					const TestFile& tf = testFiles[tfi];
 
-					const float* srcData = tf.fileData.data();
+					const uint8_t* srcData = tf.fileData.data();
 					SysInfoFlushCaches();
 
 					// compress
@@ -308,7 +308,7 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 					double tComp = stm_sec(stm_since(t0));
 
 					// decompress
-					memset(decompressed.data(), 0, 4 * tf.fileData.size());
+					memset(decompressed.data(), 0, tf.fileData.size());
 					SysInfoFlushCaches();
 					t0 = stm_now();
 					config.Decompress(tf, compressed, compressedSize, decompressed.data());
@@ -320,18 +320,16 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 					res.decTime += tDecomp;
 
 					// check validity
-					if (memcmp(tf.fileData.data(), decompressed.data(), 4 * tf.fileData.size()) != 0)
+					if (memcmp(tf.fileData.data(), decompressed.data(), tf.fileData.size()) != 0)
 					{
 						printf("  ERROR, %s level %i did not decompress back to input on %s\n", cmpName.c_str(), res.level, tf.path);
-						for (size_t i = 0; i < 4 * tf.fileData.size(); ++i)
+						for (size_t i = 0; i < tf.fileData.size(); ++i)
 						{
-							float va = tf.fileData[i];
-							float vb = decompressed[i];
-							uint32_t ia = ((const uint32_t*)tf.fileData.data())[i];
-							uint32_t ib = ((const uint32_t*)decompressed.data())[i];
+							uint8_t va = tf.fileData[i];
+							uint8_t vb = decompressed[i];
 							if (va != vb)
 							{
-								printf("    diff at #%zi: exp %f got %f (%08x %08x)\n", i, va, vb, ia, ib);
+								printf("    diff at #%zi: exp %i got %i\n", i, va, vb);
 								break;
 							}
 						}
@@ -364,7 +362,7 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 
 	double oneMB = 1024.0 * 1024.0;
 	double oneGB = oneMB * 1024.0;
-	double rawSize = (double)(totalFloats * 4);
+	double rawSize = (double)totalSize;
 	// print results to screen
 	printf("Compressor     SizeGB CTimeS  DTimeS   Ratio   CGB/s   DGB/s\n");
 	printf("%12s %7.3f\n", "Raw", rawSize / oneGB);
@@ -395,7 +393,7 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 	g_Compressors.clear();
 }
 
-static bool ReadPlyFile(const char* path, std::vector<float>& dst, size_t& outVertexCount, size_t& outStride)
+static bool ReadPlyFile(const char* path, std::vector<uint8_t>& dst, size_t& outVertexCount, size_t& outStride)
 {
 	FILE* f = fopen(path, "rb");
 	if (f == nullptr)
@@ -437,7 +435,7 @@ static bool ReadPlyFile(const char* path, std::vector<float>& dst, size_t& outVe
 		printf("ERROR: expect vertex stride %zi, file %s had %i\n", kStride, path, vertexStride);
 		return false;
 	}
-	dst.resize(vertexCount * kStride / 4);
+	dst.resize(vertexCount * kStride);
 	fread(dst.data(), kStride, vertexCount, f);
 
 	outVertexCount = vertexCount;
@@ -473,10 +471,10 @@ static void ReorderData(TestFile& tf)
 	// Find bounding box of positions
 	float bmin[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
 	float bmax[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
-	const float* data = tf.fileData.data();
+	const float* posData = (const float*)tf.fileData.data();
 	for (size_t i = 0, dataIdx = 0; i < tf.vertexCount; ++i, dataIdx += tf.vertexStride / 4)
 	{
-		float x = data[dataIdx + 0], y = data[dataIdx + 1], z = data[dataIdx + 2];
+		float x = posData[dataIdx + 0], y = posData[dataIdx + 1], z = posData[dataIdx + 2];
 		bmin[0] = std::min(bmin[0], x);
 		bmin[1] = std::min(bmin[1], y);
 		bmin[2] = std::min(bmin[2], z);
@@ -491,9 +489,9 @@ static void ReorderData(TestFile& tf)
 	const float kScaler = float((1<<21)-1);
 	for (size_t i = 0, dataIdx = 0; i < tf.vertexCount; ++i, dataIdx += tf.vertexStride / 4)
 	{
-		float x = (data[dataIdx + 0] - bmin[0]) / (bmax[0] - bmin[0]) * kScaler;
-		float y = (data[dataIdx + 1] - bmin[1]) / (bmax[1] - bmin[1]) * kScaler;
-		float z = (data[dataIdx + 2] - bmin[2]) / (bmax[2] - bmin[2]) * kScaler;
+		float x = (posData[dataIdx + 0] - bmin[0]) / (bmax[0] - bmin[0]) * kScaler;
+		float y = (posData[dataIdx + 1] - bmin[1]) / (bmax[1] - bmin[1]) * kScaler;
+		float z = (posData[dataIdx + 2] - bmin[2]) / (bmax[2] - bmin[2]) * kScaler;
 		uint32_t ix = (uint32_t)x;
 		uint32_t iy = (uint32_t)y;
 		uint32_t iz = (uint32_t)z;
@@ -508,30 +506,28 @@ static void ReorderData(TestFile& tf)
 	});
 
 	// Reorder the data
-	std::vector<float> dst(tf.fileData.size());
+	std::vector<uint8_t> dst(tf.fileData.size());
 	for (size_t i = 0, idx = 0; i < tf.vertexCount; ++i)
 	{
-		size_t srcIdx = remap[i].second * (tf.vertexStride / 4);
-		for (size_t j = 0; j < tf.vertexStride / 4; ++j)
-			dst[idx + j] = data[srcIdx + j];
-		idx += tf.vertexStride / 4;
+		size_t srcIdx = remap[i].second * tf.vertexStride;
+		for (size_t j = 0; j < tf.vertexStride; ++j)
+			dst[idx + j] = tf.fileData[srcIdx + j];
+		idx += tf.vertexStride;
 	}
 
 	// Reverse reorder the data and check if it matches the source
-	/*
-	std::vector<float> check(tf.fileData.size());
+	std::vector<uint8_t> check(tf.fileData.size());
 	for (size_t i = 0; i < tf.vertexCount; ++i)
 	{
-		size_t srcIdx = i * (tf.vertexStride / 4);
-		size_t dstIdx = remap[i].second * (tf.vertexStride / 4);
-		for (size_t j = 0; j < tf.vertexStride / 4; ++j)
+		size_t srcIdx = i * tf.vertexStride;
+		size_t dstIdx = remap[i].second * tf.vertexStride;
+		for (size_t j = 0; j < tf.vertexStride; ++j)
 			check[dstIdx + j] = dst[srcIdx + j];
 	}
-	if (0 != memcmp(data, check.data(), check.size() * 4))
+	if (0 != memcmp(tf.fileData.data(), check.data(), check.size()))
 	{
 		printf("ERROR in Morton3D remapping of %s\n", tf.title);
 	}
-	*/
 
 	tf.fileData.swap(dst);
 }
