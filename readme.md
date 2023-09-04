@@ -3,7 +3,11 @@
 SIGGRAPH 2023 had a paper "[3D Gaussian Splatting for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis that looks pretty cool!
 Check out their website, source code repository, data sets and so on.
 
-I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity. The original paper code has a purely CUDA-based realtime renderer; other
+I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity.
+
+![Screenshot](/Screenshot01.png?raw=true "Screenshot")
+
+The original paper code has a purely CUDA-based realtime renderer; other
 people have done WebGPU based visualizers and so on (e.g. [cvlab-epfl/gaussian-splatting-web](https://github.com/cvlab-epfl/gaussian-splatting-web)).
 
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
