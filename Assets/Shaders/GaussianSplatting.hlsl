@@ -58,7 +58,7 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1)
     viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
     viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
 
-    float focal = _ScreenParams.x * UNITY_MATRIX_P._m00 / 3;
+    float focal = _ScreenParams.x * UNITY_MATRIX_P._m00 / 2;
 
     float4x4 J = float4x4(
         focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z), 0,
