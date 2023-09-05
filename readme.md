@@ -34,3 +34,8 @@ Wishlist that I may or might not do at some point:
 - Make sorting faster,
 - Make rendering faster (actual tiled compute shader rasterizer),
 - Integrate better with "the rest" of rendering that might be in the scene.
+
+## External Code Used
+
+- [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
+- GPU sorting code adapted from [Tim Gfrerer blog post](https://poniesandlight.co.uk/reflect/bitonic_merge_sort/).

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using TinyJson;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -113,24 +115,19 @@ public class GaussianSplatRenderer : MonoBehaviour
             return null;
 
         string json = File.ReadAllText(path);
-        // JsonUtility does not support 2D arrays, so mogrify that into something else, argh
-        string num = "([\\-\\d\\.]+)";
-        string vec = $"\\[{num},\\s*{num},\\s*{num}\\]";
-        json = System.Text.RegularExpressions.Regex.Replace(json,
-            $"\"rotation\":\\s*\\[{vec},\\s*{vec},\\s*{vec}\\]",
-            "\"rotx\":[$1,$2,$3], \"roty\":[$4,$5,$6], \"rotz\":[$7,$8,$9]"
-        );
-        json = $"{{ \"cameras\": {json} }}";
-        var jsonCameras = JsonUtility.FromJson<JsonCameras>(json);
-        var result = new CameraData[jsonCameras.cameras.Length];
-        for (var camIndex = 0; camIndex < jsonCameras.cameras.Length; camIndex++)
+        var jsonCameras = JSONParser.FromJson<List<JsonCamera>>(json);
+        if (jsonCameras == null || jsonCameras.Count == 0)
+            return null;
+
+        var result = new CameraData[jsonCameras.Count];
+        for (var camIndex = 0; camIndex < jsonCameras.Count; camIndex++)
         {
-            var jsonCam = jsonCameras.cameras[camIndex];
+            var jsonCam = jsonCameras[camIndex];
             var pos = new Vector3(jsonCam.position[0], jsonCam.position[1], jsonCam.position[2]);
             // the matrix is a "view matrix", not "camera matrix" lol
-            var axisx = new Vector3(jsonCam.rotx[0], jsonCam.roty[0], jsonCam.rotz[0]);
-            var axisy = new Vector3(jsonCam.rotx[1], jsonCam.roty[1], jsonCam.rotz[1]);
-            var axisz = new Vector3(jsonCam.rotx[2], jsonCam.roty[2], jsonCam.rotz[2]);
+            var axisx = new Vector3(jsonCam.rotation[0][0], jsonCam.rotation[1][0], jsonCam.rotation[2][0]);
+            var axisy = new Vector3(jsonCam.rotation[0][1], jsonCam.rotation[1][1], jsonCam.rotation[2][1]);
+            var axisz = new Vector3(jsonCam.rotation[0][2], jsonCam.rotation[1][2], jsonCam.rotation[2][2]);
 
             pos.z *= -1;
             axisy *= -1;
@@ -242,16 +239,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         public int width;
         public int height;
         public float[] position;
-        public float[] rotx;
-        public float[] roty;
-        public float[] rotz;
+        public float[][] rotation;
         public float fx;
         public float fy;
-    }
-
-    [Serializable]
-    public class JsonCameras
-    {
-        public JsonCamera[] cameras;
     }
 }
