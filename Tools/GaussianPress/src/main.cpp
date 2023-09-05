@@ -7,6 +7,7 @@
 #include "systeminfo.h"
 #include <math.h>
 #include <memory>
+#include <meshoptimizer.h>
 
 /*
 Initial, just raw data compression on bicycle_7k, bicycle_30k, truck_7k:
@@ -28,10 +29,28 @@ Compressor     SizeGB CTimeS  DTimeS   Ratio   CGB/s   DGB/s
 	 zstd_n1   2.405   3.741   0.380   1.102   0.709   6.982
 	  zstd_1   2.271   6.087   2.309   1.167   0.436   1.148
 		 lz4   2.473   2.292   0.342   1.072   1.157   7.752
+	 meshopt   2.230   5.780   0.820   1.189   0.459   3.232
 */
 
 #define SOKOL_TIME_IMPL
 #include "../libs/sokol_time.h"
+
+
+struct FullVertex
+{
+	float px, py, pz;
+	float nx, ny, nz;
+	float dcr, dcg, dcb;
+	float shr[15];
+	float shg[15];
+	float shb[15];
+	float opacity;
+	float sx, sy, sz;
+	float rw, rx, ry, rz;
+};
+constexpr size_t kFullVertexStride = 248;
+constexpr size_t kFullVertexFloats = kFullVertexStride / 4;
+static_assert(sizeof(FullVertex) == kFullVertexStride);
 
 constexpr int kRuns = 1;
 
@@ -46,16 +65,22 @@ static FilterDesc g_FilterByteDelta = { "-bd", Filter_ByteDelta, UnFilter_ByteDe
 
 static std::unique_ptr<GenericCompressor> g_CompZstd = std::make_unique<GenericCompressor>(kCompressionZstd);
 static std::unique_ptr<GenericCompressor> g_CompLZ4 = std::make_unique<GenericCompressor>(kCompressionLZ4);
-static std::unique_ptr<Compressor> g_CompMeshOptZstd = std::make_unique<MeshOptCompressor>(kCompressionZstd);
+static std::unique_ptr<Compressor> g_CompMeshOpt = std::make_unique<MeshOptCompressor>(kCompressionCount);
 
 
 struct TestFile
 {
 	const char* title = nullptr;
 	const char* path = nullptr;
+	std::vector<uint8_t> origFileData;
 	std::vector<uint8_t> fileData;
 	size_t vertexCount = 0;
 	size_t vertexStride = 0;
+
+	FullVertex valMin;
+	FullVertex valMax;
+	FullVertex errMax;
+	FullVertex errAvg;
 };
 
 enum BlockSize
@@ -247,18 +272,20 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 	//g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta, kBSize1M });
 	//g_Compressors.push_back({ g_CompLZ4.get(), &g_FilterByteDelta, kBSize1M });
 
-	g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta });
+	//g_Compressors.push_back({ g_CompZstd.get(), &g_FilterByteDelta });
 	g_Compressors.push_back({ g_CompLZ4.get(), &g_FilterByteDelta });
 
-	g_Compressors.push_back({ g_CompZstd.get() });
+	//g_Compressors.push_back({ g_CompZstd.get() });
 	g_Compressors.push_back({ g_CompLZ4.get() });
+	//g_Compressors.push_back({ g_CompMeshOpt.get() }); //@TODO: fails with packed data
 
-	size_t maxSize = 0, totalSize = 0;
+	size_t maxSize = 0, totalPackedSize = 0, totalOrigSize = 0;
 	for (int tfi = 0; tfi < testFileCount; ++tfi)
 	{
 		size_t size = testFiles[tfi].fileData.size();
 		maxSize = std::max(maxSize, size);
-		totalSize += size;
+		totalOrigSize += testFiles[tfi].origFileData.size();
+		totalPackedSize += size;
 	}
 
 	std::vector<uint8_t> decompressed(maxSize);
@@ -362,10 +389,12 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 
 	double oneMB = 1024.0 * 1024.0;
 	double oneGB = oneMB * 1024.0;
-	double rawSize = (double)totalSize;
+	double fullSize = (double)totalOrigSize;
+	double packedSize = (double)totalPackedSize;
 	// print results to screen
 	printf("Compressor     SizeGB CTimeS  DTimeS   Ratio   CGB/s   DGB/s\n");
-	printf("%12s %7.3f\n", "Raw", rawSize / oneGB);
+	printf("%12s %7.3f\n", "Full", fullSize / oneGB);
+	printf("%12s %7.3f\n", "Packed", packedSize / oneGB);
 	for (size_t ic = 0; ic < g_Compressors.size(); ++ic)
 	{
 		cmpName = g_Compressors[ic].GetName();
@@ -382,9 +411,9 @@ static void TestCompressors(size_t testFileCount, TestFile* testFiles)
 			double csize = (double)res.size;
 			double ctime = res.cmpTime;
 			double dtime = res.decTime;
-			double ratio = rawSize / csize;
-			double cspeed = rawSize / ctime;
-			double dspeed = rawSize / dtime;
+			double ratio = packedSize / csize;
+			double cspeed = packedSize / ctime;
+			double dspeed = packedSize / dtime;
 			printf("%12s %7.3f %7.3f %7.3f %7.3f %7.3f %7.3f\n", nameBuf, csize/ oneGB, ctime, dtime, ratio, cspeed/oneGB, dspeed/oneGB);
 		}
 	}
@@ -464,6 +493,8 @@ static uint64_t MortonEncode3(uint64_t x, uint64_t y, uint64_t z)
 
 static void ReorderData(TestFile& tf)
 {
+	assert(tf.vertexStride == kFullVertexStride);
+
 	// The order of data points does not matter: arrange them in 3D Morton order,
 	// both for better data delta locality, and for better runtime access
 	// (neighboring points would likely get fetched together).
@@ -532,6 +563,309 @@ static void ReorderData(TestFile& tf)
 	tf.fileData.swap(dst);
 }
 
+static void NormalizeRotation(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	FullVertex* data = (FullVertex*)tf.fileData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		float x = data->rx;
+		float y = data->ry;
+		float z = data->rz;
+		float w = data->rw;
+		float len = sqrtf(x * x + y * y + z * z + w * w);
+		x /= len; y /= len; z /= len; w /= len;
+		data->rx = x;
+		data->ry = y;
+		data->rz = z;
+		data->rw = w;
+		data++;
+	}
+}
+
+static float Sigmoid(float v)
+{
+	return 1.0f / (1.0f + expf(-v));
+}
+
+static float InvSigmoid(float v)
+{
+	return logf(v / (std::max(1.0f - v, 1.0e-6f)));
+}
+
+
+static void LinearizeData(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	FullVertex* data = (FullVertex*)tf.fileData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		// opacity
+		data->opacity = Sigmoid(data->opacity);
+		// scale
+		{
+			data->sx = expf(data->sx);
+			data->sy = expf(data->sy);
+			data->sz = expf(data->sz);
+
+			data->sx = sqrtf(data->sx);
+			data->sy = sqrtf(data->sy);
+			data->sz = sqrtf(data->sz);
+			data->sx = sqrtf(data->sx);
+			data->sy = sqrtf(data->sy);
+			data->sz = sqrtf(data->sz);
+		}
+		data++;
+	}
+}
+
+static void UnlinearizeData(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	FullVertex* data = (FullVertex*)tf.fileData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		// opacity
+		data->opacity = InvSigmoid(data->opacity);
+		// scale
+		{
+			data->sx *= data->sx;
+			data->sy *= data->sy;
+			data->sz *= data->sz;
+			data->sx *= data->sx;
+			data->sy *= data->sy;
+			data->sz *= data->sz;
+
+			data->sx = logf(data->sx);
+			data->sy = logf(data->sy);
+			data->sz = logf(data->sz);
+		}
+		data++;
+	}
+}
+
+
+static void CalcMinMax(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	float* valMax = (float*)&tf.valMax;
+	float* valMin = (float*)&tf.valMin;
+	for (int i = 0; i < kFullVertexFloats; ++i)
+	{
+		valMax[i] = -FLT_MAX;
+		valMin[i] = FLT_MAX;
+	}
+	float* data = (float*)tf.fileData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		for (int j = 0; j < kFullVertexFloats; ++j)
+		{
+			float val = *data++;
+			valMax[j] = std::max(valMax[j], val);
+			valMin[j] = std::min(valMin[j], val);
+		}
+	}
+}
+
+struct PackedVertex
+{
+	uint16_t px, py, pz;
+	uint16_t dcr, dcg, dcb;
+	uint16_t shr[15];
+	uint16_t shg[15];
+	uint16_t shb[15];
+	uint16_t opacity;
+	uint16_t sx, sy, sz;
+	uint16_t rx, ry, rz, rw;
+};
+constexpr size_t kPackedVertexSize = sizeof(PackedVertex);
+
+static uint32_t Pack16(float vmin, float vmax, float v)
+{
+	v = (v - vmin) / (vmax - vmin);
+	return meshopt_quantizeUnorm(v, 16);
+}
+
+static float Unpack16(float vmin, float vmax, uint32_t u)
+{
+	float v = float(u) / float((1 << 16) - 1);
+	return vmin * (1 - v) + vmax * v;
+}
+
+#define PACK_POS(field)		dst->field = Pack16(tf.valMin.field, tf.valMax.field, src->field)
+#define PACK_DC(field)		dst->field = Pack16(tf.valMin.field, tf.valMax.field, src->field)
+#define PACK_OP(field)		dst->field = Pack16(tf.valMin.field, tf.valMax.field, src->field)
+#define PACK_SCALE(field)	dst->field = Pack16(tf.valMin.field, tf.valMax.field, src->field)
+#define PACK_ROT(field)		dst->field = Pack16(tf.valMin.field, tf.valMax.field, src->field)
+
+#define UNPACK_POS(field)	dst->field = Unpack16(tf.valMin.field, tf.valMax.field, src->field)
+#define UNPACK_DC(field)	dst->field = Unpack16(tf.valMin.field, tf.valMax.field, src->field)
+#define UNPACK_OP(field)	dst->field = Unpack16(tf.valMin.field, tf.valMax.field, src->field)
+#define UNPACK_SCALE(field)	dst->field = Unpack16(tf.valMin.field, tf.valMax.field, src->field)
+#define UNPACK_ROT(field)	dst->field = Unpack16(tf.valMin.field, tf.valMax.field, src->field)
+
+
+static void PackData(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	std::vector<uint8_t> dstData(tf.vertexCount * kPackedVertexSize);
+
+	const FullVertex* src = (const FullVertex*)tf.fileData.data();
+	PackedVertex* dst = (PackedVertex*)dstData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+
+		PACK_POS(px); PACK_POS(py); PACK_POS(pz);
+		PACK_DC(dcr); PACK_DC(dcg); PACK_DC(dcb);
+		for (int j = 0; j < 15; ++j)
+		{
+			dst->shr[j] = Pack16(tf.valMin.shr[j], tf.valMax.shr[j], src->shr[j]);
+			dst->shg[j] = Pack16(tf.valMin.shg[j], tf.valMax.shg[j], src->shg[j]);
+			dst->shb[j] = Pack16(tf.valMin.shb[j], tf.valMax.shb[j], src->shb[j]);
+		}
+		PACK_OP(opacity);
+		PACK_SCALE(sx); PACK_SCALE(sy); PACK_SCALE(sz);
+		PACK_ROT(rx); PACK_ROT(ry); PACK_ROT(rz); PACK_ROT(rw);
+		++src;
+		++dst;
+	}
+
+	tf.fileData.swap(dstData);
+	tf.vertexStride = kPackedVertexSize;
+}
+
+static void UnpackData(TestFile& tf)
+{
+	assert(tf.vertexStride == kPackedVertexSize);
+	std::vector<uint8_t> dstData(tf.vertexCount * kFullVertexStride);
+
+	const PackedVertex* src = (const PackedVertex*)tf.fileData.data();
+	FullVertex* dst = (FullVertex*)dstData.data();
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+
+		UNPACK_POS(px); UNPACK_POS(py); UNPACK_POS(pz);
+		UNPACK_DC(dcr); UNPACK_DC(dcg); UNPACK_DC(dcb);
+		for (int j = 0; j < 15; ++j)
+		{
+			dst->shr[j] = Unpack16(tf.valMin.shr[j], tf.valMax.shr[j], src->shr[j]);
+			dst->shg[j] = Unpack16(tf.valMin.shg[j], tf.valMax.shg[j], src->shg[j]);
+			dst->shb[j] = Unpack16(tf.valMin.shb[j], tf.valMax.shb[j], src->shb[j]);
+		}
+		UNPACK_OP(opacity);
+		UNPACK_SCALE(sx); UNPACK_SCALE(sy); UNPACK_SCALE(sz);
+		UNPACK_ROT(rx); UNPACK_ROT(ry); UNPACK_ROT(rz); UNPACK_ROT(rw);
+		++src;
+		++dst;
+	}
+
+	tf.fileData.swap(dstData);
+	tf.vertexStride = kFullVertexStride;
+}
+
+#undef PACK_POS
+#undef PACK_DC
+#undef PACK_OP
+#undef PACK_SCALE
+#undef PACK_ROT
+
+#undef UNPACK_POS
+#undef UNPACK_DC
+#undef UNPACK_OP
+#undef UNPACK_SCALE
+#undef UNPACK_ROT
+
+static void QuatConjugate(const float q[4], float r[4])
+{
+	r[0] = -q[0];
+	r[1] = -q[1];
+	r[2] = -q[2];
+	r[3] =  q[3];
+}
+
+static void QuatMul(const float a[4], const float b[4], float r[4])
+{
+	r[0] = a[3] * b[0] + (a[0] * b[3] + a[1] * b[2]) - a[2] * b[1];
+	r[1] = a[3] * b[1] + (a[1] * b[3] + a[2] * b[0]) - a[0] * b[2];
+	r[2] = a[3] * b[2] + (a[2] * b[3] + a[0] * b[1]) - a[1] * b[0];
+	r[3] = a[3] * b[3] - (a[3] * b[0] + a[1] * b[1]) - a[2] * b[2];
+}
+
+static void QuatNormalize(float q[4])
+{
+	float lensq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+	float len = 1.0f / lensq;
+	q[0] /= len; q[1] /= len; q[2] /= len; q[3] /= len;
+}
+
+static float QuatAngleBetween(const float q1[4], const float q2[4])
+{
+	float q1c[4];
+	QuatConjugate(q1, q1c);
+	float qm[4];
+	QuatMul(q1c, q2, qm);
+	QuatNormalize(qm);
+
+	float vecLenSq = qm[0] * qm[0] + qm[1] * qm[1] + qm[2] * qm[2];
+	float a = asinf(sqrtf(vecLenSq));
+	return a * 2;
+}
+
+static void CalcErrorFromOrig(TestFile& tf)
+{
+	assert(tf.vertexStride == kFullVertexStride);
+	memset(&tf.errMax, 0, sizeof(tf.errMax));
+	memset(&tf.errAvg, 0, sizeof(tf.errAvg));
+	const float* src1 = (const float*)tf.origFileData.data();
+	const float* src2 = (const float*)tf.fileData.data();
+	float* errSumPtr = (float*)&tf.errAvg;
+	float* errMaxPtr = (float*)&tf.errMax;
+	float errRotSum = 0;
+	float errRotMax = 0;
+	for (size_t i = 0; i < tf.vertexCount; ++i)
+	{
+		for (int j = 0; j < kFullVertexFloats; ++j)
+		{
+			float diff = fabsf(*src1 - *src2);
+			errSumPtr[j] += diff;
+			errMaxPtr[j] = std::max(errMaxPtr[j], diff);
+			++src1;
+			++src2;
+		}
+		// evaluate rotation error
+		{
+			const FullVertex& v1 = ((const FullVertex*)tf.origFileData.data())[i];
+			const FullVertex& v2 = ((const FullVertex*)tf.fileData.data())[i];
+			float q1[4] = { v1.rx, v1.ry, v1.rz, v1.rw };
+			float q2[4] = { v2.rx, v2.ry, v2.rz, v2.rw };
+			float diff = QuatAngleBetween(q1, q2);
+			errRotSum += diff;
+			errRotMax = std::max(errRotMax, diff);
+		}
+	}
+	for (int j = 0; j < kFullVertexFloats; ++j)
+	{
+		errSumPtr[j] /= tf.vertexCount;
+	}
+	float errRotAvg = errRotSum /= tf.vertexCount;
+
+	float errPosMax = std::max(tf.errMax.px, std::max(tf.errMax.py, tf.errMax.pz));
+	float errPosAvg = (tf.errAvg.px + tf.errAvg.py + tf.errAvg.pz) / 3.0f;
+	float errDcMax = std::max(tf.errMax.dcr, std::max(tf.errMax.dcg, tf.errMax.dcb));
+	float errDcAvg = (tf.errAvg.dcr + tf.errAvg.dcg + tf.errAvg.dcb) / 3.0f;
+	float errScaleMax = std::max(tf.errMax.sx, std::max(tf.errMax.sy, tf.errMax.sz));
+	float errScaleAvg = (tf.errAvg.sx + tf.errAvg.sy + tf.errAvg.sz) / 3.0f;
+
+	printf("Packing error on %s:\n", tf.title);
+	printf("  - pos avg %7.4f max %7.4f\n", errPosAvg, errPosMax);
+	printf("  - rot avg %7.4f max %7.4f\n", errRotAvg, errRotMax);
+	printf("  - scl avg %7.4f max %7.4f\n", errScaleAvg, errScaleMax);
+	printf("  - col avg %7.4f max %7.4f\n", errDcAvg, errDcMax);
+	printf("  - opa avg %7.4f max %7.4f\n", tf.errAvg.opacity, tf.errMax.opacity);
+}
+
+
+
 int main()
 {
 	stm_setup();
@@ -543,8 +877,8 @@ int main()
 		{"bicycle_crop", "../../../../../Assets/Models~/bicycle_cropped/point_cloud/iteration_7000/point_cloud.ply"},
 #else
 		{"bicycle_7k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_7000/point_cloud.ply"},
-		{"bicycle_30k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_30000/point_cloud.ply"},
-		{"truck_7k", "../../../../../Assets/Models~/truck/point_cloud/iteration_7000/point_cloud.ply"},
+		//{"bicycle_30k", "../../../../../Assets/Models~/bicycle/point_cloud/iteration_30000/point_cloud.ply"},
+		//{"truck_7k", "../../../../../Assets/Models~/truck/point_cloud/iteration_7000/point_cloud.ply"},
 #endif
 	};
 	for (auto& tf : testFiles)
@@ -552,7 +886,19 @@ int main()
 		if (!ReadPlyFile(tf.path, tf.fileData, tf.vertexCount, tf.vertexStride))
 			return 1;
 		ReorderData(tf);
+
+		tf.origFileData = tf.fileData;
+		NormalizeRotation(tf);
+		LinearizeData(tf);
+		CalcMinMax(tf);
+		PackData(tf);
 	}
 	TestCompressors(std::size(testFiles), testFiles);
+	for (auto& tf : testFiles)
+	{
+		UnpackData(tf);
+		UnlinearizeData(tf);
+		CalcErrorFromOrig(tf);
+	}
 	return 0;
 }
