@@ -1,6 +1,6 @@
 # Toy Gaussian Splatting playground in Unity
 
-SIGGRAPH 2023 had a paper "[3D Gaussian Splatting for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis that looks pretty cool!
+SIGGRAPH 2023 had a paper "[**3D Gaussian Splatting for Real-Time Radiance Field Rendering**](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis that looks pretty cool!
 Check out their website, source code repository, data sets and so on.
 
 I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity.
@@ -20,9 +20,12 @@ Both the sorting and the "just draw each splat as a particle" are simple to impl
 ## Usage
 
 - Within Unity (2022.3), there's a `Scene.unity` that has a `GaussianSplatRenderer` script attached to it.
-- You need to point it to a "model" directory (the paper [github page](https://github.com/graphdeco-inria/gaussian-splatting) has a "pre-trained models" link to some). The model directory is expected to contain `cameras.json` and
+- You need to point it to a "model" directory. The model directory is expected to contain `cameras.json` and
   `point_cloud/iteration_7000/point_cloud.ply` inside of it.
-- Press play.
+  - Since the models are quite large, I have not included any in this Github repo. The original [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
+    [14GB zip](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) of their models.
+- Press play. The gaussian splat renderer component inspector will have a slider to move the game view camera into one of the cameras from the model directory. Or you can just move the game/scene view camera
+  however you please.
 
 :warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. I told you so!
 
