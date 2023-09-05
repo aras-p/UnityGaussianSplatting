@@ -69,7 +69,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         NativeArray<InputSplat> data = default;
         string plyPath = $"{folder}/{(use30k ? kPointCloud30kPly : kPointCloudPly)}";
         if (!File.Exists(plyPath))
-            return data;
+        {
+            plyPath = $"{folder}/{kPointCloudPly}";
+            if (!File.Exists(plyPath))
+                return data;
+        }
+
         int splatCount = 0;
         PLYFileReader.ReadFile(plyPath, out splatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
         if (UnsafeUtility.SizeOf<InputSplat>() != vertexStride)
@@ -155,13 +160,22 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_Cameras = null;
         if (m_Material == null || m_CSSplatUtilities == null || m_CSGpuSort == null)
+        {
+            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} material/shader references are not set up");
             return;
+        }
+
         m_Cameras = LoadJsonCamerasFile(m_PointCloudFolder);
         m_SplatData = LoadPLYSplatFile(m_PointCloudFolder, m_Use30kVersion);
         m_SplatCount = m_SplatData.Length / m_ScaleDown;
+        if (m_SplatCount == 0)
+        {
+            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} has no splats to render");
+            return;
+        }
 
+        NativeArray<Vector3> inputPositions = new(m_SplatCount, Allocator.Temp);
         m_Bounds = new Bounds(m_SplatData[0].pos, Vector3.zero);
-        NativeArray<Vector3> inputPositions = new NativeArray<Vector3>(m_SplatCount, Allocator.Temp);
         for (var i = 0; i < m_SplatCount; ++i)
         {
             var pos = m_SplatData[i].pos;
