@@ -8,8 +8,8 @@
 //
 // Adaptations done compared to HDRP code:
 // - removed bits that were integrating into SRP RenderGraph thingy,
-// - made it work with non-power of two data sizes (internally pads to next power of two with dummy values)
 // - made buffer copy bit work with sizes larger than 4M.
+// - fixed it to work on Metal (and possibly some Vulkan impls) at small item counts.
 
 using System;
 using UnityEngine;
@@ -26,70 +26,16 @@ public struct IslandGPUSort
     /// </summary>
     public struct Args
     {
-        /// <summary>Count</summary>
+        /// <summary>Count, must be power of two.</summary>
         public uint             count;
         /// <summary>Defines the maximum height of the bitonic sort. Leave at zero for default full height.</summary>
         public uint             maxDepth;
-        /// <summary>Input Keys</summary>
-        public GraphicsBuffer   inputKeys;
-        /// <summary>Input Values</summary>
-        public GraphicsBuffer   inputValues;
-        /// <summary>Required runtime resources.</summary>
-        public SupportResources resources;
+        /// <summary>Keys</summary>
+        public GraphicsBuffer   keys;
+        /// <summary>Values</summary>
+        public GraphicsBuffer   values;
 
-        internal uint countPOT;
         internal int workGroupCount;
-    }
-
-    /// <summary>
-    /// Data structure containing the runtime resources that are bound by the command buffer.
-    /// </summary>
-    public struct SupportResources
-    {
-        /// <summary>Sorted key buffer.</summary>
-        public GraphicsBuffer sortBufferKeys;
-        /// <summary>Sorted values buffer.</summary>
-        public GraphicsBuffer sortBufferValues;
-
-        public int origCount;
-
-        /// <summary>
-        /// Load supporting resources from Render Graph Resources.
-        /// </summary>
-        /// <param name="renderGraphResources">Render Graph Resources</param>
-        /// <returns></returns>
-        public static SupportResources Load(int count)
-        {
-            var targets = GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopyDestination;
-
-            var origCount = count;
-            count = Mathf.NextPowerOfTwo(count);
-            var resources = new SupportResources
-            {
-                sortBufferKeys   = new GraphicsBuffer(targets, count, 4) { name = "Keys" },
-                sortBufferValues = new GraphicsBuffer(targets, count, 4) { name = "Values" },
-                origCount = origCount
-            };
-            return resources;
-        }
-
-        /// <summary>
-        /// Dispose the supporting resources.
-        /// </summary>
-        public void Dispose()
-        {
-            if (sortBufferKeys != null)
-            {
-                sortBufferKeys.Dispose();
-                sortBufferKeys = null;
-            }
-
-            if (sortBufferValues != null)
-            {
-                sortBufferValues.Dispose();
-                sortBufferValues = null;
-            }
-        }
     }
 
     private LocalKeyword[] m_Keywords;
@@ -132,25 +78,11 @@ public struct IslandGPUSort
 #endif
 
             cmd.SetComputeIntParam(computeShader, "_H", (int) h);
-            cmd.SetComputeIntParam(computeShader, "_Total", (int)args.countPOT);
-            cmd.SetComputeBufferParam(computeShader, 0, "_KeyBuffer", args.resources.sortBufferKeys);
-            cmd.SetComputeBufferParam(computeShader, 0, "_ValueBuffer", args.resources.sortBufferValues);
+            cmd.SetComputeIntParam(computeShader, "_Total", (int)args.count);
+            cmd.SetComputeBufferParam(computeShader, 0, "_KeyBuffer", args.keys);
+            cmd.SetComputeBufferParam(computeShader, 0, "_ValueBuffer", args.values);
             cmd.DispatchCompute(computeShader, 0, args.workGroupCount, 1, 1);
         }
-    }
-
-    void CopyBuffer(CommandBuffer cmd, GraphicsBuffer src, GraphicsBuffer dst, int origCount)
-    {
-        //disable all keywords for copy
-        foreach (var k in m_Keywords)
-            cmd.SetKeyword(computeShader, k, false);
-
-        int entriesToCopy = src.count * src.stride / 4;
-        cmd.SetComputeBufferParam(computeShader, 1, "_CopySrcBuffer", src);
-        cmd.SetComputeBufferParam(computeShader, 1, "_CopyDstBuffer", dst);
-        cmd.SetComputeIntParam(computeShader, "_OrigEntriesCount", origCount);
-        cmd.SetComputeIntParam(computeShader, "_CopyEntriesCount", entriesToCopy);
-        cmd.DispatchCompute(computeShader, 1, (entriesToCopy + 1023) / 1024, 1, 1);
     }
 
     static int DivRoundUp(int x, int y) => (x + y - 1) / y;
@@ -163,14 +95,11 @@ public struct IslandGPUSort
     public void Dispatch(CommandBuffer cmd, Args args)
     {
         Assert.IsNotNull(computeShader);
-        uint n = (uint)Mathf.NextPowerOfTwo((int)args.count);
+        Assert.IsTrue(Mathf.IsPowerOfTwo((int)args.count));
+        uint n = args.count;
 
-        CopyBuffer(cmd, args.inputKeys, args.resources.sortBufferKeys, args.resources.origCount);
-        CopyBuffer(cmd, args.inputValues, args.resources.sortBufferValues, args.resources.origCount);
-        
         computeShader.GetKernelThreadGroupSizes(0, out var workGroupSizeX, out var workGroupSizeY, out var workGroupSizeZ);
 
-        args.countPOT = n;
         args.workGroupCount = Math.Max(1, DivRoundUp((int) n, (int) workGroupSizeX * 2));
 
         if (args.maxDepth == 0 || args.maxDepth > n)

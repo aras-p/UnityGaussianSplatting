@@ -8,11 +8,10 @@
 //
 // Adaptations done compared to HDRP code:
 // - removed bits that were integrating into SRP RenderGraph thingy,
-// - made it work with non-power of two data sizes (internally pads to next power of two with dummy values)
 // - made buffer copy bit work with sizes larger than 4M.
+// - fixed it to work on Metal (and possibly some Vulkan impls) at small item counts.
 
 #pragma kernel Kernel
-#pragma kernel CopyBuffer
 
 #pragma use_dxc metal
 
@@ -29,12 +28,6 @@ struct Semantics
     uint3 groupID   : SV_GroupID;
     uint3 dispatchThreadID : SV_DispatchThreadID;
 };
-
-//resources for buffer copy
-RWByteAddressBuffer _CopySrcBuffer;
-RWByteAddressBuffer _CopyDstBuffer;
-uint _OrigEntriesCount;
-uint _CopyEntriesCount;
 
 static Semantics s_Semantics;
 
@@ -207,17 +200,3 @@ void Kernel(Semantics s)
     }
 #endif
 }
-
-[numthreads(1024, 1, 1)]
-void CopyBuffer(Semantics s)
-{
-    if (s.dispatchThreadID.x >= _CopyEntriesCount)
-        return;
-    if (s.dispatchThreadID.x >= _OrigEntriesCount)
-    {
-        _CopyDstBuffer.Store(s.dispatchThreadID.x << 2, 0u);
-        return;
-    }
-    _CopyDstBuffer.Store(s.dispatchThreadID.x << 2, _CopySrcBuffer.Load(s.dispatchThreadID.x << 2));
-}
-

@@ -194,18 +194,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, UnsafeUtility.SizeOf<InputSplat>());
         m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
 
-        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
-        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4);
+        int splatCountNextPot = Mathf.NextPowerOfTwo(m_SplatCount);
+        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
+        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
 
         m_Material.SetBuffer("_DataBuffer", m_GpuData);
         m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
 
         m_Sorter = new IslandGPUSort(m_CSGpuSort);
-        m_SorterArgs.inputKeys = m_GpuSortDistances;
-        m_SorterArgs.inputValues = m_GpuSortKeys;
-        m_SorterArgs.count = (uint)m_SplatCount;
-        m_SorterArgs.resources = IslandGPUSort.SupportResources.Load(m_SplatCount);
-        m_Material.SetBuffer("_OrderBuffer", m_SorterArgs.resources.sortBufferValues);
+        m_SorterArgs.keys = m_GpuSortDistances;
+        m_SorterArgs.values = m_GpuSortKeys;
+        m_SorterArgs.count = (uint)splatCountNextPot;
     }
 
     void OnPreCullCamera(Camera cam)
@@ -225,7 +224,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuPositions?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
-        m_SorterArgs.resources.Dispose();
     }
 
     void SortPoints(Camera cam)
@@ -236,8 +234,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", cam.worldToCameraMatrix);
         m_CSSplatUtilities.SetInt("_SplatCount", m_SplatCount);
+        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
         m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(0, (m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
         CommandBuffer cmd = new CommandBuffer {name = "GPUSort"};
