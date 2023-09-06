@@ -35,6 +35,11 @@ Wishlist that I may or might not do at some point:
 - Make rendering faster (actual tiled compute shader rasterizer),
 - Integrate better with "the rest" of rendering that might be in the scene.
 
+## Write-ups
+
+My own blog posts about all this _(so far... not that many!)_:
+* [Gaussian Splatting is pretty cool!](https://aras-p.info/blog/2023/09/05/Gaussian-Splatting-is-pretty-cool/) (2023 Sep)
+
 ## External Code Used
 
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
