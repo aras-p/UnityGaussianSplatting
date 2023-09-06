@@ -198,6 +198,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
         m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
 
+        // init keys buffer to splat indices
+        m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
+        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
+        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+
         m_Material.SetBuffer("_DataBuffer", m_GpuData);
         m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
 
@@ -229,14 +235,14 @@ public class GaussianSplatRenderer : MonoBehaviour
     void SortPoints(Camera cam)
     {
         // calculate distance to the camera for each splat
-        m_CSSplatUtilities.SetBuffer(0, "_InputPositions", m_GpuPositions);
-        m_CSSplatUtilities.SetBuffer(0, "_SplatSortDistances", m_GpuSortDistances);
-        m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
+        m_CSSplatUtilities.SetBuffer(1, "_InputPositions", m_GpuPositions);
+        m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
+        m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", cam.worldToCameraMatrix);
         m_CSSplatUtilities.SetInt("_SplatCount", m_SplatCount);
         m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(1, out uint gsX, out uint gsY, out uint gsZ);
+        m_CSSplatUtilities.Dispatch(1, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
         CommandBuffer cmd = new CommandBuffer {name = "GPUSort"};

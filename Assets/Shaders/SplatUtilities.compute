@@ -1,5 +1,6 @@
 #define GROUP_SIZE 1024
 
+#pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 
 StructuredBuffer<float3> _InputPositions;
@@ -10,13 +11,23 @@ uint _SplatCount;
 uint _SplatCountPOT;
 
 [numthreads(GROUP_SIZE,1,1)]
-void CSCalcDistances (uint3 id : SV_DispatchThreadID)
+void CSSetIndices (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
     if (idx >= _SplatCountPOT)
         return;
 
     _SplatSortKeys[idx] = idx;
+}
+
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCalcDistances (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCountPOT)
+        return;
+
     if (idx >= _SplatCount)
     {
         // fill pad-to-next-POT portion with dummy data that will never get sorted into regular data place
@@ -24,7 +35,9 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    float3 pos = mul(_WorldToCameraMatrix, float4(_InputPositions[idx] * float3(1,1,-1), 1)).xyz;
+    uint origIdx = _SplatSortKeys[idx];
+
+    float3 pos = mul(_WorldToCameraMatrix, float4(_InputPositions[origIdx] * float3(1,1,-1), 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html
     uint fu = asuint(pos.z);
     uint mask = -((int)(fu >> 31)) | 0x80000000;
