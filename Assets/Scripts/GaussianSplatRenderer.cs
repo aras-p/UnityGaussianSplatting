@@ -99,9 +99,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         {
             for (int j = 0; j < shCount; ++j)
             {
-                tmp[j * 3 + 0] = data[idx];
-                tmp[j * 3 + 1] = data[idx + shCount];
-                tmp[j * 3 + 2] = data[idx + shCount * 2];
+                tmp[j * 3 + 0] = data[idx + j];
+                tmp[j * 3 + 1] = data[idx + j + shCount];
+                tmp[j * 3 + 2] = data[idx + j + shCount * 2];
             }
 
             for (int j = 0; j < shCount * 3; ++j)

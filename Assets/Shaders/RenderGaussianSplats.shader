@@ -65,13 +65,14 @@ static const float SH_C3[] = {
 half3 ShadeSH(InputSplat splat, float3 dir)
 {
 	dir *= -1;
+	dir.z *= -1;
 
     float x = dir.x, y = dir.y, z = dir.z;
 
     // ambient band
     half3 res = SH_C0 * splat.sh0;
     // 1st degree
-    res += - splat.sh1 * (y * SH_C1) + splat.sh2 * (z * SH_C1) - splat.sh3 * (x * SH_C1);
+    res += SH_C1 * (-splat.sh1 * y + splat.sh2 * z - splat.sh3 * x);
     // 2nd degree
     float xx = x * x, yy = y * y, zz = z * z;
     float xy = x * y, yz = y * z, xz = x * z;
@@ -89,7 +90,7 @@ half3 ShadeSH(InputSplat splat, float3 dir)
 		(SH_C3[3] * z * (2 * zz - 3 * xx - 3 * yy)) * splat.sh12 +
 		(SH_C3[4] * x * (4 * zz - xx - yy)) * splat.sh13 +
 		(SH_C3[5] * z * (xx - yy)) * splat.sh14 +
-		(SH_C3[6] * x * (xx - 3.0f * yy)) * splat.sh15;
+		(SH_C3[6] * x * (xx - 3 * yy)) * splat.sh15;
     return max(res + 0.5, 0);
 }
 
