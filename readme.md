@@ -32,10 +32,10 @@ This is not a fast implementation yet!
 :warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. I told you so!
 
 Wishlist that I may or might not do at some point:
-- Look at ways to make the data sets smaller (both on-disk and in-memory),
-- Make sorting faster,
-- Make rendering faster (actual tiled compute shader rasterizer),
-- Integrate better with "the rest" of rendering that might be in the scene.
+- [ ] Make rendering faster (actual tiled compute shader rasterizer)
+- [ ] Look at ways to make the data sets smaller (both on-disk and in-memory)
+- [ ] Integrate better with "the rest" of rendering that might be in the scene
+- [x] Make sorting faster (bitonic -> FidelityFX radix sort)
 
 ## Write-ups
 
