@@ -221,9 +221,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
         m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
-        m_Material.SetBuffer("_DataBuffer", m_GpuData);
-        m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
-
         m_SorterIsland = new IslandGPUSort(m_CSIslandSort);
         m_SorterIslandArgs.keys = m_GpuSortDistances;
         m_SorterIslandArgs.values = m_GpuSortKeys;
@@ -241,6 +238,10 @@ public class GaussianSplatRenderer : MonoBehaviour
     {
         if (m_GpuData == null)
             return;
+
+        m_Material.SetBuffer("_InputPositions", m_GpuPositions);
+        m_Material.SetBuffer("_DataBuffer", m_GpuData);
+        m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
 
         SortPoints(cam);
         Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 6, m_SplatCount, cam);
