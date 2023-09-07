@@ -1,20 +1,43 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
-public class SyntheticParams : MonoBehaviour
+public class GaussianSplatGenSynthetic : ScriptableWizard
 {
-    public Color m_Color = Color.white;
+    [FolderPicker(nameKey:"SyntheticDataFolder")]
+    public string m_Folder = "Assets/Models~/synthetic";
 
-    public void OnDrawGizmos()
+    public int m_SplatCount = 10000;
+    public Vector3 m_PosRange = new Vector3(100,50,100);
+    public Vector2 m_ScaleRange = new Vector2(0.01f, 3.0f);
+    public Vector2 m_OpacityRange = new Vector2(0.1f, 1.0f);
+    [Range(0, 1)] public float m_ScaleUniformness = 0.7f;
+    public int m_RandomSeed = 1;
+
+    [MenuItem("Tools/Generate Synthetic Splat File")]
+    static void CreateWizard()
     {
-        Gizmos.color = m_Color;
-        Gizmos.DrawWireSphere(transform.position, Vector3.Dot(transform.lossyScale, new Vector3(0.33f,0.33f,0.33f))*0.55f);
+        DisplayWizard<GaussianSplatGenSynthetic>("Generate Synthetic Gaussian Splat File", "Create");
+    }
+
+    void OnWizardCreate()
+    {
+        GenerateSyntheticData();
+    }
+
+    void OnWizardUpdate()
+    {
+        errorString = null;
+        if (string.IsNullOrWhiteSpace(m_Folder))
+            errorString = "Specify output folder";
+
+        helpString =
+            $"File size of {m_SplatCount:N0} splats: {EditorUtility.FormatBytes((long) m_SplatCount * UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>())}";
     }
 
     static float InvSigmoid(float v)
@@ -23,60 +46,50 @@ public class SyntheticParams : MonoBehaviour
         return Mathf.Log(v / (1.0f - v));
     }
 
-    public struct InputPoint
+    struct InputPoint
     {
         public Vector3 pos;
         public Vector3 nor;
         public Color32 col;
     }
 
-    [MenuItem("Tools/Generate Synthetic Data")]
-    public static void GenSynData()
+    unsafe void GenerateSyntheticData()
     {
-        var folderPath = EditorUtility.SaveFolderPanel("Save PLY from scene", "Assets/Models~", "synthetic");
-        if (string.IsNullOrWhiteSpace(folderPath))
-            return;
-        System.IO.Directory.CreateDirectory(folderPath);
+        helpString = null;
+        Directory.CreateDirectory(m_Folder);
 
         // cameras.json
-        var cameras = FindObjectsOfType<Camera>().OrderBy(c => c.gameObject.name).ToArray();
         var cameraJsons = new List<string>();
-        int camIndex = 0;
-        foreach (var cam in cameras)
         {
-            var tr = cam.transform;
-            var pos = tr.position;
-            var dirX = tr.right;
-            var dirY = tr.up;
-            var dirZ = tr.forward;
+            var pos = new Vector3(0, 0, -m_PosRange.z * 1.5f);
+            var dirX = Vector3.right;
+            var dirY = Vector3.up;
+            var dirZ = Vector3.forward;
 
             pos.z *= -1;
             dirY *= -1;
             dirX.z *= -1;
             dirY.z *= -1;
             dirZ.z *= -1;
-            string json = $@"{{""id"":{camIndex}, ""img_name"":""dummy{camIndex}"", ""width"":1960, ""height"":1090, ""position"":[{pos.x}, {pos.y}, {pos.z}], ""rotation"":[[{dirX.x}, {dirY.x}, {dirZ.x}], [{dirX.y}, {dirY.y}, {dirZ.y}], [{dirX.z}, {dirY.z}, {dirZ.z}]], ""fx"":1160.3, ""fy"":1160.5}}";
+            string json = $@"{{""id"":0, ""img_name"":""dummy"", ""width"":1960, ""height"":1090, ""position"":[{pos.x}, {pos.y}, {pos.z}], ""rotation"":[[{dirX.x}, {dirY.x}, {dirZ.x}], [{dirX.y}, {dirY.y}, {dirZ.y}], [{dirX.z}, {dirY.z}, {dirZ.z}]], ""fx"":1160.3, ""fy"":1160.5}}";
             cameraJsons.Add(json);
-            ++camIndex;
         }
 
         var allCameraJsons = "[\n" + string.Join(",\n", cameraJsons) + "\n]";
-        File.WriteAllText($"{folderPath}/cameras.json", allCameraJsons);
+        File.WriteAllText($"{m_Folder}/cameras.json", allCameraJsons);
 
         // cfg_args
         var cfg_args =
             "Namespace(eval=True, images='images_4', model_path='./eval/dummy', resolution=1, sh_degree=3, source_path='f:/dummy/dummy', white_background=False)";
-        File.WriteAllText($"{folderPath}/cfg_args", cfg_args);
+        File.WriteAllText($"{m_Folder}/cfg_args", cfg_args);
 
         // splats
-        var splats = FindObjectsOfType<SyntheticParams>();
-
-        System.IO.Directory.CreateDirectory($"{folderPath}/point_cloud/iteration_7000");
-        FileStream fs = new FileStream($"{folderPath}/point_cloud/iteration_7000/point_cloud.ply", FileMode.Create,
+        Directory.CreateDirectory($"{m_Folder}/point_cloud/iteration_7000");
+        FileStream fs = new FileStream($"{m_Folder}/point_cloud/iteration_7000/point_cloud.ply", FileMode.Create,
             FileAccess.Write);
         fs.Write(Encoding.UTF8.GetBytes("ply\n"));
         fs.Write(Encoding.UTF8.GetBytes("format binary_little_endian 1.0\n"));
-        fs.Write(Encoding.UTF8.GetBytes($"element vertex {splats.Length}\n"));
+        fs.Write(Encoding.UTF8.GetBytes($"element vertex {m_SplatCount}\n"));
         fs.Write(Encoding.UTF8.GetBytes("property float x\n"));
         fs.Write(Encoding.UTF8.GetBytes("property float y\n"));
         fs.Write(Encoding.UTF8.GetBytes("property float z\n"));
@@ -141,63 +154,60 @@ public class SyntheticParams : MonoBehaviour
         fs.Write(Encoding.UTF8.GetBytes("property float rot_3\n"));
         fs.Write(Encoding.UTF8.GetBytes("end_header\n"));
 
-        NativeArray<InputPoint> pointData = new NativeArray<InputPoint>(splats.Length, Allocator.Temp);
-        NativeArray<GaussianSplatRenderer.InputSplat> splatData =
-            new NativeArray<GaussianSplatRenderer.InputSplat>(splats.Length, Allocator.Temp);
-        for (var si = 0; si < splats.Length; ++si)
-        {
-            SyntheticParams spl = splats[si];
-            Transform tr = spl.transform;
+        var fs2 = new FileStream($"{m_Folder}/input.ply", FileMode.Create, FileAccess.Write);
+        fs2.Write(Encoding.UTF8.GetBytes("ply\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("format binary_little_endian 1.0\n"));
+        fs2.Write(Encoding.UTF8.GetBytes($"element vertex {m_SplatCount}\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float x\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float y\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float z\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float nx\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float ny\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property float nz\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property uchar red\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property uchar green\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property uchar blue\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("property uchar alpha\n"));
+        fs2.Write(Encoding.UTF8.GetBytes("end_header\n"));
 
+        Random.InitState(m_RandomSeed == 0 ? Time.renderedFrameCount : m_RandomSeed);
+
+        for (var si = 0; si < m_SplatCount; ++si)
+        {
+            if (si % 100000 == 0)
+                EditorUtility.DisplayProgressBar("Generating Splats", m_SplatCount.ToString("N0"), (float)si / (float)m_SplatCount);
             GaussianSplatRenderer.InputSplat dat = default;
-            dat.pos = tr.position;
+            dat.pos = Random.insideUnitSphere;
+            dat.pos.Scale(m_PosRange);
             dat.pos.z *= -1;
-            dat.rot = tr.rotation;
+            dat.rot = Random.rotationUniform;
             // mirrored around Z axis
             dat.rot.x *= -1;
             dat.rot.y *= -1;
             // swizzle into their expected order
             dat.rot = new Quaternion(dat.rot.w, dat.rot.x, dat.rot.y, dat.rot.z);
-            dat.scale = tr.lossyScale * 0.25f;
+
+            float scale1 = Random.Range(m_ScaleRange.x, m_ScaleRange.y);
+            Vector3 scale2 = new Vector3(Random.Range(m_ScaleRange.x, m_ScaleRange.y), Random.Range(m_ScaleRange.x, m_ScaleRange.y), Random.Range(m_ScaleRange.x, m_ScaleRange.y));
+            dat.scale = Vector3.Lerp(scale2, new Vector3(scale1, scale1, scale1), m_ScaleUniformness);
             dat.scale = new Vector3(Mathf.Log(dat.scale.x), Mathf.Log(dat.scale.y), Mathf.Log(dat.scale.z));
-            dat.opacity = InvSigmoid(spl.m_Color.a);
+            dat.opacity = InvSigmoid(Random.Range(m_OpacityRange.x, m_OpacityRange.y));
             //@TODO proper SH
             dat.dc0 = new Vector3(2.0f, 1.0f, 0.5f);
-
-            splatData[si] = dat;
 
             InputPoint pt = default;
             pt.pos = dat.pos;
             pt.col = Color.white;
-            pointData[si] = pt;
+
+            fs.Write(new ReadOnlySpan<byte>(UnsafeUtility.AddressOf(ref dat), UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
+            fs2.Write(new ReadOnlySpan<byte>(UnsafeUtility.AddressOf(ref pt), UnsafeUtility.SizeOf<InputPoint>()));
         }
-        fs.Write(splatData.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
+        EditorUtility.ClearProgressBar();
         fs.Dispose();
+        fs2.Dispose();
 
-        fs = new FileStream($"{folderPath}/input.ply", FileMode.Create,
-            FileAccess.Write);
-        fs.Write(Encoding.UTF8.GetBytes("ply\n"));
-        fs.Write(Encoding.UTF8.GetBytes("format binary_little_endian 1.0\n"));
-        fs.Write(Encoding.UTF8.GetBytes($"element vertex {splats.Length}\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float x\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float y\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float z\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float nx\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float ny\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property float nz\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property uchar red\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property uchar green\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property uchar blue\n"));
-        fs.Write(Encoding.UTF8.GetBytes("property uchar alpha\n"));
-        fs.Write(Encoding.UTF8.GetBytes("end_header\n"));
-        fs.Write(pointData.Reinterpret<byte>(UnsafeUtility.SizeOf<InputPoint>()));
-        fs.Dispose();
-
-        fs = new FileStream($"{folderPath}/point_cloud/iteration_7000/point_cloud.bytes", FileMode.Create,
-            FileAccess.Write);
-        fs.Write(splatData.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
-        fs.Dispose();
-
-        AssetDatabase.Refresh();
+        var info = $"Generated {m_SplatCount} splats into {m_Folder}";
+        Debug.Log(info);
+        helpString = info;
     }
 }

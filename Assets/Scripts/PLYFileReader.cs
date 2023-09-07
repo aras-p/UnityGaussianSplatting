@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Unity.Collections;
-using UnityEditor;
 using UnityEngine;
 
 public static class PLYFileReader
@@ -75,18 +74,5 @@ public static class PLYFileReader
             byteBuffer.Add((byte)b);
         }
         return Encoding.UTF8.GetString(byteBuffer.ToArray());
-    }
-
-    [MenuItem("Tools/Test PLY Reader")]
-    public static void TestPlyReader()
-    {
-        var filePath = EditorUtility.OpenFilePanel("Open PLY File", "", "ply");
-        if (string.IsNullOrWhiteSpace(filePath))
-            return;
-        ReadFile(filePath, out int vertexCount, out int vertexStride, out var attrNames, out var vertices);
-        Debug.Log($"PLY: vtx {vertexCount} stride {vertexStride} attrs {attrNames.Count}: {string.Join(", ", attrNames)}");
-        var newPath = Path.ChangeExtension(filePath, ".bytes");
-        File.WriteAllBytes(newPath, vertices.ToArray());
-        vertices.Dispose();
     }
 }
