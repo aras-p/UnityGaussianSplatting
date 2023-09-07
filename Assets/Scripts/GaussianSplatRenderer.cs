@@ -19,15 +19,26 @@ public class GaussianSplatRenderer : MonoBehaviour
     [FolderPicker(kPointCloudPly)]
     public string m_PointCloudFolder;
 
+    [Tooltip("Use iteration_30000 point cloud if available. Otherwise uses iteration_7000.")]
     public bool m_Use30kVersion = false;
-    [Range(1,30)]
-    public int m_ScaleDown = 10;
+
+    [Space]
+    [Tooltip("Gaussian splatting material")]
     public Material m_Material;
 
+    [Tooltip("Gaussian splatting utilities compute shader")]
     public ComputeShader m_CSSplatUtilities;
-    [FormerlySerializedAs("m_CSGpuSort")] public ComputeShader m_CSIslandSort;
+    [Tooltip("'Island' bitonic sort compute shader")]
+    [FormerlySerializedAs("m_CSGpuSort")]
+    public ComputeShader m_CSIslandSort;
+    [Tooltip("AMD FidelityFX sort compute shader")]
     public ComputeShader m_CSFfxSort;
+    [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
     public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
+
+    [Tooltip("Reduce the number of splats used, by taking only 1/N of the total amount. Only for debugging!")]
+    [Range(1,30)]
+    public int m_ScaleDown = 10;
 
     // input file splat data is expected to be in this format
     public struct InputSplat

@@ -13,13 +13,15 @@ people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
 - The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as a screenspace aligned rectangle that covers the extents of it.
 - Splat color accumulation is done by rendering front-to-back, with a blending mode that results in the same accumulated color as their tile-based renderer.
-- Splat sorting is done with a simple GPU bitonic sort that is mostly lifted from Unity HDRP codebase.
+- Splat sorting is done with a AMD FidelityFX derived radix sort, or (on DX11) with a GPU bitonic sort that is lifted from Unity HDRP codebase.
 
-Both the sorting and the "just draw each splat as a particle" are simple to implement but are not very efficient.
+This is not a fast implementation yet!
 
 ## Usage
 
 - Within Unity (2022.3), there's a `Scene.unity` that has a `GaussianSplatRenderer` script attached to it.
+  - The project defaults to DX12 on Windows, since then it can use a faster GPU sorting routine. DX11 should also work, at expense of performance.
+  - Metal and Vulkan also use the faster sorting approach.
 - You need to point it to a "model" directory. The model directory is expected to contain `cameras.json` and
   `point_cloud/iteration_7000/point_cloud.ply` inside of it.
   - Since the models are quite large, I have not included any in this Github repo. The original [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
@@ -39,6 +41,16 @@ Wishlist that I may or might not do at some point:
 
 My own blog posts about all this _(so far... not that many!)_:
 * [Gaussian Splatting is pretty cool!](https://aras-p.info/blog/2023/09/05/Gaussian-Splatting-is-pretty-cool/) (2023 Sep)
+
+## Performance numbers:
+
+"bicycle" scene from the paper, with 6.1M splats and first camera in there, rendering at 1200x800 resolution:
+* Windows (NVIDIA RTX 3080 Ti):
+  * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
+  * Unity, DX12 or Vulkan: 13.4ms (75FPS) - 10.1ms rendering, 3.3ms sorting. 2.1GB VRAM usage.
+  * Unity, DX11: 21.8ms (46FPS) - 9.9ms rendering, 11.9ms sorting.
+* Mac (Apple M1 Max):
+  * Unity, Metal: 108ms (9FPS).
 
 ## External Code Used
 
