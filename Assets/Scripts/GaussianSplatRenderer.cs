@@ -16,7 +16,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
 
-    [FolderPicker(kPointCloudPly)]
+    [FolderPicker(nameKey:"PointCloudFolder", hasToContainFile:kPointCloudPly)]
     public string m_PointCloudFolder;
 
     [Tooltip("Use iteration_30000 point cloud if available. Otherwise uses iteration_7000.")]
