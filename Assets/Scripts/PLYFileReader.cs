@@ -10,7 +10,10 @@ public static class PLYFileReader
     public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames, out NativeArray<byte> vertices)
     {
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-        
+        // C# arrays and NativeArrays make it hard to have a "byte" array larger than 2GB :/
+        if (fs.Length >= 2 * 1024 * 1024 * 1024L)
+            throw new IOException($"PLY {filePath} read error: currently files larger than 2GB are not supported");
+
         // read header
         vertexCount = 0;
         vertexStride = 0;
