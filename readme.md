@@ -50,7 +50,8 @@ My own blog posts about all this _(so far... not that many!)_:
   * Unity, DX12 or Vulkan: 13.4ms (75FPS) - 10.1ms rendering, 3.3ms sorting. 2.1GB VRAM usage.
   * Unity, DX11: 21.8ms (46FPS) - 9.9ms rendering, 11.9ms sorting.
 * Mac (Apple M1 Max):
-  * Unity, Metal: 108ms (9FPS).
+  * Unity, Metal: 80.6ms (12FPS) - with FidelityFX GPU sort.
+  * Unity, Metal: 108ms (9FPS) - with bitonic GPU sort.
 
 ## External Code Used
 
