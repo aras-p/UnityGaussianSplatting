@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Unity.Collections;
-using UnityEngine;
 
 public static class PLYFileReader
 {
