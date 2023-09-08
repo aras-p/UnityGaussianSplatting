@@ -84,7 +84,7 @@ half4 frag (v2f i) : SV_Target
     InputSplat splat = _DataBuffer[idx];
     if (_DisplayMode == kDisplayPosition)
     {
-        float3 pos = (splat.pos - _BoundsMin) / (_BoundsMax - _BoundsMin);
+        float3 pos = (splat.pos * float3(1,1,-1) - _BoundsMin) / (_BoundsMax - _BoundsMin);
         res.rgb = pos;
     }
     if (_DisplayMode == kDisplayRotation)

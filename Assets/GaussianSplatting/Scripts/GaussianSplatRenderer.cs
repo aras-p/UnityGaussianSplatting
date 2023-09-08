@@ -245,25 +245,20 @@ public class GaussianSplatRenderer : MonoBehaviour
             return;
         }
 
-        NativeArray<Vector3> inputPositions = new(m_SplatCount, Allocator.Temp);
         m_Bounds = new Bounds(m_SplatData[0].pos, Vector3.zero);
         for (var i = 0; i < m_SplatCount; ++i)
         {
             var pos = m_SplatData[i].pos;
-            inputPositions[i] = pos;
             m_Bounds.Encapsulate(pos);
         }
-
         var bcen = m_Bounds.center;
         bcen.z *= -1;
         m_Bounds.center = bcen;
 
         m_GpuPositions = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 12) { name = "GaussianSplatPositions" };
-        m_GpuPositions.SetData(inputPositions);
-        inputPositions.Dispose();
-
         m_GpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, UnsafeUtility.SizeOf<InputSplat>()) { name = "GaussianSplatData" };
-        m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
+
+        UpdateGPUBuffers();
 
         int splatCountNextPot = Mathf.NextPowerOfTwo(m_SplatCount);
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
@@ -288,6 +283,20 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_SplatCount);
 
         m_SortCmdBuffer = new CommandBuffer {name = "GaussianGPUSort"};
+    }
+
+    public void UpdateGPUBuffers()
+    {
+        NativeArray<Vector3> inputPositions = new(m_SplatCount, Allocator.Temp);
+        for (var i = 0; i < m_SplatCount; ++i)
+        {
+            var pos = m_SplatData[i].pos;
+            inputPositions[i] = pos;
+        }
+        m_GpuPositions.SetData(inputPositions);
+        inputPositions.Dispose();
+
+        m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
     }
 
     void OnPreCullCamera(Camera cam)
