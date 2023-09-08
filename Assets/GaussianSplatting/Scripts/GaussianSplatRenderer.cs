@@ -16,16 +16,61 @@ public class GaussianSplatRenderer : MonoBehaviour
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
 
+    public enum RenderMode
+    {
+        Splats,
+        DebugPoints,
+        DebugBoxes
+    }
+
+    public enum DisplayDataMode
+    {
+        None = 0,
+        Position = 1,
+        Scale = 2,
+        Rotation = 3,
+        Color = 4,
+        Opacity = 5,
+        SH1, SH2, SH3, SH4, SH5, SH6, SH7, SH8, SH9, SH10, SH11, SH12, SH13, SH14, SH15,
+    }
+
+    [Header("Data File")]
+
     [FolderPicker(nameKey:"PointCloudFolder", hasToContainFile:kPointCloudPly)]
     public string m_PointCloudFolder;
-
     [Tooltip("Use iteration_30000 point cloud if available. Otherwise uses iteration_7000.")]
     public bool m_Use30kVersion = false;
 
-    [Space]
-    [Tooltip("Gaussian splatting material")]
-    public Material m_Material;
+    [Header("Render Options")]
 
+    [Range(0.1f, 2.0f)] [Tooltip("Additional scaling factor for the splats")]
+    public float m_SplatScale = 1.0f;
+    [Range(0, 3)] [Tooltip("Spherical Harmonics order to use")]
+    public int m_SHOrder = 3;
+    [Range(1,30)] [Tooltip("Sort splats only every N frames")]
+    public int m_SortNthFrame = 1;
+
+    [Header("Debugging Tweaks")]
+
+    public RenderMode m_RenderMode = RenderMode.Splats;
+    public Color m_PointDisplayColor = new(0.6f, 0.3f, 0.1f, 0.1f);
+    [Range(1.0f,15.0f)]
+    public float m_PointDisplaySize = 3.0f;
+    public DisplayDataMode m_DisplayData = DisplayDataMode.None;
+
+    [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
+    public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
+
+    [Tooltip("Reduce the number of splats used, by taking only 1/N of the total amount. Only for debugging!")]
+    [Range(1,30)]
+    public int m_ScaleDown = 10;
+
+    [Header("Resources")]
+
+    public Shader m_ShaderSplats;
+    public Shader m_ShaderDebugPoints;
+    public Shader m_ShaderDebugBoxes;
+    public Shader m_ShaderDebugData;
     [Tooltip("Gaussian splatting utilities compute shader")]
     public ComputeShader m_CSSplatUtilities;
     [Tooltip("'Island' bitonic sort compute shader")]
@@ -33,12 +78,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public ComputeShader m_CSIslandSort;
     [Tooltip("AMD FidelityFX sort compute shader")]
     public ComputeShader m_CSFfxSort;
-    [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
-    public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
 
-    [Tooltip("Reduce the number of splats used, by taking only 1/N of the total amount. Only for debugging!")]
-    [Range(1,30)]
-    public int m_ScaleDown = 10;
 
     // input file splat data is expected to be in this format
     public struct InputSplat
@@ -73,6 +113,14 @@ public class GaussianSplatRenderer : MonoBehaviour
     IslandGPUSort.Args m_SorterIslandArgs;
     FfxParallelSort m_SorterFfx;
     FfxParallelSort.Args m_SorterFfxArgs;
+    CommandBuffer m_SortCmdBuffer;
+
+    Material m_MatSplats;
+    Material m_MatDebugPoints;
+    Material m_MatDebugBoxes;
+    Material m_MatDebugData;
+
+    int m_FrameCounter;
 
     public string pointCloudFolder => m_PointCloudFolder;
     public int splatCount => m_SplatCount;
@@ -176,11 +224,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         Camera.onPreCull += OnPreCullCamera;
 
         m_Cameras = null;
-        if (m_Material == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
+        m_FrameCounter = 0;
+        if (m_ShaderSplats == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_ShaderDebugData == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
         {
-            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} material/shader references are not set up");
+            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} shader references are not set up", this);
             return;
         }
+
+        m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
+        m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
+        m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
+        m_MatDebugData = new Material(m_ShaderDebugData) {name = "GaussianDebugData"};
 
         m_Cameras = LoadJsonCamerasFile(m_PointCloudFolder);
         m_SplatData = LoadPLYSplatFile(m_PointCloudFolder, m_Use30kVersion);
@@ -204,16 +258,16 @@ public class GaussianSplatRenderer : MonoBehaviour
         bcen.z *= -1;
         m_Bounds.center = bcen;
 
-        m_GpuPositions = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 12);
+        m_GpuPositions = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 12) { name = "GaussianSplatPositions" };
         m_GpuPositions.SetData(inputPositions);
         inputPositions.Dispose();
 
-        m_GpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, UnsafeUtility.SizeOf<InputSplat>());
+        m_GpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, UnsafeUtility.SizeOf<InputSplat>()) { name = "GaussianSplatData" };
         m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
 
         int splatCountNextPot = Mathf.NextPowerOfTwo(m_SplatCount);
-        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
-        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4);
+        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
+        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortIndices" };
 
         // init keys buffer to splat indices
         m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
@@ -232,6 +286,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_SorterFfxArgs.count = (uint) m_SplatCount;
         if (m_SorterFfx.Valid)
             m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_SplatCount);
+
+        m_SortCmdBuffer = new CommandBuffer {name = "GaussianGPUSort"};
     }
 
     void OnPreCullCamera(Camera cam)
@@ -239,23 +295,55 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (m_GpuData == null)
             return;
 
-        m_Material.SetBuffer("_InputPositions", m_GpuPositions);
-        m_Material.SetBuffer("_DataBuffer", m_GpuData);
-        m_Material.SetBuffer("_OrderBuffer", m_GpuSortKeys);
+        Material displayMat = m_RenderMode switch
+        {
+            RenderMode.DebugPoints => m_MatDebugPoints,
+            RenderMode.DebugBoxes => m_MatDebugBoxes,
+            _ => m_MatSplats
+        };
+        if (displayMat == null)
+            return;
 
-        SortPoints(cam);
-        Graphics.DrawProcedural(m_Material, m_Bounds, MeshTopology.Triangles, 6, m_SplatCount, cam);
+        displayMat.SetBuffer("_InputPositions", m_GpuPositions);
+        displayMat.SetBuffer("_DataBuffer", m_GpuData);
+        displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
+        displayMat.SetFloat("_SplatScale", m_SplatScale);
+        displayMat.SetColor("_Color", m_PointDisplayColor);
+        displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
+        displayMat.SetInteger("_SHOrder", m_SHOrder);
+
+        if (m_FrameCounter % m_SortNthFrame == 0)
+            SortPoints(cam);
+        ++m_FrameCounter;
+
+        Graphics.DrawProcedural(displayMat, m_Bounds, MeshTopology.Triangles, m_RenderMode == RenderMode.DebugBoxes ? 36 : 6, m_SplatCount, cam);
+
+        if (m_DisplayData != DisplayDataMode.None)
+        {
+            m_MatDebugData.SetBuffer("_DataBuffer", m_GpuData);
+            m_MatDebugData.SetInteger("_SplatCount", m_SplatCount);
+            m_MatDebugData.SetInteger("_DisplayMode", (int)m_DisplayData);
+            m_MatDebugData.SetVector("_BoundsMin", m_Bounds.min);
+            m_MatDebugData.SetVector("_BoundsMax", m_Bounds.max);
+            Graphics.DrawProcedural(m_MatDebugData, new Bounds(cam.transform.position, Vector3.one * 1000.0f), MeshTopology.Triangles, 6, 1, cam);
+        }
     }
 
     public void OnDisable()
     {
         Camera.onPreCull -= OnPreCullCamera;
+        m_SortCmdBuffer?.Dispose();
         m_SplatData.Dispose();
         m_GpuData?.Dispose();
         m_GpuPositions?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
+
+        DestroyImmediate(m_MatSplats);
+        DestroyImmediate(m_MatDebugPoints);
+        DestroyImmediate(m_MatDebugBoxes);
+        DestroyImmediate(m_MatDebugData);
     }
 
     void SortPoints(Camera cam)
@@ -280,13 +368,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.Dispatch(1, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
-        CommandBuffer cmd = new CommandBuffer {name = "GPUSort"};
+        m_SortCmdBuffer.Clear();
         if (useFfx)
-            m_SorterFfx.Dispatch(cmd, m_SorterFfxArgs);
+            m_SorterFfx.Dispatch(m_SortCmdBuffer, m_SorterFfxArgs);
         else
-            m_SorterIsland.Dispatch(cmd, m_SorterIslandArgs);
-        Graphics.ExecuteCommandBuffer(cmd);
-        cmd.Dispose();
+            m_SorterIsland.Dispatch(m_SortCmdBuffer, m_SorterIslandArgs);
+        Graphics.ExecuteCommandBuffer(m_SortCmdBuffer);
     }
 
     [Serializable]

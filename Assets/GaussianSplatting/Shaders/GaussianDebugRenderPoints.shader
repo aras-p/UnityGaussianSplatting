@@ -1,10 +1,5 @@
-Shader "Gaussian Splatting/Render Points"
+Shader "Gaussian Splatting/Debug/Render Points"
 {
-    Properties
-    {
-        _Color("Color", Color) = (0.6, 0.3, 0.1, 0.1)
-        _SplatSize("Splat Size", Range(0.5,10.0)) = 3.0
-    }
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }

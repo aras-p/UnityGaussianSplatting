@@ -1,9 +1,5 @@
 Shader "Gaussian Splatting/Render Splats"
 {
-    Properties
-    {
-        _SplatScale("Splat Scale", Range(0.1,3.0)) = 1.0
-    }
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
@@ -62,6 +58,8 @@ static const float SH_C3[] = {
 	-0.5900436
 };
 
+int _SHOrder;
+
 half3 ShadeSH(InputSplat splat, float3 dir)
 {
 	dir *= -1;
@@ -72,25 +70,34 @@ half3 ShadeSH(InputSplat splat, float3 dir)
     // ambient band
     half3 res = SH_C0 * splat.sh0;
     // 1st degree
-    res += SH_C1 * (-splat.sh1 * y + splat.sh2 * z - splat.sh3 * x);
-    // 2nd degree
-    float xx = x * x, yy = y * y, zz = z * z;
-    float xy = x * y, yz = y * z, xz = x * z;
-    res +=
-        (SH_C2[0] * xy) * splat.sh4 +
-		(SH_C2[1] * yz) * splat.sh5 +
-		(SH_C2[2] * (2 * zz - xx - yy)) * splat.sh6 +
-		(SH_C2[3] * xz) * splat.sh7 +
-		(SH_C2[4] * (xx - yy)) * splat.sh8;
-    // 3rd degree
-    res +=
-		(SH_C3[0] * y * (3 * xx - yy)) * splat.sh9 +
-		(SH_C3[1] * xy * z) * splat.sh10 +
-		(SH_C3[2] * y * (4 * zz - xx - yy)) * splat.sh11 +
-		(SH_C3[3] * z * (2 * zz - 3 * xx - 3 * yy)) * splat.sh12 +
-		(SH_C3[4] * x * (4 * zz - xx - yy)) * splat.sh13 +
-		(SH_C3[5] * z * (xx - yy)) * splat.sh14 +
-		(SH_C3[6] * x * (xx - 3 * yy)) * splat.sh15;
+	if (_SHOrder >= 1)
+	{
+		res += SH_C1 * (-splat.sh1 * y + splat.sh2 * z - splat.sh3 * x);
+		// 2nd degree
+		if (_SHOrder >= 2)
+		{
+			float xx = x * x, yy = y * y, zz = z * z;
+			float xy = x * y, yz = y * z, xz = x * z;
+			res +=
+				(SH_C2[0] * xy) * splat.sh4 +
+				(SH_C2[1] * yz) * splat.sh5 +
+				(SH_C2[2] * (2 * zz - xx - yy)) * splat.sh6 +
+				(SH_C2[3] * xz) * splat.sh7 +
+				(SH_C2[4] * (xx - yy)) * splat.sh8;
+			// 3rd degree
+			if (_SHOrder >= 3)
+			{
+				res +=
+					(SH_C3[0] * y * (3 * xx - yy)) * splat.sh9 +
+					(SH_C3[1] * xy * z) * splat.sh10 +
+					(SH_C3[2] * y * (4 * zz - xx - yy)) * splat.sh11 +
+					(SH_C3[3] * z * (2 * zz - 3 * xx - 3 * yy)) * splat.sh12 +
+					(SH_C3[4] * x * (4 * zz - xx - yy)) * splat.sh13 +
+					(SH_C3[5] * z * (xx - yy)) * splat.sh14 +
+					(SH_C3[6] * x * (xx - 3 * yy)) * splat.sh15;
+			}
+		}
+	}
     return max(res + 0.5, 0);
 }
 
