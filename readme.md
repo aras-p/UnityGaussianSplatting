@@ -5,7 +5,7 @@ Check out their website, source code repository, data sets and so on.
 
 I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity.
 
-![Screenshot](/Screenshot01.png?raw=true "Screenshot")
+![Screenshot](/Screenshot01.jpg?raw=true "Screenshot")
 
 The original paper code has a purely CUDA-based realtime renderer; other
 people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://github.com/cvlab-epfl/gaussian-splatting-web), Taichi at [wanmeihuali](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting), etc.).
@@ -26,8 +26,10 @@ This is not a fast implementation yet!
   `point_cloud/iteration_7000/point_cloud.ply` inside of it.
   - Since the models are quite large, I have not included any in this Github repo. The original [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
     [14GB zip](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) of their models.
-- Press play. The gaussian splat renderer component inspector will have a slider to move the game view camera into one of the cameras from the model directory. Or you can just move the game/scene view camera
-  however you please.
+- Press play.
+  - The gaussian splat renderer component inspector will have a slider to move the game view camera into one of the cameras from the model directory.
+    Or you can just move the game/scene view camera however you please.
+  - There are also various controls in the script to debug or visualize the data.
 
 :warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. I told you so!
 
