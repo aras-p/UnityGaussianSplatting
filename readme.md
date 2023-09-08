@@ -36,7 +36,8 @@ This is not a fast implementation yet!
 Wishlist that I may or might not do at some point:
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
 - [ ] Look at ways to make the data sets smaller (both on-disk and in-memory)
-- [ ] Integrate better with "the rest" of rendering that might be in the scene
+- [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
+- [ ] Maybe look at making it work in URP/HDRP? Not sure yet
 - [x] Make sorting faster (bitonic -> FidelityFX radix sort)
 
 ## Write-ups
