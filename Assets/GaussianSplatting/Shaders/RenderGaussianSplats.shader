@@ -124,14 +124,12 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
 	bool behindCam = centerClipPos.w <= 0;
-	centerClipPos /= centerClipPos.w;
-    o.centerScreenPos = (centerClipPos.xy * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
+    o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
     float3 cov3d0, cov3d1;
     splatRotScaleMat[2] *= -1;
     CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
     float3 cov2d = CalcCovariance2D(centerWorldPos, cov3d0, cov3d1);
-    //o.conic = CalcConic(cov2d);
 
 	// conic
     float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
@@ -155,9 +153,11 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 	float radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
 
 	float2 deltaScreenPos = quadPos * radius * 2 / _ScreenParams.xy;
-	o.vertex = float4(centerClipPos.xy + deltaScreenPos, 1, 1);
+	o.vertex = centerClipPos;
+	o.vertex.xy += deltaScreenPos * centerClipPos.w;
+
 	if (behindCam)
-		o.vertex = 0;
+		o.vertex = 0.0 / 0.0;
     return o;
 }
 

@@ -158,7 +158,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize: 10
   m_Shadows:
-    m_Type: 2
+    m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -210,8 +210,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 231550833}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
-  m_LocalPosition: {x: 0, y: 3, z: 0}
+  m_LocalRotation: {x: -0.689202, y: -0.23798883, z: -0.67273253, w: 0.12566993}
+  m_LocalPosition: {x: -5.8281107, y: -2.652966, z: -0.70560646}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -252,7 +252,7 @@ Camera:
   m_GameObject: {fileID: 1462254335}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 2
+  m_ClearFlags: 1
   m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
@@ -302,8 +302,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1462254335}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.9015233, y: 0.054624107, z: 0.4232897, w: 0.07139959}
-  m_LocalPosition: {x: -3.0026817, y: 1.4007726, z: 2.2284012}
+  m_LocalRotation: {x: 0.90152323, y: 0.05462407, z: 0.42328975, w: 0.071399786}
+  m_LocalPosition: {x: -3.0026746, y: 1.4007691, z: 2.2284043}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -344,12 +344,12 @@ MonoBehaviour:
   m_SHOrder: 3
   m_SortNthFrame: 1
   m_RenderMode: 0
-  m_PointDisplayColor: {r: 0.6, g: 0.3, b: 0.1, a: 0.1}
   m_PointDisplaySize: 3
   m_DisplayData: 0
   m_PreferFfxSort: 1
   m_ScaleDown: 1
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
+  m_ShaderComposite: {fileID: 4800000, guid: 7e184af7d01193a408eb916d8acafff9, type: 3}
   m_ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
   m_ShaderDebugBoxes: {fileID: 4800000, guid: 4006f2680fd7c8b4cbcb881454c782be, type: 3}
   m_ShaderDebugData: {fileID: 4800000, guid: 81e3f94333a95404d94aa22d35b4d8e3, type: 3}

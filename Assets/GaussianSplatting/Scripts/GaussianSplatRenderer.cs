@@ -6,6 +6,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Serialization;
 
@@ -20,6 +21,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     {
         Splats,
         DebugPoints,
+        DebugPointIndices,
         DebugBoxes
     }
 
@@ -53,7 +55,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Header("Debugging Tweaks")]
 
     public RenderMode m_RenderMode = RenderMode.Splats;
-    public Color m_PointDisplayColor = new(0.6f, 0.3f, 0.1f, 0.1f);
     [Range(1.0f,15.0f)]
     public float m_PointDisplaySize = 3.0f;
     public DisplayDataMode m_DisplayData = DisplayDataMode.None;
@@ -68,6 +69,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Header("Resources")]
 
     public Shader m_ShaderSplats;
+    public Shader m_ShaderComposite;
     public Shader m_ShaderDebugPoints;
     public Shader m_ShaderDebugBoxes;
     public Shader m_ShaderDebugData;
@@ -113,9 +115,12 @@ public class GaussianSplatRenderer : MonoBehaviour
     IslandGPUSort.Args m_SorterIslandArgs;
     FfxParallelSort m_SorterFfx;
     FfxParallelSort.Args m_SorterFfxArgs;
-    CommandBuffer m_SortCmdBuffer;
+
+    CommandBuffer m_RenderCommandBuffer;
+    readonly HashSet<Camera> m_CameraCommandBuffersDone = new();
 
     Material m_MatSplats;
+    Material m_MatComposite;
     Material m_MatDebugPoints;
     Material m_MatDebugBoxes;
     Material m_MatDebugData;
@@ -225,13 +230,14 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_Cameras = null;
         m_FrameCounter = 0;
-        if (m_ShaderSplats == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_ShaderDebugData == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
+        if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_ShaderDebugData == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
         {
             Debug.LogWarning($"{nameof(GaussianSplatRenderer)} shader references are not set up", this);
             return;
         }
 
         m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
+        m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
         m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
         m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
         m_MatDebugData = new Material(m_ShaderDebugData) {name = "GaussianDebugData"};
@@ -282,7 +288,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (m_SorterFfx.Valid)
             m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_SplatCount);
 
-        m_SortCmdBuffer = new CommandBuffer {name = "GaussianGPUSort"};
+        m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};
     }
 
     public void UpdateGPUBuffers()
@@ -301,31 +307,62 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void OnPreCullCamera(Camera cam)
     {
+        m_RenderCommandBuffer.Clear();
+
         if (m_GpuData == null)
             return;
 
         Material displayMat = m_RenderMode switch
         {
             RenderMode.DebugPoints => m_MatDebugPoints,
+            RenderMode.DebugPointIndices => m_MatDebugPoints,
             RenderMode.DebugBoxes => m_MatDebugBoxes,
             _ => m_MatSplats
         };
         if (displayMat == null)
             return;
 
+        if (!m_CameraCommandBuffersDone.Contains(cam))
+        {
+            cam.AddCommandBuffer(CameraEvent.BeforeForwardAlpha, m_RenderCommandBuffer);
+            m_CameraCommandBuffersDone.Add(cam);
+        }
+
         displayMat.SetBuffer("_InputPositions", m_GpuPositions);
         displayMat.SetBuffer("_DataBuffer", m_GpuData);
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
-        displayMat.SetColor("_Color", m_PointDisplayColor);
         displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
         displayMat.SetInteger("_SHOrder", m_SHOrder);
+        displayMat.SetInteger("_DisplayIndex", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
+        //displayMat.SetInteger("_DisplayLine", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
 
         if (m_FrameCounter % m_SortNthFrame == 0)
             SortPoints(cam);
         ++m_FrameCounter;
 
-        Graphics.DrawProcedural(displayMat, m_Bounds, MeshTopology.Triangles, m_RenderMode == RenderMode.DebugBoxes ? 36 : 6, m_SplatCount, cam);
+        int vertexCount = 6;
+        int instanceCount = m_SplatCount;
+        MeshTopology topology = MeshTopology.Triangles;
+        if (m_RenderMode == RenderMode.DebugBoxes)
+            vertexCount = 36;
+        /*
+        if (m_RenderMode == RenderMode.DebugPointIndices)
+        {
+            topology = MeshTopology.LineStrip;
+            vertexCount = m_SplatCount;
+            instanceCount = 1;
+        }*/
+
+        int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
+        m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
+        m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
+        m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0,0,0,0), 0, 0);
+        m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, displayMat, 0, topology, vertexCount, instanceCount);
+        m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+        m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
+        m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
+
 
         if (m_DisplayData != DisplayDataMode.None)
         {
@@ -341,7 +378,10 @@ public class GaussianSplatRenderer : MonoBehaviour
     public void OnDisable()
     {
         Camera.onPreCull -= OnPreCullCamera;
-        m_SortCmdBuffer?.Dispose();
+
+        m_CameraCommandBuffersDone?.Clear();
+        m_RenderCommandBuffer?.Clear();
+
         m_SplatData.Dispose();
         m_GpuData?.Dispose();
         m_GpuPositions?.Dispose();
@@ -350,6 +390,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_SorterFfxArgs.resources.Dispose();
 
         DestroyImmediate(m_MatSplats);
+        DestroyImmediate(m_MatComposite);
         DestroyImmediate(m_MatDebugPoints);
         DestroyImmediate(m_MatDebugBoxes);
         DestroyImmediate(m_MatDebugData);
@@ -377,12 +418,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.Dispatch(1, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
-        m_SortCmdBuffer.Clear();
         if (useFfx)
-            m_SorterFfx.Dispatch(m_SortCmdBuffer, m_SorterFfxArgs);
+            m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
         else
-            m_SorterIsland.Dispatch(m_SortCmdBuffer, m_SorterIslandArgs);
-        Graphics.ExecuteCommandBuffer(m_SortCmdBuffer);
+            m_SorterIsland.Dispatch(m_RenderCommandBuffer, m_SorterIslandArgs);
     }
 
     [Serializable]
