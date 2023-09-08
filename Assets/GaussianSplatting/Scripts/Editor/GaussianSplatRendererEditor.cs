@@ -141,6 +141,7 @@ public class GaussianSplatRendererEditor : Editor
 
         static float AdjustVal(float val, int fieldIndex)
         {
+            /*
             if (fieldIndex >= 55 && fieldIndex < 58) // scale: exp
             {
                 val = math.exp(val);
@@ -154,6 +155,7 @@ public class GaussianSplatRendererEditor : Editor
                 // make them distributed more equally
                 val = SquareCentered01(val);
             }
+            */
 
             return val;
         }
@@ -171,7 +173,6 @@ public class GaussianSplatRendererEditor : Editor
                 idx += itemStrideInFloats;
             }
             ranges[fieldIndex] = range;
-            //float absRange = math.max(math.abs(range.x), math.abs(range.y));
 
             // fill texture with value distribution over the range
             idx = fieldIndex;
@@ -179,7 +180,6 @@ public class GaussianSplatRendererEditor : Editor
             {
                 float val = AdjustVal(data[idx], fieldIndex);
                 val = math.unlerp(range.x, range.y, val);
-                //val = math.unlerp(-absRange, absRange, val);
                 val = math.saturate(val);
                 int px = (int) math.floor(val * (pixelsWidth-1));
                 int py = pixelsHeight - 2 - (fieldIndex * kRowHeight + 1 + (si % (kRowHeight - 4)));
@@ -194,23 +194,6 @@ public class GaussianSplatRendererEditor : Editor
 
                 idx += itemStrideInFloats;
             }
-
-            // indicate min/max values
-            /*
-            float valMin = math.saturate(math.unlerp(-absRange, absRange, range.x));
-            int pxMin = (int) math.floor(valMin * (pixelsWidth-1));
-            float valMax = math.saturate(math.unlerp(-absRange, absRange, range.y));
-            int pxMax = (int) math.floor(valMax * (pixelsWidth-1));
-            for (int y = 2; y < kRowHeight - 4; ++y)
-            {
-                int py = pixelsHeight - 2 - (fieldIndex * kRowHeight + 1 + y);
-                int pidx = py * pixelsWidth + pxMin; Color64 col = pixels[pidx];
-                col.r = 0; col.g = 0xFFFF; col.a = 0xFFFF; pixels[pidx] = col;
-
-                pidx = py * pixelsWidth + pxMax; col = pixels[pidx];
-                col.r = 0; col.g = 0xFFFF; col.a = 0xFFFF; pixels[pidx] = col;
-            }
-            */
         }
     }
 
