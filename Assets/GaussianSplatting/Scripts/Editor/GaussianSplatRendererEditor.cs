@@ -267,7 +267,7 @@ public class GaussianSplatRendererEditor : Editor
 
 
     [BurstCompile]
-    struct ComputeMortonOrder : IJob
+    struct ReorderMortonJob : IJob
     {
         public NativeArray<GaussianSplatRenderer.InputSplat> m_SplatData;
         public NativeArray<(ulong,int)> m_Order;
@@ -288,7 +288,7 @@ public class GaussianSplatRendererEditor : Editor
             float3 invBoundsSize = new float3(1.0f) / (boundsMax - boundsMin);
             for (int i = 0; i < m_SplatData.Length; ++i)
             {
-                float3 pos = m_SplatData[i].pos * invBoundsSize * kScaler;
+                float3 pos = ((float3)m_SplatData[i].pos - boundsMin) * invBoundsSize * kScaler;
                 uint3 ipos = (uint3) pos;
                 ulong code = MortonEncode3(ipos);
                 m_Order[i] = (code, i);
@@ -299,8 +299,10 @@ public class GaussianSplatRendererEditor : Editor
     struct OrderComparer : IComparer<(ulong, int)> {
         public int Compare((ulong, int) a, (ulong, int) b)
         {
-            if (a.Item1 != b.Item1)
-                return (int)((long) a.Item1 - (long) b.Item1);
+            if (a.Item1 < b.Item1)
+                return -1;
+            if (a.Item1 > b.Item1)
+                return +1;
             return a.Item2 - b.Item2;
         }
     }
@@ -308,7 +310,7 @@ public class GaussianSplatRendererEditor : Editor
     static void ReorderMorton(GaussianSplatRenderer gs)
     {
         float t0 = Time.realtimeSinceStartup;
-        ComputeMortonOrder order = new ComputeMortonOrder
+        ReorderMortonJob order = new ReorderMortonJob
         {
             m_SplatData = gs.splatData,
             m_Order = new NativeArray<(ulong, int)>(gs.splatData.Length, Allocator.TempJob)
@@ -316,13 +318,9 @@ public class GaussianSplatRendererEditor : Editor
         order.Schedule().Complete();
         order.m_Order.Sort(new OrderComparer());
 
-        NativeArray<GaussianSplatRenderer.InputSplat> copy =
-            new NativeArray<GaussianSplatRenderer.InputSplat>(gs.splatData.Length, Allocator.TempJob);
+        NativeArray<GaussianSplatRenderer.InputSplat> copy = new(order.m_SplatData, Allocator.TempJob);
         for (int i = 0; i < copy.Length; ++i)
-        {
-            copy[order.m_Order[i].Item2] = gs.splatData[i];
-        }
-        copy.CopyTo(gs.splatData);
+            order.m_SplatData[i] = copy[order.m_Order[i].Item2];
         copy.Dispose();
 
         order.m_Order.Dispose();

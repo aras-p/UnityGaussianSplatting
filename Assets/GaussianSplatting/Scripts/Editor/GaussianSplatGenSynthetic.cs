@@ -3,16 +3,24 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 public class GaussianSplatGenSynthetic : ScriptableWizard
 {
+    public enum SyntheticKind
+    {
+        RandomInsideSphere,
+        RandomInsideBox,
+        OrderedInsideBox
+    }
     [FolderPicker(nameKey:"SyntheticDataFolder")]
     public string m_Folder = "Assets/Models~/synthetic";
 
     public int m_SplatCount = 10000;
+    public SyntheticKind m_Kind = SyntheticKind.RandomInsideSphere;
     public Vector3 m_PosRange = new Vector3(100,50,100);
     public Vector2 m_ScaleRange = new Vector2(0.01f, 3.0f);
     public Vector2 m_OpacityRange = new Vector2(0.1f, 1.0f);
@@ -172,12 +180,29 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
 
         Random.InitState(m_RandomSeed == 0 ? Time.renderedFrameCount : m_RandomSeed);
 
+        int countCubeRoot = Mathf.CeilToInt(Mathf.Pow(m_SplatCount, 1.0f / 3.0f));
+        countCubeRoot = math.max(countCubeRoot, 2);
         for (var si = 0; si < m_SplatCount; ++si)
         {
             if (si % 100000 == 0)
                 EditorUtility.DisplayProgressBar("Generating Splats", m_SplatCount.ToString("N0"), (float)si / (float)m_SplatCount);
             GaussianSplatRenderer.InputSplat dat = default;
-            dat.pos = Random.insideUnitSphere;
+            switch (m_Kind)
+            {
+                case SyntheticKind.RandomInsideSphere:
+                    dat.pos = Random.insideUnitSphere;
+                    break;
+                case SyntheticKind.RandomInsideBox:
+                    dat.pos = new Vector3(Random.Range(-1.0f, 1.0f), Random.Range(-1.0f, 1.0f), Random.Range(-1.0f, 1.0f));
+                    break;
+                case SyntheticKind.OrderedInsideBox:
+                    dat.pos.x = (si % countCubeRoot) * 2.0f / (countCubeRoot-1) - 1.0f;
+                    dat.pos.y = ((si / countCubeRoot) % countCubeRoot) * 2.0f / (countCubeRoot-1) - 1.0f;
+                    dat.pos.z = ((si / countCubeRoot / countCubeRoot) % countCubeRoot) * 2.0f / (countCubeRoot-1) - 1.0f;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
             dat.pos.Scale(m_PosRange);
             dat.pos.z *= -1;
             dat.rot = Random.rotationUniform;

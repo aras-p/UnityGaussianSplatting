@@ -333,9 +333,11 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
         displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
+        displayMat.SetInteger("_SplatCount", m_SplatCount);
         displayMat.SetInteger("_SHOrder", m_SHOrder);
         displayMat.SetInteger("_DisplayIndex", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
-        //displayMat.SetInteger("_DisplayLine", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
+        bool displayAsLine = false; //m_RenderMode == RenderMode.DebugPointIndices;
+        displayMat.SetInteger("_DisplayLine", displayAsLine ? 1 : 0);
 
         if (m_FrameCounter % m_SortNthFrame == 0)
             SortPoints(cam);
@@ -346,13 +348,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         MeshTopology topology = MeshTopology.Triangles;
         if (m_RenderMode == RenderMode.DebugBoxes)
             vertexCount = 36;
-        /*
-        if (m_RenderMode == RenderMode.DebugPointIndices)
+        if (displayAsLine)
         {
             topology = MeshTopology.LineStrip;
             vertexCount = m_SplatCount;
             instanceCount = 1;
-        }*/
+        }
 
         int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
         m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);

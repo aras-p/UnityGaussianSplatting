@@ -35,6 +35,7 @@ struct v2f
 float _SplatSize;
 bool _DisplayIndex;
 bool _DisplayLine;
+int _SplatCount;
 
 static const float SH_C0 = 0.2820948;
 
@@ -64,9 +65,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     o.color.rgb = saturate(SH_C0 * _DataBuffer[splatIndex].sh0 + 0.5);
     if (_DisplayIndex)
     {
-        o.color.r = (splatIndex & 0xFFFF) / (float)0xFFFF;
-        o.color.g = (splatIndex & 0xFFFFF) / (float)0xFFFFF;
-        o.color.b = (splatIndex & 0xFFFFFF) / (float)0xFFFFFF;
+        o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);
+        o.color.g = frac((float)splatIndex / (float)_SplatCount * 10);
+        o.color.b = (float)splatIndex / (float)_SplatCount;
     }
     return o;
 }
