@@ -329,4 +329,18 @@ public class GaussianSplatRenderer : MonoBehaviour
         else
             m_SorterIsland.Dispatch(m_RenderCommandBuffer, m_SorterIslandArgs);
     }
+
+    public void ActivateCamera(int index)
+    {
+        Camera mainCam = Camera.main;
+        if (mainCam != null)
+        {
+            var cam = m_Asset.m_Cameras[index];
+            mainCam.transform.position = cam.pos;
+            mainCam.transform.LookAt(cam.pos + cam.axisZ, cam.axisY);
+            #if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(mainCam.transform);
+            #endif
+        }
+    }
 }

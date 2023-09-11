@@ -32,15 +32,7 @@ public class GaussianSplatRendererEditor : Editor
             if (camIndex != m_CameraIndex)
             {
                 m_CameraIndex = camIndex;
-
-                Camera mainCam = Camera.main;
-                if (mainCam != null)
-                {
-                    var cam = cameras[camIndex];
-                    mainCam.transform.position = cam.pos;
-                    mainCam.transform.LookAt(cam.pos + cam.axisZ, cam.axisY);
-                    EditorUtility.SetDirty(mainCam.transform);
-                }
+                gs.ActivateCamera(camIndex);
             }
         }
     }

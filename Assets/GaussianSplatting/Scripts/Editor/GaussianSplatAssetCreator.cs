@@ -150,7 +150,10 @@ public class GaussianSplatAssetCreator : EditorWindow
             imp.npotScale = TextureImporterNPOTScale.None;
             imp.textureCompression = TextureImporterCompression.Uncompressed;
             imp.maxTextureSize = 8192;
+            // obsolete API
+#pragma warning disable CS0618
             imp.SetPlatformTextureSettings("Standalone", 8192, TextureImporterFormat.RGBAFloat);
+#pragma warning restore CS0618
             AssetDatabase.ImportAsset(ifile);
         }
         AssetDatabase.StopAssetEditing();
