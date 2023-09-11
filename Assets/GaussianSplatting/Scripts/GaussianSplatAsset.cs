@@ -7,25 +7,34 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public Vector3 m_BoundsMin;
     [HideInInspector] public Vector3 m_BoundsMax;
 
-    [HideInInspector] public Texture2D m_TexPos;
-    [HideInInspector] public Texture2D m_TexRot;
-    [HideInInspector] public Texture2D m_TexScl;
-    [HideInInspector] public Texture2D m_TexCol;
-    [HideInInspector] public Texture2D m_TexSH1;
-    [HideInInspector] public Texture2D m_TexSH2;
-    [HideInInspector] public Texture2D m_TexSH3;
-    [HideInInspector] public Texture2D m_TexSH4;
-    [HideInInspector] public Texture2D m_TexSH5;
-    [HideInInspector] public Texture2D m_TexSH6;
-    [HideInInspector] public Texture2D m_TexSH7;
-    [HideInInspector] public Texture2D m_TexSH8;
-    [HideInInspector] public Texture2D m_TexSH9;
-    [HideInInspector] public Texture2D m_TexSHA;
-    [HideInInspector] public Texture2D m_TexSHB;
-    [HideInInspector] public Texture2D m_TexSHC;
-    [HideInInspector] public Texture2D m_TexSHD;
-    [HideInInspector] public Texture2D m_TexSHE;
-    [HideInInspector] public Texture2D m_TexSHF;
+    public enum TexType
+    {
+        Pos = 0,
+        Rot,
+        Scl,
+        Col,
+        SH1,
+        SH2,
+        SH3,
+        SH4,
+        SH5,
+        SH6,
+        SH7,
+        SH8,
+        SH9,
+        SHA,
+        SHB,
+        SHC,
+        SHD,
+        SHE,
+        SHF,
+        TypeCount
+    }
+
+    [NonReorderable]
+    public Texture2D[] m_Tex = new Texture2D[(int) TexType.TypeCount];
+
+    public Texture2D GetTex(TexType idx) => m_Tex[(int)idx];
 
     [HideInInspector] public ChunkInfo[] m_Chunks;
     [HideInInspector] public CameraInfo[] m_Cameras;

@@ -262,25 +262,25 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void SetAssetTexturesOnMaterial(Material displayMat)
     {
-        displayMat.SetTexture("_TexPos", m_Asset.m_TexPos);
-        displayMat.SetTexture("_TexRot", m_Asset.m_TexRot);
-        displayMat.SetTexture("_TexScl", m_Asset.m_TexScl);
-        displayMat.SetTexture("_TexCol", m_Asset.m_TexCol);
-        displayMat.SetTexture("_TexSH1", m_Asset.m_TexSH1);
-        displayMat.SetTexture("_TexSH2", m_Asset.m_TexSH2);
-        displayMat.SetTexture("_TexSH3", m_Asset.m_TexSH3);
-        displayMat.SetTexture("_TexSH4", m_Asset.m_TexSH4);
-        displayMat.SetTexture("_TexSH5", m_Asset.m_TexSH5);
-        displayMat.SetTexture("_TexSH6", m_Asset.m_TexSH6);
-        displayMat.SetTexture("_TexSH7", m_Asset.m_TexSH7);
-        displayMat.SetTexture("_TexSH8", m_Asset.m_TexSH8);
-        displayMat.SetTexture("_TexSH9", m_Asset.m_TexSH9);
-        displayMat.SetTexture("_TexSHA", m_Asset.m_TexSHA);
-        displayMat.SetTexture("_TexSHB", m_Asset.m_TexSHB);
-        displayMat.SetTexture("_TexSHC", m_Asset.m_TexSHC);
-        displayMat.SetTexture("_TexSHD", m_Asset.m_TexSHD);
-        displayMat.SetTexture("_TexSHE", m_Asset.m_TexSHE);
-        displayMat.SetTexture("_TexSHF", m_Asset.m_TexSHF);
+        displayMat.SetTexture("_TexPos", m_Asset.GetTex(GaussianSplatAsset.TexType.Pos));
+        displayMat.SetTexture("_TexRot", m_Asset.GetTex(GaussianSplatAsset.TexType.Rot));
+        displayMat.SetTexture("_TexScl", m_Asset.GetTex(GaussianSplatAsset.TexType.Scl));
+        displayMat.SetTexture("_TexCol", m_Asset.GetTex(GaussianSplatAsset.TexType.Col));
+        displayMat.SetTexture("_TexSH1", m_Asset.GetTex(GaussianSplatAsset.TexType.SH1));
+        displayMat.SetTexture("_TexSH2", m_Asset.GetTex(GaussianSplatAsset.TexType.SH2));
+        displayMat.SetTexture("_TexSH3", m_Asset.GetTex(GaussianSplatAsset.TexType.SH3));
+        displayMat.SetTexture("_TexSH4", m_Asset.GetTex(GaussianSplatAsset.TexType.SH4));
+        displayMat.SetTexture("_TexSH5", m_Asset.GetTex(GaussianSplatAsset.TexType.SH5));
+        displayMat.SetTexture("_TexSH6", m_Asset.GetTex(GaussianSplatAsset.TexType.SH6));
+        displayMat.SetTexture("_TexSH7", m_Asset.GetTex(GaussianSplatAsset.TexType.SH7));
+        displayMat.SetTexture("_TexSH8", m_Asset.GetTex(GaussianSplatAsset.TexType.SH8));
+        displayMat.SetTexture("_TexSH9", m_Asset.GetTex(GaussianSplatAsset.TexType.SH9));
+        displayMat.SetTexture("_TexSHA", m_Asset.GetTex(GaussianSplatAsset.TexType.SHA));
+        displayMat.SetTexture("_TexSHB", m_Asset.GetTex(GaussianSplatAsset.TexType.SHB));
+        displayMat.SetTexture("_TexSHC", m_Asset.GetTex(GaussianSplatAsset.TexType.SHC));
+        displayMat.SetTexture("_TexSHD", m_Asset.GetTex(GaussianSplatAsset.TexType.SHD));
+        displayMat.SetTexture("_TexSHE", m_Asset.GetTex(GaussianSplatAsset.TexType.SHE));
+        displayMat.SetTexture("_TexSHF", m_Asset.GetTex(GaussianSplatAsset.TexType.SHF));
     }
 
     public void OnDisable()
@@ -314,7 +314,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         }
 
         // calculate distance to the camera for each splat
-        m_CSSplatUtilities.SetTexture(1, "_SplatPositions", m_Asset.m_TexPos);
+        m_CSSplatUtilities.SetTexture(1, "_SplatPositions", m_Asset.GetTex(GaussianSplatAsset.TexType.Pos));
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", worldToCamMatrix);

@@ -65,26 +65,15 @@ public class GaussianSplatAssetEditor : Editor
             using var _ = new EditorGUI.DisabledScope(true);
             EditorGUILayout.IntField("Splats", splatCount);
 
-            long sizePos = GetTextureSize(gs.m_TexPos);
-            long sizeRot = GetTextureSize(gs.m_TexRot);
-            long sizeScl = GetTextureSize(gs.m_TexScl);
-            long sizeCol = GetTextureSize(gs.m_TexCol);
+            long sizePos = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Pos));
+            long sizeRot = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Rot));
+            long sizeScl = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Scl));
+            long sizeCol = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Col));
             long sizeSh = 0;
-            sizeSh += GetTextureSize(gs.m_TexSH1);
-            sizeSh += GetTextureSize(gs.m_TexSH2);
-            sizeSh += GetTextureSize(gs.m_TexSH3);
-            sizeSh += GetTextureSize(gs.m_TexSH4);
-            sizeSh += GetTextureSize(gs.m_TexSH5);
-            sizeSh += GetTextureSize(gs.m_TexSH6);
-            sizeSh += GetTextureSize(gs.m_TexSH7);
-            sizeSh += GetTextureSize(gs.m_TexSH8);
-            sizeSh += GetTextureSize(gs.m_TexSH9);
-            sizeSh += GetTextureSize(gs.m_TexSHA);
-            sizeSh += GetTextureSize(gs.m_TexSHB);
-            sizeSh += GetTextureSize(gs.m_TexSHC);
-            sizeSh += GetTextureSize(gs.m_TexSHD);
-            sizeSh += GetTextureSize(gs.m_TexSHE);
-            sizeSh += GetTextureSize(gs.m_TexSHF);
+            for (var i = GaussianSplatAsset.TexType.SH1; i <= GaussianSplatAsset.TexType.SHF; ++i)
+            {
+                sizeSh += GetTextureSize(gs.GetTex(i));
+            }
             EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeRot + sizeScl + sizeCol + sizeSh));
             EditorGUI.indentLevel++;
             EditorGUILayout.TextField("Positions", EditorUtility.FormatBytes(sizePos));

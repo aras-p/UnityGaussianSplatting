@@ -5,11 +5,13 @@ using TinyJson;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
+[BurstCompile]
 public class GaussianSplatAssetCreator : EditorWindow
 {
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
@@ -119,111 +121,51 @@ public class GaussianSplatAssetCreator : EditorWindow
             return;
         }
 
-        int splatCount = inputSplats.Length;
-
         string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
 
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.2f);
         AssetDatabase.StartAssetEditing();
-        var texPos = CreateTexture($"{baseName}_pos", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texRot = CreateTexture($"{baseName}_rot", splatCount, GraphicsFormat.R32G32B32A32_SFloat);
-        var texScl = CreateTexture($"{baseName}_scl", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texCol = CreateTexture($"{baseName}_col", splatCount, GraphicsFormat.R32G32B32A32_SFloat);
-        var texsh1 = CreateTexture($"{baseName}_sh1", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh2 = CreateTexture($"{baseName}_sh2", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh3 = CreateTexture($"{baseName}_sh3", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh4 = CreateTexture($"{baseName}_sh4", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh5 = CreateTexture($"{baseName}_sh5", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh6 = CreateTexture($"{baseName}_sh6", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh7 = CreateTexture($"{baseName}_sh7", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh8 = CreateTexture($"{baseName}_sh8", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texsh9 = CreateTexture($"{baseName}_sh9", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshA = CreateTexture($"{baseName}_shA", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshB = CreateTexture($"{baseName}_shB", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshC = CreateTexture($"{baseName}_shC", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshD = CreateTexture($"{baseName}_shD", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshE = CreateTexture($"{baseName}_shE", splatCount, GraphicsFormat.R32G32B32_SFloat);
-        var texshF = CreateTexture($"{baseName}_shF", splatCount, GraphicsFormat.R32G32B32_SFloat);
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
         asset.m_Cameras = cameras;
-        asset.m_TexPos = texPos;
-        asset.m_TexRot = texRot;
-        asset.m_TexScl = texScl;
-        asset.m_TexCol = texCol;
-        asset.m_TexSH1 = texsh1;
-        asset.m_TexSH2 = texsh2;
-        asset.m_TexSH3 = texsh3;
-        asset.m_TexSH4 = texsh4;
-        asset.m_TexSH5 = texsh5;
-        asset.m_TexSH6 = texsh6;
-        asset.m_TexSH7 = texsh7;
-        asset.m_TexSH8 = texsh8;
-        asset.m_TexSH9 = texsh9;
-        asset.m_TexSHA = texshA;
-        asset.m_TexSHB = texshB;
-        asset.m_TexSHC = texshC;
-        asset.m_TexSHD = texshD;
-        asset.m_TexSHE = texshE;
-        asset.m_TexSHF = texshF;
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Setting up initial data", 0.3f);
-        InitAssetData(inputSplats, asset);
+        List<string> imageFiles = CreateTextureFiles(inputSplats, asset, m_OutputFolder, baseName);
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Serializing textures", 0.8f);
-        asset.m_TexPos = CreateOrReplaceTex(m_OutputFolder, texPos);
-        asset.m_TexRot = CreateOrReplaceTex(m_OutputFolder, texRot);
-        asset.m_TexScl = CreateOrReplaceTex(m_OutputFolder, texScl);
-        asset.m_TexCol = CreateOrReplaceTex(m_OutputFolder, texCol);
-        asset.m_TexSH1 = CreateOrReplaceTex(m_OutputFolder, texsh1);
-        asset.m_TexSH2 = CreateOrReplaceTex(m_OutputFolder, texsh2);
-        asset.m_TexSH3 = CreateOrReplaceTex(m_OutputFolder, texsh3);
-        asset.m_TexSH4 = CreateOrReplaceTex(m_OutputFolder, texsh4);
-        asset.m_TexSH5 = CreateOrReplaceTex(m_OutputFolder, texsh5);
-        asset.m_TexSH6 = CreateOrReplaceTex(m_OutputFolder, texsh6);
-        asset.m_TexSH7 = CreateOrReplaceTex(m_OutputFolder, texsh7);
-        asset.m_TexSH8 = CreateOrReplaceTex(m_OutputFolder, texsh8);
-        asset.m_TexSH9 = CreateOrReplaceTex(m_OutputFolder, texsh9);
-        asset.m_TexSHA = CreateOrReplaceTex(m_OutputFolder, texshA);
-        asset.m_TexSHB = CreateOrReplaceTex(m_OutputFolder, texshB);
-        asset.m_TexSHC = CreateOrReplaceTex(m_OutputFolder, texshC);
-        asset.m_TexSHD = CreateOrReplaceTex(m_OutputFolder, texshD);
-        asset.m_TexSHE = CreateOrReplaceTex(m_OutputFolder, texshE);
-        asset.m_TexSHF = CreateOrReplaceTex(m_OutputFolder, texshF);
+        // files are created, import them so we can get to the importer objects, ugh
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.3f);
+        AssetDatabase.StopAssetEditing();
+        AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
+        AssetDatabase.StartAssetEditing();
+
+        // set their import settings
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.4f);
+        foreach (var ifile in imageFiles)
+        {
+            var imp = AssetImporter.GetAtPath(ifile) as TextureImporter;
+            imp.isReadable = false;
+            imp.mipmapEnabled = false;
+            imp.npotScale = TextureImporterNPOTScale.None;
+            imp.textureCompression = TextureImporterCompression.Uncompressed;
+            imp.maxTextureSize = 8192;
+            imp.SetPlatformTextureSettings("Standalone", 8192, TextureImporterFormat.RGBAFloat);
+            AssetDatabase.ImportAsset(ifile);
+        }
+        AssetDatabase.StopAssetEditing();
+
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Setup textures onto asset", 0.8f);
+        for (int i = 0; i < imageFiles.Count; ++i)
+            asset.m_Tex[i] = AssetDatabase.LoadAssetAtPath<Texture2D>(imageFiles[i]);
+
         var savedAsset = CreateOrReplaceAsset(asset, assetPath);
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Saving assets", 0.9f);
-        AssetDatabase.StopAssetEditing();
         AssetDatabase.SaveAssets();
         EditorUtility.ClearProgressBar();
 
         Selection.activeObject = savedAsset;
-    }
-
-    static Texture2D CreateOrReplaceTex(string folder, Texture2D tex)
-    {
-        tex.Apply(false, true); // removes "is readable" flag
-        return CreateOrReplaceAsset(tex, $"{folder}/{tex.name}.texture2D");
-    }
-
-    static Texture2D CreateTexture(string name, int splatCount, GraphicsFormat format)
-    {
-        const int kTextureWidth = 2048; //@TODO: bump to 4k
-        int width = kTextureWidth;
-        int height = math.max(1, (splatCount + width - 1) / width);
-        // adjust height to multiple of block size for compressed formats
-        if (GraphicsFormatUtility.IsCompressedFormat(format))
-        {
-            int blockHeight = (int)GraphicsFormatUtility.GetBlockHeight(format);
-            height = (height + blockHeight - 1) / blockHeight * blockHeight;
-        }
-
-        var tex = new Texture2D(width, height, format, TextureCreationFlags.DontUploadUponCreate);
-        tex.name = name;
-        return tex;
     }
 
     unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string folder, bool use30k)
@@ -280,61 +222,183 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    void InitAssetData(NativeArray<InputSplatData> inputSplats, GaussianSplatAsset asset)
+    [BurstCompile]
+    public struct InitTextureDataJob : IJob
     {
+        public int width, height;
+        public NativeArray<float3> dataPos;
+        public NativeArray<float4> dataRot;
+        public NativeArray<float3> dataScl;
+        public NativeArray<float4> dataCol;
+        public NativeArray<float3> dataSh1;
+        public NativeArray<float3> dataSh2;
+        public NativeArray<float3> dataSh3;
+        public NativeArray<float3> dataSh4;
+        public NativeArray<float3> dataSh5;
+        public NativeArray<float3> dataSh6;
+        public NativeArray<float3> dataSh7;
+        public NativeArray<float3> dataSh8;
+        public NativeArray<float3> dataSh9;
+        public NativeArray<float3> dataShA;
+        public NativeArray<float3> dataShB;
+        public NativeArray<float3> dataShC;
+        public NativeArray<float3> dataShD;
+        public NativeArray<float3> dataShE;
+        public NativeArray<float3> dataShF;
+
+        [ReadOnly] public NativeArray<InputSplatData> inputSplats;
+        public NativeArray<float3> bounds;
+
+        public InitTextureDataJob(NativeArray<InputSplatData> input, NativeArray<float3> bounds)
+        {
+            inputSplats = input;
+            this.bounds = bounds;
+
+            const int kTextureWidth = 2048; //@TODO: bump to 4k
+            width = kTextureWidth;
+            height = math.max(1, (input.Length + width - 1) / width);
+            // height multiple of compressed block heights
+            int blockHeight = 4;
+            height = (height + blockHeight - 1) / blockHeight * blockHeight;
+
+            dataPos = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataRot = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataScl = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataCol = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh1 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh2 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh3 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh4 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh5 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh6 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh7 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh8 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh9 = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShA = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShB = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShC = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShD = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShE = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataShF = new NativeArray<float3>(width * height, Allocator.Persistent);
+        }
+
+        public void Dispose()
+        {
+            dataPos.Dispose();
+            dataRot.Dispose();
+            dataScl.Dispose();
+            dataCol.Dispose();
+            dataSh1.Dispose();
+            dataSh2.Dispose();
+            dataSh3.Dispose();
+            dataSh4.Dispose();
+            dataSh5.Dispose();
+            dataSh6.Dispose();
+            dataSh7.Dispose();
+            dataSh8.Dispose();
+            dataSh9.Dispose();
+            dataShA.Dispose();
+            dataShB.Dispose();
+            dataShC.Dispose();
+            dataShD.Dispose();
+            dataShE.Dispose();
+            dataShF.Dispose();
+        }
+
+        public void Execute()
+        {
+            bounds[0] = float.PositiveInfinity;
+            bounds[1] = float.NegativeInfinity;
+            for (int i = 0; i < inputSplats.Length; ++i)
+            {
+                var splat = inputSplats[i];
+
+                // pos
+                float3 pos = splat.pos;
+                bounds[0] = math.min(bounds[0], pos);
+                bounds[1] = math.max(bounds[1], pos);
+                dataPos[i] = pos;
+
+                // rot
+                var q = splat.rot;
+                dataRot[i] = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
+
+                // scale
+                dataScl[i] = GaussianUtils.LinearScale(splat.scale);
+
+                // color
+                var c = GaussianUtils.SH0ToColor(splat.dc0);
+                var a = GaussianUtils.Sigmoid(splat.opacity);
+                dataCol[i] = new float4(c.x, c.y, c.z, a);
+
+                // SHs
+                dataSh1[i] = splat.sh1;
+                dataSh2[i] = splat.sh2;
+                dataSh3[i] = splat.sh3;
+                dataSh4[i] = splat.sh4;
+                dataSh5[i] = splat.sh5;
+                dataSh6[i] = splat.sh6;
+                dataSh7[i] = splat.sh7;
+                dataSh8[i] = splat.sh8;
+                dataSh9[i] = splat.sh9;
+                dataShA[i] = splat.shA;
+                dataShB[i] = splat.shB;
+                dataShC[i] = splat.shC;
+                dataShD[i] = splat.shD;
+                dataShE[i] = splat.shE;
+                dataShF[i] = splat.shF;
+            }
+        }
+    }
+
+    static string SaveExr(string path, int width, int height, NativeArray<float3> data)
+    {
+        var exrData = ImageConversion.EncodeNativeArrayToEXR(data, GraphicsFormat.R32G32B32_SFloat, (uint)width, (uint)height, flags: Texture2D.EXRFlags.OutputAsFloat);
+        File.WriteAllBytes(path, exrData.ToArray());
+        exrData.Dispose();
+        return path;
+    }
+    static string SaveExr(string path, int width, int height, NativeArray<float4> data)
+    {
+        var exrData = ImageConversion.EncodeNativeArrayToEXR(data, GraphicsFormat.R32G32B32A32_SFloat, (uint)width, (uint)height, flags: Texture2D.EXRFlags.OutputAsFloat);
+        File.WriteAllBytes(path, exrData.ToArray());
+        exrData.Dispose();
+        return path;
+    }
+
+    static List<string> CreateTextureFiles(NativeArray<InputSplatData> inputSplats, GaussianSplatAsset asset, string folder, string baseName)
+    {
+        NativeArray<float3> bounds = new NativeArray<float3>(2, Allocator.TempJob);
+        InitTextureDataJob texData = new InitTextureDataJob(inputSplats, bounds);
+        texData.Schedule().Complete();
         asset.m_SplatCount = inputSplats.Length;
-        NativeArray<float3> f3data = new(asset.m_TexPos.width * asset.m_TexPos.height, Allocator.TempJob);
-        NativeArray<float4> f4data = new(asset.m_TexPos.width * asset.m_TexPos.height, Allocator.TempJob);
-        // pos
-        asset.m_BoundsMin = (float3)float.PositiveInfinity;
-        asset.m_BoundsMax = (float3)float.NegativeInfinity;
-        for (int i = 0; i < asset.m_SplatCount; ++i)
-        {
-            float3 pos = inputSplats[i].pos;
-            asset.m_BoundsMin = math.min(asset.m_BoundsMin, pos);
-            asset.m_BoundsMax = math.max(asset.m_BoundsMax, pos);
-            f3data[i] = pos;
-        }
+        asset.m_BoundsMin = bounds[0];
+        asset.m_BoundsMax = bounds[1];
+        bounds.Dispose();
 
-        asset.m_TexPos.SetPixelData(f3data, 0);
-        // rot
-        for (int i = 0; i < asset.m_SplatCount; ++i)
-        {
-            var q = inputSplats[i].rot;
-            f4data[i] = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
-        }
-        asset.m_TexRot.SetPixelData(f4data, 0);
-        // scale
-        for (int i = 0; i < asset.m_SplatCount; ++i)
-            f3data[i] = GaussianUtils.LinearScale(inputSplats[i].scale);
-        asset.m_TexScl.SetPixelData(f3data, 0);
-        // color
-        for (int i = 0; i < asset.m_SplatCount; ++i)
-        {
-            var c = GaussianUtils.SH0ToColor(inputSplats[i].dc0);
-            var a = GaussianUtils.Sigmoid(inputSplats[i].opacity);
-            f4data[i] = new float4(c.x, c.y, c.z, a);
-        }
-        asset.m_TexCol.SetPixelData(f4data, 0);
-        // SHs
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh1; asset.m_TexSH1.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh2; asset.m_TexSH2.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh3; asset.m_TexSH3.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh4; asset.m_TexSH4.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh5; asset.m_TexSH5.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh6; asset.m_TexSH6.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh7; asset.m_TexSH7.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh8; asset.m_TexSH8.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].sh9; asset.m_TexSH9.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shA; asset.m_TexSHA.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shB; asset.m_TexSHB.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shC; asset.m_TexSHC.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shD; asset.m_TexSHD.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shE; asset.m_TexSHE.SetPixelData(f3data, 0);
-        for (int i = 0; i < asset.m_SplatCount; ++i) f3data[i] = inputSplats[i].shF; asset.m_TexSHF.SetPixelData(f3data, 0);
+        List<string> imageFiles = new();
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_pos.exr", texData.width, texData.height, texData.dataPos));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_rot.exr", texData.width, texData.height, texData.dataRot));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_scl.exr", texData.width, texData.height, texData.dataScl));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_col.exr", texData.width, texData.height, texData.dataCol));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh1.exr", texData.width, texData.height, texData.dataSh1));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh2.exr", texData.width, texData.height, texData.dataSh2));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh3.exr", texData.width, texData.height, texData.dataSh3));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh4.exr", texData.width, texData.height, texData.dataSh4));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh5.exr", texData.width, texData.height, texData.dataSh5));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh6.exr", texData.width, texData.height, texData.dataSh6));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh7.exr", texData.width, texData.height, texData.dataSh7));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh8.exr", texData.width, texData.height, texData.dataSh8));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh9.exr", texData.width, texData.height, texData.dataSh9));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_sha.exr", texData.width, texData.height, texData.dataShA));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_shb.exr", texData.width, texData.height, texData.dataShB));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_shc.exr", texData.width, texData.height, texData.dataShC));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_shd.exr", texData.width, texData.height, texData.dataShD));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_she.exr", texData.width, texData.height, texData.dataShE));
+        imageFiles.Add(SaveExr($"{folder}/{baseName}_shf.exr", texData.width, texData.height, texData.dataShF));
 
-        f3data.Dispose();
-        f4data.Dispose();
+        texData.Dispose();
+        return imageFiles;
     }
 
     static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string folder)
