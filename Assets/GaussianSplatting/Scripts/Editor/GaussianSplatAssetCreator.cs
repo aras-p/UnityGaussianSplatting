@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using TinyJson;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -12,14 +14,14 @@ public class GaussianSplatAssetCreator : EditorWindow
 {
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
+    const string kCamerasJson = "cameras.json";
 
     readonly FolderPickerPropertyDrawer m_FolderPicker = new();
 
     [SerializeField] string m_InputFolder;
     [SerializeField] bool m_Use30k = true;
 
-    [SerializeField] string m_OutputFolder;
-    [SerializeField] string m_OutputBaseName;
+    [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
 
     string m_ErrorMessage;
 
@@ -38,13 +40,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         GUILayout.Label("Input data", EditorStyles.boldLabel);
         var rect = EditorGUILayout.GetControlRect(true);
         m_InputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Input Folder"), m_InputFolder, kPointCloudPly, "PointCloudFolder");
-        m_Use30k = EditorGUILayout.Toggle("Use 30k Version", m_Use30k);
+        m_Use30k = EditorGUILayout.Toggle(new GUIContent("Use 30k Version", "Use iteration_30000 point cloud if available. Otherwise uses iteration_7000."), m_Use30k);
 
         EditorGUILayout.Space();
         GUILayout.Label("Output", EditorStyles.boldLabel);
         rect = EditorGUILayout.GetControlRect(true);
         m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
-        m_OutputBaseName = EditorGUILayout.TextField("Output Base Name", m_OutputBaseName);
 
         EditorGUILayout.Space();
         GUILayout.BeginHorizontal();
@@ -94,6 +95,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     void CreateAsset()
     {
         m_ErrorMessage = null;
+        if (string.IsNullOrWhiteSpace(m_InputFolder))
+        {
+            m_ErrorMessage = $"Select input folder";
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(m_OutputFolder) || !m_OutputFolder.StartsWith("Assets/"))
         {
@@ -101,6 +107,9 @@ public class GaussianSplatAssetCreator : EditorWindow
             return;
         }
         Directory.CreateDirectory(m_OutputFolder);
+
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading cameras info", 0.0f);
+        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFolder);
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading PLY file", 0.1f);
         using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFolder, m_Use30k);
@@ -112,10 +121,12 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         int splatCount = inputSplats.Length;
 
-        var baseName = string.IsNullOrWhiteSpace(m_OutputBaseName) ? "Gaussian" : m_OutputBaseName;
+        string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
+
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.2f);
+        AssetDatabase.StartAssetEditing();
         var texPos = CreateTexture($"{baseName}_pos", splatCount, GraphicsFormat.R32G32B32_SFloat);
         var texRot = CreateTexture($"{baseName}_rot", splatCount, GraphicsFormat.R32G32B32A32_SFloat);
         var texScl = CreateTexture($"{baseName}_scl", splatCount, GraphicsFormat.R32G32B32_SFloat);
@@ -138,6 +149,7 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
+        asset.m_Cameras = cameras;
         asset.m_TexPos = texPos;
         asset.m_TexRot = texRot;
         asset.m_TexScl = texScl;
@@ -181,15 +193,19 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_TexSHD = CreateOrReplaceTex(m_OutputFolder, texshD);
         asset.m_TexSHE = CreateOrReplaceTex(m_OutputFolder, texshE);
         asset.m_TexSHF = CreateOrReplaceTex(m_OutputFolder, texshF);
-        CreateOrReplaceAsset(asset, assetPath);
+        var savedAsset = CreateOrReplaceAsset(asset, assetPath);
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Saving assets", 0.9f);
+        AssetDatabase.StopAssetEditing();
         AssetDatabase.SaveAssets();
         EditorUtility.ClearProgressBar();
+
+        Selection.activeObject = savedAsset;
     }
 
     static Texture2D CreateOrReplaceTex(string folder, Texture2D tex)
     {
+        tex.Apply(false, true); // removes "is readable" flag
         return CreateOrReplaceAsset(tex, $"{folder}/{tex.name}.texture2D");
     }
 
@@ -286,7 +302,6 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             var q = inputSplats[i].rot;
             f4data[i] = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
-            f4data[i] = new float4(q.x, q.y, q.z, q.w);
         }
         asset.m_TexRot.SetPixelData(f4data, 0);
         // scale
@@ -321,4 +336,59 @@ public class GaussianSplatAssetCreator : EditorWindow
         f3data.Dispose();
         f4data.Dispose();
     }
+
+    static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string folder)
+    {
+        string path = $"{folder}/{kCamerasJson}";
+        if (!File.Exists(path))
+            return null;
+
+        string json = File.ReadAllText(path);
+        var jsonCameras = JSONParser.FromJson<List<JsonCamera>>(json);
+        if (jsonCameras == null || jsonCameras.Count == 0)
+            return null;
+
+        var result = new GaussianSplatAsset.CameraInfo[jsonCameras.Count];
+        for (var camIndex = 0; camIndex < jsonCameras.Count; camIndex++)
+        {
+            var jsonCam = jsonCameras[camIndex];
+            var pos = new Vector3(jsonCam.position[0], jsonCam.position[1], jsonCam.position[2]);
+            // the matrix is a "view matrix", not "camera matrix" lol
+            var axisx = new Vector3(jsonCam.rotation[0][0], jsonCam.rotation[1][0], jsonCam.rotation[2][0]);
+            var axisy = new Vector3(jsonCam.rotation[0][1], jsonCam.rotation[1][1], jsonCam.rotation[2][1]);
+            var axisz = new Vector3(jsonCam.rotation[0][2], jsonCam.rotation[1][2], jsonCam.rotation[2][2]);
+
+            pos.z *= -1;
+            axisy *= -1;
+            axisx.z *= -1;
+            axisy.z *= -1;
+            axisz.z *= -1;
+
+            var cam = new GaussianSplatAsset.CameraInfo
+            {
+                pos = pos,
+                axisX = axisx,
+                axisY = axisy,
+                axisZ = axisz,
+                fov = 25 //@TODO
+            };
+            result[camIndex] = cam;
+        }
+
+        return result;
+    }
+
+    [Serializable]
+    public class JsonCamera
+    {
+        public int id;
+        public string img_name;
+        public int width;
+        public int height;
+        public float[] position;
+        public float[][] rotation;
+        public float fx;
+        public float fy;
+    }
+
 }

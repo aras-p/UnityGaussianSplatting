@@ -14,17 +14,7 @@ CGPROGRAM
 #pragma fragment frag
 #pragma require compute
 
-struct InputSplat
-{
-    float3 pos;
-    float3 nor;
-    float3 sh0;
-    float3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, sh10, sh11, sh12, sh13, sh14, sh15;
-    float opacity;
-    float3 scale;
-    float4 rot;
-};
-StructuredBuffer<InputSplat> _DataBuffer;
+#include "GaussianSplatting.hlsl"
 
 struct v2f
 {
@@ -37,8 +27,6 @@ bool _DisplayIndex;
 bool _DisplayLine;
 int _SplatCount;
 
-static const float SH_C0 = 0.2820948;
-
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
@@ -48,7 +36,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     else
         splatIndex = instID;
 
-    float3 centerWorldPos = _DataBuffer[splatIndex].pos * float3(1,1,-1);
+    SplatData splat = LoadSplatData(splatIndex);
+
+    float3 centerWorldPos = splat.pos * float3(1,1,-1);
 
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
 
@@ -62,7 +52,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         o.vertex.xy += (quadPos * _SplatSize / _ScreenParams.xy) * o.vertex.w;
     }
 
-    o.color.rgb = saturate(SH_C0 * _DataBuffer[splatIndex].sh0 + 0.5);
+    o.color.rgb = saturate(splat.sh.col);
     if (_DisplayIndex)
     {
         o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);

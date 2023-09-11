@@ -3,7 +3,9 @@
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 
-StructuredBuffer<float3> _InputPositions;
+#include "GaussianSplatting.hlsl"
+
+Texture2D _SplatPositions;
 float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
@@ -36,8 +38,9 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     }
 
     uint origIdx = _SplatSortKeys[idx];
+    float4 pix = _SplatPositions.Load(SplatIndexToPixelIndex(origIdx));
 
-    float3 pos = mul(_WorldToCameraMatrix, float4(_InputPositions[origIdx] * float3(1,1,-1), 1)).xyz;
+    float3 pos = mul(_WorldToCameraMatrix, float4(pix.rgb * float3(1,1,-1), 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html
     uint fu = asuint(pos.z);
     uint mask = -((int)(fu >> 31)) | 0x80000000;

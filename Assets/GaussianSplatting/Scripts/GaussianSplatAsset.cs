@@ -1,31 +1,36 @@
+using System;
 using UnityEngine;
 
 public class GaussianSplatAsset : ScriptableObject
 {
-    public int m_SplatCount;
-    public Vector3 m_BoundsMin;
-    public Vector3 m_BoundsMax;
+    [HideInInspector] public int m_SplatCount;
+    [HideInInspector] public Vector3 m_BoundsMin;
+    [HideInInspector] public Vector3 m_BoundsMax;
 
-    public Texture2D m_TexPos;
-    public Texture2D m_TexRot;
-    public Texture2D m_TexScl;
-    public Texture2D m_TexCol;
-    public Texture2D m_TexSH1;
-    public Texture2D m_TexSH2;
-    public Texture2D m_TexSH3;
-    public Texture2D m_TexSH4;
-    public Texture2D m_TexSH5;
-    public Texture2D m_TexSH6;
-    public Texture2D m_TexSH7;
-    public Texture2D m_TexSH8;
-    public Texture2D m_TexSH9;
-    public Texture2D m_TexSHA;
-    public Texture2D m_TexSHB;
-    public Texture2D m_TexSHC;
-    public Texture2D m_TexSHD;
-    public Texture2D m_TexSHE;
-    public Texture2D m_TexSHF;
+    [HideInInspector] public Texture2D m_TexPos;
+    [HideInInspector] public Texture2D m_TexRot;
+    [HideInInspector] public Texture2D m_TexScl;
+    [HideInInspector] public Texture2D m_TexCol;
+    [HideInInspector] public Texture2D m_TexSH1;
+    [HideInInspector] public Texture2D m_TexSH2;
+    [HideInInspector] public Texture2D m_TexSH3;
+    [HideInInspector] public Texture2D m_TexSH4;
+    [HideInInspector] public Texture2D m_TexSH5;
+    [HideInInspector] public Texture2D m_TexSH6;
+    [HideInInspector] public Texture2D m_TexSH7;
+    [HideInInspector] public Texture2D m_TexSH8;
+    [HideInInspector] public Texture2D m_TexSH9;
+    [HideInInspector] public Texture2D m_TexSHA;
+    [HideInInspector] public Texture2D m_TexSHB;
+    [HideInInspector] public Texture2D m_TexSHC;
+    [HideInInspector] public Texture2D m_TexSHD;
+    [HideInInspector] public Texture2D m_TexSHE;
+    [HideInInspector] public Texture2D m_TexSHF;
 
+    [HideInInspector] public ChunkInfo[] m_Chunks;
+    [HideInInspector] public CameraInfo[] m_Cameras;
+
+    [Serializable]
     public struct BoundsInfo
     {
         public Vector3 pos;
@@ -48,11 +53,18 @@ public class GaussianSplatAsset : ScriptableObject
         public Vector3 shF;
     }
 
+    [Serializable]
     public struct ChunkInfo
     {
         public BoundsInfo boundsMin;
         public BoundsInfo boundsInvSize;
     }
 
-    public ChunkInfo[] m_Chunks;
+    [Serializable]
+    public struct CameraInfo
+    {
+        public Vector3 pos;
+        public Vector3 axisX, axisY, axisZ;
+        public float fov;
+    }
 }

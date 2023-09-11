@@ -45,7 +45,7 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
             errorString = "Specify output folder";
 
         helpString =
-            $"File size of {m_SplatCount:N0} splats: {EditorUtility.FormatBytes((long) m_SplatCount * UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>())}";
+            $"File size of {m_SplatCount:N0} splats: {EditorUtility.FormatBytes((long) m_SplatCount * UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>())}";
     }
 
     static float InvSigmoid(float v)
@@ -186,7 +186,7 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
         {
             if (si % 100000 == 0)
                 EditorUtility.DisplayProgressBar("Generating Splats", m_SplatCount.ToString("N0"), (float)si / (float)m_SplatCount);
-            GaussianSplatRenderer.InputSplat dat = default;
+            GaussianSplatAssetCreator.InputSplatData dat = default;
             switch (m_Kind)
             {
                 case SyntheticKind.RandomInsideSphere:
@@ -224,7 +224,7 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
             pt.pos = dat.pos;
             pt.col = Color.white;
 
-            fs.Write(new ReadOnlySpan<byte>(UnsafeUtility.AddressOf(ref dat), UnsafeUtility.SizeOf<GaussianSplatRenderer.InputSplat>()));
+            fs.Write(new ReadOnlySpan<byte>(UnsafeUtility.AddressOf(ref dat), UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>()));
             fs2.Write(new ReadOnlySpan<byte>(UnsafeUtility.AddressOf(ref pt), UnsafeUtility.SizeOf<InputPoint>()));
         }
         EditorUtility.ClearProgressBar();
