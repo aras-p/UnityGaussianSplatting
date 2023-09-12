@@ -24,6 +24,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] bool m_Use30k = true;
 
     [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
+    [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
 
@@ -48,6 +49,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         GUILayout.Label("Output", EditorStyles.boldLabel);
         rect = EditorGUILayout.GetControlRect(true);
         m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
+        m_ReorderMorton = EditorGUILayout.Toggle("Morton Reorder", m_ReorderMorton);
 
         EditorGUILayout.Space();
         GUILayout.BeginHorizontal();
@@ -121,11 +123,17 @@ public class GaussianSplatAssetCreator : EditorWindow
             return;
         }
 
+        if (m_ReorderMorton)
+        {
+            EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading PLY file", 0.2f);
+            ReorderMorton(inputSplats);
+        }
+
         string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
 
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.2f);
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.3f);
         AssetDatabase.StartAssetEditing();
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
@@ -135,13 +143,13 @@ public class GaussianSplatAssetCreator : EditorWindow
         List<string> imageFiles = CreateTextureFiles(inputSplats, asset, m_OutputFolder, baseName);
 
         // files are created, import them so we can get to the importer objects, ugh
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.3f);
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.4f);
         AssetDatabase.StopAssetEditing();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
         AssetDatabase.StartAssetEditing();
 
         // set their import settings
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.4f);
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.5f);
         foreach (var ifile in imageFiles)
         {
             var imp = AssetImporter.GetAtPath(ifile) as TextureImporter;
@@ -223,6 +231,63 @@ public class GaussianSplatAssetCreator : EditorWindow
 
             idx += splatStride;
         }
+    }
+
+    [BurstCompile]
+    struct ReorderMortonJob : IJob
+    {
+        public NativeArray<InputSplatData> m_SplatData;
+        public NativeArray<(ulong,int)> m_Order;
+
+        public void Execute()
+        {
+            float3 boundsMin = float.PositiveInfinity;
+            float3 boundsMax = float.NegativeInfinity;
+
+            for (int i = 0; i < m_SplatData.Length; ++i)
+            {
+                float3 pos = m_SplatData[i].pos;
+                boundsMin = math.min(boundsMin, pos);
+                boundsMax = math.max(boundsMax, pos);
+            }
+
+            float kScaler = (float) ((1 << 21) - 1);
+            float3 invBoundsSize = new float3(1.0f) / (boundsMax - boundsMin);
+            for (int i = 0; i < m_SplatData.Length; ++i)
+            {
+                float3 pos = ((float3)m_SplatData[i].pos - boundsMin) * invBoundsSize * kScaler;
+                uint3 ipos = (uint3) pos;
+                ulong code = GaussianUtils.MortonEncode3(ipos);
+                m_Order[i] = (code, i);
+            }
+        }
+    }
+
+    struct OrderComparer : IComparer<(ulong, int)> {
+        public int Compare((ulong, int) a, (ulong, int) b)
+        {
+            if (a.Item1 < b.Item1) return -1;
+            if (a.Item1 > b.Item1) return +1;
+            return a.Item2 - b.Item2;
+        }
+    }
+
+    static void ReorderMorton(NativeArray<InputSplatData> splatData)
+    {
+        ReorderMortonJob order = new ReorderMortonJob
+        {
+            m_SplatData = splatData,
+            m_Order = new NativeArray<(ulong, int)>(splatData.Length, Allocator.TempJob)
+        };
+        order.Schedule().Complete();
+        order.m_Order.Sort(new OrderComparer());
+
+        NativeArray<InputSplatData> copy = new(order.m_SplatData, Allocator.TempJob);
+        for (int i = 0; i < copy.Length; ++i)
+            order.m_SplatData[i] = copy[order.m_Order[i].Item2];
+        copy.Dispose();
+
+        order.m_Order.Dispose();
     }
 
     [BurstCompile]

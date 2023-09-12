@@ -34,7 +34,7 @@ public class GaussianSplatValidator
 
         var captureTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
         var compareTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
-        NativeArray<Color32> diffPixels = new NativeArray<Color32>(width * height, Allocator.Persistent);
+        NativeArray<Color32> diffPixels = new(width * height, Allocator.Persistent);
 
         int imageIndex = 1;
 
@@ -60,7 +60,7 @@ public class GaussianSplatValidator
                 for (int j = 0; j < width * height; ++j)
                 {
                     Color32 cref = refPixels[j];
-                    // ref image apparently gets loaded as ARGB in 2022.3?
+                    // note: LoadImage always loads PNGs into ARGB order, so swizzle to normal RGBA
                     cref = new Color32(cref.g, cref.b, cref.a, cref.r);
                     cref.a = 255;
                     refPixels[j] = cref;
