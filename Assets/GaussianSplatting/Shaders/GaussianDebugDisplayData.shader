@@ -60,9 +60,7 @@ uint2 DecodeMorton2D_16x16(uint t)
 
 uint _SplatCount;
 uint _DisplayMode;
-
-float3 _BoundsMin;
-float3 _BoundsMax;
+uint _DisplayDataScale;
 
 static const uint kDisplayPosition = 1;
 static const uint kDisplayScale = 2;
@@ -73,57 +71,30 @@ static const uint kDisplaySH1 = 6;
 
 half4 frag (v2f i) : SV_Target
 {
-    uint2 pixelPos = i.vertex.xy;
-    uint cols = 512;
-    if (_ScreenParams.x > 1024)
-        cols = 1024;
-    if (_ScreenParams.x > 2048)
-        cols = 2048;
-
-    if (pixelPos.x >= cols)
-        return 0;
-    uint idx = pixelPos.y * cols + pixelPos.x;
-    if (idx >= _SplatCount)
-        return 0;
+    uint2 pixelPos = i.vertex.xy / _DisplayDataScale;
 
     half4 res = 1;
-    SplatData splat = LoadSplatData(idx);
-    if (_DisplayMode == kDisplayPosition)
-    {
-        float3 pos = (splat.pos * float3(1,1,-1) - _BoundsMin) / (_BoundsMax - _BoundsMin);
-        res.rgb = pos;
-    }
-    if (_DisplayMode == kDisplayRotation)
-    {
-        res.rgb = saturate(splat.rot.rgb * 0.5 + 0.5);
-    }
-    if (_DisplayMode == kDisplayScale)
-    {
-        res.rgb = saturate(splat.scale * 3.0);
-    }
-    if (_DisplayMode == kDisplayColor)
-    {
-        res.rgb = saturate(splat.sh.col * 0.7);
-    }
-    if (_DisplayMode == kDisplayOpacity)
-    {
-        res.rgb = saturate(splat.opacity);
-    }
-    if (_DisplayMode == kDisplaySH1 + 0) res.rgb = saturate(2 * splat.sh.sh1 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 1) res.rgb = saturate(2 * splat.sh.sh2 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 2) res.rgb = saturate(2 * splat.sh.sh3 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 3) res.rgb = saturate(2 * splat.sh.sh4 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 4) res.rgb = saturate(2 * splat.sh.sh5 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 5) res.rgb = saturate(2 * splat.sh.sh6 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 6) res.rgb = saturate(2 * splat.sh.sh7 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 7) res.rgb = saturate(2 * splat.sh.sh8 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 8) res.rgb = saturate(2 * splat.sh.sh9 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 9) res.rgb = saturate(2 * splat.sh.sh10 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 10) res.rgb = saturate(2 * splat.sh.sh11 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 11) res.rgb = saturate(2 * splat.sh.sh12 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 12) res.rgb = saturate(2 * splat.sh.sh13 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 13) res.rgb = saturate(2 * splat.sh.sh14 * 0.5 + 0.5);
-    if (_DisplayMode == kDisplaySH1 + 14) res.rgb = saturate(2 * splat.sh.sh15 * 0.5 + 0.5);
+    SplatData splat = LoadSplatDataRaw(pixelPos);
+    if (_DisplayMode == kDisplayPosition) res.rgb = splat.pos;
+    if (_DisplayMode == kDisplayRotation) res.rgb = splat.rot.rgb;
+    if (_DisplayMode == kDisplayScale) res.rgb = splat.scale;
+    if (_DisplayMode == kDisplayColor) res.rgb = splat.sh.col;
+    if (_DisplayMode == kDisplayOpacity) res.rgb = splat.opacity;
+    if (_DisplayMode == kDisplaySH1 + 0) res.rgb = splat.sh.sh1;
+    if (_DisplayMode == kDisplaySH1 + 1) res.rgb = splat.sh.sh2;
+    if (_DisplayMode == kDisplaySH1 + 2) res.rgb = splat.sh.sh3;
+    if (_DisplayMode == kDisplaySH1 + 3) res.rgb = splat.sh.sh4;
+    if (_DisplayMode == kDisplaySH1 + 4) res.rgb = splat.sh.sh5;
+    if (_DisplayMode == kDisplaySH1 + 5) res.rgb = splat.sh.sh6;
+    if (_DisplayMode == kDisplaySH1 + 6) res.rgb = splat.sh.sh7;
+    if (_DisplayMode == kDisplaySH1 + 7) res.rgb = splat.sh.sh8;
+    if (_DisplayMode == kDisplaySH1 + 8) res.rgb = splat.sh.sh9;
+    if (_DisplayMode == kDisplaySH1 + 9) res.rgb = splat.sh.sh10;
+    if (_DisplayMode == kDisplaySH1 + 10) res.rgb = splat.sh.sh11;
+    if (_DisplayMode == kDisplaySH1 + 11) res.rgb = splat.sh.sh12;
+    if (_DisplayMode == kDisplaySH1 + 12) res.rgb = splat.sh.sh13;
+    if (_DisplayMode == kDisplaySH1 + 13) res.rgb = splat.sh.sh14;
+    if (_DisplayMode == kDisplaySH1 + 14) res.rgb = splat.sh.sh15;
     return res;
 }
 ENDCG

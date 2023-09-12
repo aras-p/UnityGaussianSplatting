@@ -264,4 +264,33 @@ SplatData LoadSplatData(uint idx)
     return s;
 }
 
+SplatData LoadSplatDataRaw(uint2 coord2)
+{
+    SplatData s;
+    uint3 coord = uint3(coord2, 0);
+
+    s.pos       = _TexPos.Load(coord).rgb;
+    s.rot       = float4(_TexRot.Load(coord).rgb, 1);
+    s.scale     = _TexScl.Load(coord).rgb;
+    half4 col   = _TexCol.Load(coord);
+    s.opacity   = col.a;
+    s.sh.col    = col.rgb;
+    s.sh.sh1    = _TexSH1.Load(coord).rgb;
+    s.sh.sh2    = _TexSH2.Load(coord).rgb;
+    s.sh.sh3    = _TexSH3.Load(coord).rgb;
+    s.sh.sh4    = _TexSH4.Load(coord).rgb;
+    s.sh.sh5    = _TexSH5.Load(coord).rgb;
+    s.sh.sh6    = _TexSH6.Load(coord).rgb;
+    s.sh.sh7    = _TexSH7.Load(coord).rgb;
+    s.sh.sh8    = _TexSH8.Load(coord).rgb;
+    s.sh.sh9    = _TexSH9.Load(coord).rgb;
+    s.sh.sh10   = _TexSHA.Load(coord).rgb;
+    s.sh.sh11   = _TexSHB.Load(coord).rgb;
+    s.sh.sh12   = _TexSHC.Load(coord).rgb;
+    s.sh.sh13   = _TexSHD.Load(coord).rgb;
+    s.sh.sh14   = _TexSHE.Load(coord).rgb;
+    s.sh.sh15   = _TexSHF.Load(coord).rgb;
+    return s;
+}
+
 #endif // GAUSSIAN_SPLATTING_HLSL

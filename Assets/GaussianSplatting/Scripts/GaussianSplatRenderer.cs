@@ -43,9 +43,9 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Header("Debugging Tweaks")]
 
     public RenderMode m_RenderMode = RenderMode.Splats;
-    [Range(1.0f,15.0f)]
-    public float m_PointDisplaySize = 3.0f;
+    [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
     public DisplayDataMode m_DisplayData = DisplayDataMode.None;
+    [Range(1, 8)] public int m_DisplayDataScale = 1;
 
     [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
     public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
@@ -207,11 +207,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (m_DisplayData != DisplayDataMode.None)
         {
             SetAssetTexturesOnMaterial(m_MatDebugData);
+            m_MatDebugData.SetBuffer("_SplatChunks", m_GpuChunks);
             m_MatDebugData.SetInteger("_SplatCount", m_Asset.m_SplatCount);
             m_MatDebugData.SetInteger("_DisplayMode", (int)m_DisplayData);
-
-            m_MatDebugData.SetVector("_BoundsMin", m_Asset.m_BoundsMin);
-            m_MatDebugData.SetVector("_BoundsMax", m_Asset.m_BoundsMax);
+            m_MatDebugData.SetInteger("_DisplayDataScale", m_DisplayDataScale);
             Graphics.DrawProcedural(m_MatDebugData, new Bounds(cam.transform.position, Vector3.one * 1000.0f), MeshTopology.Triangles, 6, 1, cam);
         }
     }
