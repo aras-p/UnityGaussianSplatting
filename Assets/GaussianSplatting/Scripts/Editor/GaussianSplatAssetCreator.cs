@@ -15,7 +15,6 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
-using Object = UnityEngine.Object;
 
 [BurstCompile]
 public class GaussianSplatAssetCreator : EditorWindow
@@ -702,7 +701,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             DataFormat.Norm10_2 => GraphicsFormat.A2B10G10R10_UNormPack32,
             #endif
             DataFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
-            DataFormat.Norm565 => GraphicsFormat.R5G6B5_UNormPack16,
+            DataFormat.Norm565 => GraphicsFormat.B5G6R5_UNormPack16,
             DataFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
             DataFormat.BC1 => GraphicsFormat.RGBA_DXT1_UNorm,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
@@ -761,7 +760,7 @@ public class GaussianSplatAssetCreator : EditorWindow
                     case DataFormat.Norm565:
                     {
                         pix = math.saturate(pix);
-                        uint enc = (uint)(pix.x * 31.5f) | ((uint)(pix.y * 63.5f) << 5) | ((uint)(pix.z * 31.5f) << 11);
+                        uint enc = ((uint)(pix.x * 31.5f) << 11) | ((uint)(pix.y * 63.5f) << 5) | (uint)(pix.z * 31.5f);
                         *(ushort*) dstPtr = (ushort)enc;
                     }
                         break;
