@@ -29,6 +29,9 @@ public class GaussianSplatValidator
         int height = 797;
 
         var cam = Camera.main;
+        var oldAsset = gaussians.asset;
+        var oldCamPos = cam.transform.position;
+        var oldCamRot = cam.transform.rotation;
         var renderTarget = RenderTexture.GetTemporary(width, height, 24, GraphicsFormat.R8G8B8A8_SRGB);
         cam.targetTexture = renderTarget;
 
@@ -111,6 +114,10 @@ public class GaussianSplatValidator
         diffPixels.Dispose();
 
         cam.targetTexture = null;
+        gaussians.m_Asset = oldAsset;
+        cam.transform.position = oldCamPos;
+        cam.transform.rotation = oldCamRot;
+
         RenderTexture.ReleaseTemporary(renderTarget);
         Object.DestroyImmediate(captureTexture);
 

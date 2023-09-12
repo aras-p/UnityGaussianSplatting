@@ -1,14 +1,10 @@
 using System.Collections.Generic;
-using Unity.Burst;
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Serialization;
 
-[BurstCompile]
 public class GaussianSplatRenderer : MonoBehaviour
 {
     public enum RenderMode
@@ -71,7 +67,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     GraphicsBuffer m_GpuSortDistances;
     GraphicsBuffer m_GpuSortKeys;
-    //GraphicsBuffer m_GpuChunks;
+    GraphicsBuffer m_GpuChunks;
 
     IslandGPUSort m_SorterIsland;
     IslandGPUSort.Args m_SorterIslandArgs;
@@ -113,8 +109,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
         m_MatDebugData = new Material(m_ShaderDebugData) {name = "GaussianDebugData"};
 
-        //@TODO
-        //m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, (m_SplatCount + kChunkSize - 1) / kChunkSize, UnsafeUtility.SizeOf<ChunkData>()) { name = "GaussianChunkData" };
+        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
+        m_GpuChunks.SetData(asset.m_Chunks);
 
         int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
@@ -140,45 +136,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};
     }
-
-    /*
-    public void UpdateGPUBuffers()
-    {
-        NativeArray<Vector3> inputPositions = new(m_SplatCount, Allocator.Temp);
-        NativeArray<ChunkData> chunks = new(m_GpuChunks.count, Allocator.Temp);
-        ChunkData chunk = default;
-        int chunkIndex = 0;
-        for (var i = 0; i < m_SplatCount; ++i)
-        {
-            var pos = m_SplatData[i].pos;
-            inputPositions[i] = pos;
-
-            if (i % kChunkSize == 0)
-            {
-                chunk.bmin = float.PositiveInfinity;
-                chunk.bmax = float.NegativeInfinity;
-            }
-
-            chunk.bmin = math.min(chunk.bmin, pos);
-            chunk.bmax = math.max(chunk.bmax, pos);
-            if ((i + 1) % kChunkSize == 0)
-            {
-                chunks[chunkIndex] = chunk;
-                ++chunkIndex;
-            }
-        }
-
-        if (chunkIndex < chunks.Length) // store last perhaps not full chunk
-            chunks[chunkIndex] = chunk;
-        m_GpuPositions.SetData(inputPositions);
-        inputPositions.Dispose();
-
-        m_GpuChunks.SetData(chunks);
-        chunks.Dispose();
-
-        m_GpuData.SetData(m_SplatData, 0, 0, m_SplatCount);
-    }
-    */
 
     void OnPreCullCamera(Camera cam)
     {
@@ -206,8 +163,8 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         SetAssetTexturesOnMaterial(displayMat);
 
-        //displayMat.SetBuffer("_ChunkBuffer", m_GpuChunks); //@TODO
-        //displayMat.SetInteger("_ChunkCount", m_GpuChunks.count);
+        displayMat.SetBuffer("_SplatChunks", m_GpuChunks);
+        displayMat.SetInteger("_SplatChunkCount", m_GpuChunks.count);
 
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
@@ -234,9 +191,8 @@ public class GaussianSplatRenderer : MonoBehaviour
             vertexCount = m_Asset.m_SplatCount;
             instanceCount = 1;
         }
-        //@TODO
-        //if (m_RenderMode == RenderMode.DebugChunkBounds)
-        //    instanceCount = m_GpuChunks.count;
+        if (m_RenderMode == RenderMode.DebugChunkBounds)
+            instanceCount = m_GpuChunks.count;
 
         int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
         m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
@@ -290,7 +246,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CameraCommandBuffersDone?.Clear();
         m_RenderCommandBuffer?.Clear();
 
-        //m_GpuChunks?.Dispose(); //@TODO
+        m_GpuChunks?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
@@ -317,6 +273,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.SetTexture(1, "_SplatPositions", m_Asset.GetTex(GaussianSplatAsset.TexType.Pos));
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
+        m_CSSplatUtilities.SetBuffer(1, "_SplatChunks", m_GpuChunks);
         m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", worldToCamMatrix);
         m_CSSplatUtilities.SetInt("_SplatCount", m_Asset.m_SplatCount);
         m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);

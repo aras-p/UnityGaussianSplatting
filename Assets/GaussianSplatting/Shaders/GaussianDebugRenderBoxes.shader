@@ -31,16 +31,8 @@ static const int kCubeIndices[36] =
 
 StructuredBuffer<uint> _OrderBuffer;
 
-/*
-struct ChunkData
-{
-    float3 bmin;
-    float3 bmax;
-};
-StructuredBuffer<ChunkData> _ChunkBuffer;
 bool _DisplayChunks;
-int _ChunkCount;
-*/
+uint _SplatChunkCount;
 
 struct v2f
 {
@@ -60,7 +52,7 @@ half3 palette(float t, half3 a, half3 b, half3 c, half3 d)
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
-    bool chunks = false; //@TODO _DisplayChunks;
+    bool chunks = _DisplayChunks;
 	uint idx = kCubeIndices[vtxID];
 	float3 localPos = float3(idx&1, (idx>>1)&1, (idx>>2)&1) * 2.0 - 1.0;
 
@@ -87,15 +79,13 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     }
     else
     {
-        // display chunk boxes @TODO
-        /*
+        // display chunk boxes
         localPos = localPos * 0.5 + 0.5;
-        ChunkData chunk = _ChunkBuffer[instID];
-        localPos = lerp(chunk.bmin, chunk.bmax, localPos);
+        SplatChunkInfo chunk = _SplatChunks[instID];
+        localPos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, localPos);
 
-        o.col.rgb = palette((float)instID / (float)_ChunkCount, half3(0.5,0.5,0.5), half3(0.5,0.5,0.5), half3(1,1,1), half3(0.0, 0.33, 0.67));
+        o.col.rgb = palette((float)instID / (float)_SplatChunkCount, half3(0.5,0.5,0.5), half3(0.5,0.5,0.5), half3(1,1,1), half3(0.0, 0.33, 0.67));
         o.col.a = 0.1;
-        */
     }
     localPos.z *= -1;
 

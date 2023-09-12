@@ -44,9 +44,9 @@ public class GaussianSplatAsset : ScriptableObject
     [Serializable]
     public struct BoundsInfo
     {
+        public Vector4 col;
         public Vector3 pos;
         public Vector3 scl;
-        public Vector4 col;
         public Vector3 sh1;
         public Vector3 sh2;
         public Vector3 sh3;
@@ -68,7 +68,7 @@ public class GaussianSplatAsset : ScriptableObject
     public struct ChunkInfo
     {
         public BoundsInfo boundsMin;
-        public BoundsInfo boundsInvSize;
+        public BoundsInfo boundsMax;
     }
 
     [Serializable]

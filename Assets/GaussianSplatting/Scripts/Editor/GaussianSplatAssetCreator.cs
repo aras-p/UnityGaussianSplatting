@@ -326,7 +326,7 @@ public class GaussianSplatAssetCreator : EditorWindow
 
     struct CalcChunkDataJob : IJobParallelFor
     {
-        [ReadOnly] public NativeArray<InputSplatData> splatData;
+        [NativeDisableParallelForRestriction] public NativeArray<InputSplatData> splatData;
         public NativeArray<GaussianSplatAsset.ChunkInfo> chunks;
 
         public void Execute(int chunkIdx)
@@ -372,6 +372,8 @@ public class GaussianSplatAssetCreator : EditorWindow
 
             int splatBegin = math.min(chunkIdx * GaussianSplatAsset.kChunkSize, splatData.Length);
             int splatEnd = math.min((chunkIdx + 1) * GaussianSplatAsset.kChunkSize, splatData.Length);
+
+            // calculate data bounds inside the chunk
             for (int i = splatBegin; i < splatEnd; ++i)
             {
                 InputSplatData s = splatData[i];
@@ -414,27 +416,37 @@ public class GaussianSplatAssetCreator : EditorWindow
                 chunkMax.shF = math.max(chunkMax.shF, s.shF);
             }
 
+            // store chunk info
             GaussianSplatAsset.ChunkInfo info;
             info.boundsMin = chunkMin;
-            info.boundsInvSize.pos = 1.0f / (float3)(chunkMax.pos - chunkMin.pos);
-            info.boundsInvSize.scl = 1.0f / (float3)(chunkMax.scl - chunkMin.scl);
-            info.boundsInvSize.col = 1.0f / (float4)(chunkMax.col - chunkMin.col);
-            info.boundsInvSize.sh1 = 1.0f / (float3)(chunkMax.sh1 - chunkMin.sh1);
-            info.boundsInvSize.sh2 = 1.0f / (float3)(chunkMax.sh2 - chunkMin.sh2);
-            info.boundsInvSize.sh3 = 1.0f / (float3)(chunkMax.sh3 - chunkMin.sh3);
-            info.boundsInvSize.sh4 = 1.0f / (float3)(chunkMax.sh4 - chunkMin.sh4);
-            info.boundsInvSize.sh5 = 1.0f / (float3)(chunkMax.sh5 - chunkMin.sh5);
-            info.boundsInvSize.sh6 = 1.0f / (float3)(chunkMax.sh6 - chunkMin.sh6);
-            info.boundsInvSize.sh7 = 1.0f / (float3)(chunkMax.sh7 - chunkMin.sh7);
-            info.boundsInvSize.sh8 = 1.0f / (float3)(chunkMax.sh8 - chunkMin.sh8);
-            info.boundsInvSize.sh9 = 1.0f / (float3)(chunkMax.sh9 - chunkMin.sh9);
-            info.boundsInvSize.shA = 1.0f / (float3)(chunkMax.shA - chunkMin.shA);
-            info.boundsInvSize.shB = 1.0f / (float3)(chunkMax.shB - chunkMin.shB);
-            info.boundsInvSize.shC = 1.0f / (float3)(chunkMax.shC - chunkMin.shC);
-            info.boundsInvSize.shD = 1.0f / (float3)(chunkMax.shD - chunkMin.shD);
-            info.boundsInvSize.shE = 1.0f / (float3)(chunkMax.shE - chunkMin.shE);
-            info.boundsInvSize.shF = 1.0f / (float3)(chunkMax.shF - chunkMin.shF);
+            info.boundsMax = chunkMax;
             chunks[chunkIdx] = info;
+
+            // adjust data to be 0..1 within chunk bounds
+            for (int i = splatBegin; i < splatEnd; ++i)
+            {
+                InputSplatData s = splatData[i];
+                s.pos = (s.pos - chunkMin.pos) / (float3)(chunkMax.pos - chunkMin.pos);
+                s.scale = (s.scale - chunkMin.scl) / (float3)(chunkMax.scl - chunkMin.scl);
+                s.dc0 = ((float3)s.dc0 - ((float4)chunkMin.col).xyz) / (((float4)chunkMax.col).xyz - ((float4)chunkMin.col).xyz);
+                s.opacity = (s.opacity - chunkMin.col.w) / (chunkMax.col.w - chunkMin.col.w);
+                s.sh1 = (s.sh1 - chunkMin.sh1) / (float3)(chunkMax.sh1 - chunkMin.sh1);
+                s.sh2 = (s.sh2 - chunkMin.sh2) / (float3)(chunkMax.sh2 - chunkMin.sh2);
+                s.sh3 = (s.sh3 - chunkMin.sh3) / (float3)(chunkMax.sh3 - chunkMin.sh3);
+                s.sh4 = (s.sh4 - chunkMin.sh4) / (float3)(chunkMax.sh4 - chunkMin.sh4);
+                s.sh5 = (s.sh5 - chunkMin.sh5) / (float3)(chunkMax.sh5 - chunkMin.sh5);
+                s.sh6 = (s.sh6 - chunkMin.sh6) / (float3)(chunkMax.sh6 - chunkMin.sh6);
+                s.sh7 = (s.sh7 - chunkMin.sh7) / (float3)(chunkMax.sh7 - chunkMin.sh7);
+                s.sh8 = (s.sh8 - chunkMin.sh8) / (float3)(chunkMax.sh8 - chunkMin.sh8);
+                s.sh9 = (s.sh9 - chunkMin.sh9) / (float3)(chunkMax.sh9 - chunkMin.sh9);
+                s.shA = (s.shA - chunkMin.shA) / (float3)(chunkMax.shA - chunkMin.shA);
+                s.shB = (s.shB - chunkMin.shB) / (float3)(chunkMax.shB - chunkMin.shB);
+                s.shC = (s.shC - chunkMin.shC) / (float3)(chunkMax.shC - chunkMin.shC);
+                s.shD = (s.shD - chunkMin.shD) / (float3)(chunkMax.shD - chunkMin.shD);
+                s.shE = (s.shE - chunkMin.shE) / (float3)(chunkMax.shE - chunkMin.shE);
+                s.shF = (s.shF - chunkMin.shF) / (float3)(chunkMax.shF - chunkMin.shF);
+                splatData[i] = s;
+            }
         }
     }
 
