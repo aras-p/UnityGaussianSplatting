@@ -96,7 +96,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         return result;
     }
 
-    void CreateAsset()
+    unsafe void CreateAsset()
     {
         m_ErrorMessage = null;
         if (string.IsNullOrWhiteSpace(m_InputFolder))
@@ -123,20 +123,28 @@ public class GaussianSplatAssetCreator : EditorWindow
             return;
         }
 
+        float3 boundsMin, boundsMax;
+        var boundsJob = new CalcBoundsJob
+        {
+            m_BoundsMin = &boundsMin,
+            m_BoundsMax = &boundsMax,
+            m_SplatData = inputSplats
+        };
+        boundsJob.Schedule().Complete();
+
         if (m_ReorderMorton)
         {
             EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Morton reordering", 0.2f);
-            ReorderMorton(inputSplats);
+            ReorderMorton(inputSplats, boundsMin, boundsMax);
         }
 
         string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
 
-        var assetPath = $"{m_OutputFolder}/{baseName}.asset";
-
-
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
         asset.m_Cameras = cameras;
+        asset.m_BoundsMin = boundsMin;
+        asset.m_BoundsMax = boundsMax;
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Calc chunks", 0.3f);
         LinearizeData(inputSplats);
@@ -174,6 +182,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         for (int i = 0; i < imageFiles.Count; ++i)
             asset.m_Tex[i] = AssetDatabase.LoadAssetAtPath<Texture2D>(imageFiles[i]);
 
+        var assetPath = $"{m_OutputFolder}/{baseName}.asset";
         var savedAsset = CreateOrReplaceAsset(asset, assetPath);
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Saving assets", 0.9f);
@@ -238,12 +247,13 @@ public class GaussianSplatAssetCreator : EditorWindow
     }
 
     [BurstCompile]
-    struct ReorderMortonJob : IJob
+    struct CalcBoundsJob : IJob
     {
-        public NativeArray<InputSplatData> m_SplatData;
-        public NativeArray<(ulong,int)> m_Order;
+        [NativeDisableUnsafePtrRestriction] public unsafe float3* m_BoundsMin;
+        [NativeDisableUnsafePtrRestriction] public unsafe float3* m_BoundsMax;
+        [ReadOnly] public NativeArray<InputSplatData> m_SplatData;
 
-        public void Execute()
+        public unsafe void Execute()
         {
             float3 boundsMin = float.PositiveInfinity;
             float3 boundsMax = float.NegativeInfinity;
@@ -254,16 +264,27 @@ public class GaussianSplatAssetCreator : EditorWindow
                 boundsMin = math.min(boundsMin, pos);
                 boundsMax = math.max(boundsMax, pos);
             }
+            *m_BoundsMin = boundsMin;
+            *m_BoundsMax = boundsMax;
+        }
+    }
 
-            float kScaler = (float) ((1 << 21) - 1);
-            float3 invBoundsSize = new float3(1.0f) / (boundsMax - boundsMin);
-            for (int i = 0; i < m_SplatData.Length; ++i)
-            {
-                float3 pos = ((float3)m_SplatData[i].pos - boundsMin) * invBoundsSize * kScaler;
-                uint3 ipos = (uint3) pos;
-                ulong code = GaussianUtils.MortonEncode3(ipos);
-                m_Order[i] = (code, i);
-            }
+
+    [BurstCompile]
+    struct ReorderMortonJob : IJobParallelFor
+    {
+        const float kScaler = (float) ((1 << 21) - 1);
+        public float3 m_BoundsMin;
+        public float3 m_InvBoundsSize;
+        [ReadOnly] public NativeArray<InputSplatData> m_SplatData;
+        public NativeArray<(ulong,int)> m_Order;
+
+        public void Execute(int index)
+        {
+            float3 pos = ((float3)m_SplatData[index].pos - m_BoundsMin) * m_InvBoundsSize * kScaler;
+            uint3 ipos = (uint3) pos;
+            ulong code = GaussianUtils.MortonEncode3(ipos);
+            m_Order[index] = (code, index);
         }
     }
 
@@ -276,14 +297,16 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static void ReorderMorton(NativeArray<InputSplatData> splatData)
+    static void ReorderMorton(NativeArray<InputSplatData> splatData, float3 boundsMin, float3 boundsMax)
     {
         ReorderMortonJob order = new ReorderMortonJob
         {
             m_SplatData = splatData,
+            m_BoundsMin = boundsMin,
+            m_InvBoundsSize = 1.0f / (boundsMax - boundsMin),
             m_Order = new NativeArray<(ulong, int)>(splatData.Length, Allocator.TempJob)
         };
-        order.Schedule().Complete();
+        order.Schedule(splatData.Length, 4096).Complete();
         order.m_Order.Sort(new OrderComparer());
 
         NativeArray<InputSplatData> copy = new(order.m_SplatData, Allocator.TempJob);
@@ -294,6 +317,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         order.m_Order.Dispose();
     }
 
+    [BurstCompile]
     struct LinearizeDataJob : IJobParallelFor
     {
         public NativeArray<InputSplatData> splatData;
@@ -325,6 +349,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(splatData.Length, 4096).Complete();
     }
 
+    [BurstCompile]
     struct CalcChunkDataJob : IJobParallelFor
     {
         [NativeDisableParallelForRestriction] public NativeArray<InputSplatData> splatData;
@@ -466,7 +491,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     }
 
     [BurstCompile]
-    public struct InitTextureDataJob : IJob
+    public struct InitTextureDataJob : IJobParallelFor
     {
         public int width, height;
         public NativeArray<float3> dataPos;
@@ -489,13 +514,11 @@ public class GaussianSplatAssetCreator : EditorWindow
         public NativeArray<float3> dataShE;
         public NativeArray<float3> dataShF;
 
-        [ReadOnly] public NativeArray<InputSplatData> inputSplats;
-        public NativeArray<float3> bounds;
+        [ReadOnly] NativeArray<InputSplatData> inputSplats;
 
-        public InitTextureDataJob(NativeArray<InputSplatData> input, NativeArray<float3> bounds)
+        public InitTextureDataJob(NativeArray<InputSplatData> input)
         {
             inputSplats = input;
-            this.bounds = bounds;
 
             const int kTextureWidth = 2048; //@TODO: bump to 4k
             width = kTextureWidth;
@@ -548,49 +571,42 @@ public class GaussianSplatAssetCreator : EditorWindow
             dataShF.Dispose();
         }
 
-        public void Execute()
+        public void Execute(int i)
         {
-            bounds[0] = float.PositiveInfinity;
-            bounds[1] = float.NegativeInfinity;
-            for (int i = 0; i < inputSplats.Length; ++i)
-            {
-                var splat = inputSplats[i];
+            var splat = inputSplats[i];
 
-                // pos
-                float3 pos = splat.pos;
-                bounds[0] = math.min(bounds[0], pos);
-                bounds[1] = math.max(bounds[1], pos);
-                dataPos[i] = pos;
+            // pos
+            float3 pos = splat.pos;
+            dataPos[i] = pos;
 
-                // rot
-                var q = splat.rot;
-                dataRot[i] = new float4(q.x, q.y, q.z, q.w);
+            // rot
+            var q = splat.rot;
+            dataRot[i] = new float4(q.x, q.y, q.z, q.w);
 
-                // scale
-                dataScl[i] = splat.scale;
+            // scale
+            dataScl[i] = splat.scale;
 
-                // color
-                var c = splat.dc0;
-                var a = splat.opacity;
-                dataCol[i] = new float4(c.x, c.y, c.z, a);
+            // color
+            var c = splat.dc0;
+            var a = splat.opacity;
+            dataCol[i] = new float4(c.x, c.y, c.z, a);
 
-                // SHs
-                dataSh1[i] = splat.sh1;
-                dataSh2[i] = splat.sh2;
-                dataSh3[i] = splat.sh3;
-                dataSh4[i] = splat.sh4;
-                dataSh5[i] = splat.sh5;
-                dataSh6[i] = splat.sh6;
-                dataSh7[i] = splat.sh7;
-                dataSh8[i] = splat.sh8;
-                dataSh9[i] = splat.sh9;
-                dataShA[i] = splat.shA;
-                dataShB[i] = splat.shB;
-                dataShC[i] = splat.shC;
-                dataShD[i] = splat.shD;
-                dataShE[i] = splat.shE;
-                dataShF[i] = splat.shF;
-            }
+            // SHs
+            dataSh1[i] = splat.sh1;
+            dataSh2[i] = splat.sh2;
+            dataSh3[i] = splat.sh3;
+            dataSh4[i] = splat.sh4;
+            dataSh5[i] = splat.sh5;
+            dataSh6[i] = splat.sh6;
+            dataSh7[i] = splat.sh7;
+            dataSh8[i] = splat.sh8;
+            dataSh9[i] = splat.sh9;
+            dataShA[i] = splat.shA;
+            dataShB[i] = splat.shB;
+            dataShC[i] = splat.shC;
+            dataShD[i] = splat.shD;
+            dataShE[i] = splat.shE;
+            dataShF[i] = splat.shF;
         }
     }
 
@@ -611,13 +627,9 @@ public class GaussianSplatAssetCreator : EditorWindow
 
     static List<string> CreateTextureFiles(NativeArray<InputSplatData> inputSplats, GaussianSplatAsset asset, string folder, string baseName)
     {
-        NativeArray<float3> bounds = new NativeArray<float3>(2, Allocator.TempJob);
-        InitTextureDataJob texData = new InitTextureDataJob(inputSplats, bounds);
-        texData.Schedule().Complete();
+        InitTextureDataJob texData = new InitTextureDataJob(inputSplats);
+        texData.Schedule(inputSplats.Length, 4096).Complete();
         asset.m_SplatCount = inputSplats.Length;
-        asset.m_BoundsMin = bounds[0];
-        asset.m_BoundsMax = bounds[1];
-        bounds.Dispose();
 
         List<string> imageFiles = new();
         imageFiles.Add(SaveExr($"{folder}/{baseName}_pos.exr", texData.width, texData.height, texData.dataPos));

@@ -1,4 +1,5 @@
 using System.IO;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
@@ -7,6 +8,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEngine.Experimental.Rendering;
 
+[BurstCompile]
 public class GaussianSplatValidator
 {
     [MenuItem("Tools/Validate Gaussian Splats")]
@@ -118,6 +120,7 @@ public class GaussianSplatValidator
         Debug.Log("Captured a bunch of shots");
     }
 
+    [BurstCompile]
     struct DiffImagesJob : IJob
     {
         public NativeArray<Color32> refPixels;

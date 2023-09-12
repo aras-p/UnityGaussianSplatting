@@ -66,10 +66,15 @@ public class GaussianSplatAssetEditor : Editor
             using var _ = new EditorGUI.DisabledScope(true);
             EditorGUILayout.IntField("Splats", splatCount);
 
-            long sizePos = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Pos));
-            long sizeRot = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Rot));
-            long sizeScl = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Scl));
-            long sizeCol = GetTextureSize(gs.GetTex(GaussianSplatAsset.TexType.Col));
+            var texPos = gs.GetTex(GaussianSplatAsset.TexType.Pos);
+            var texRot = gs.GetTex(GaussianSplatAsset.TexType.Rot);
+            var texScl = gs.GetTex(GaussianSplatAsset.TexType.Scl);
+            var texCol = gs.GetTex(GaussianSplatAsset.TexType.Col);
+            var texSh1 = gs.GetTex(GaussianSplatAsset.TexType.SH1);
+            long sizePos = GetTextureSize(texPos);
+            long sizeRot = GetTextureSize(texRot);
+            long sizeScl = GetTextureSize(texScl);
+            long sizeCol = GetTextureSize(texCol);
             long sizeChk = gs.m_Chunks.Length * UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>();
             long sizeSh = 0;
             for (var i = GaussianSplatAsset.TexType.SH1; i <= GaussianSplatAsset.TexType.SHF; ++i)
@@ -78,12 +83,12 @@ public class GaussianSplatAssetEditor : Editor
             }
             EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeRot + sizeScl + sizeCol + sizeSh + sizeChk));
             EditorGUI.indentLevel++;
-            EditorGUILayout.TextField("Positions", EditorUtility.FormatBytes(sizePos));
-            EditorGUILayout.TextField("Rotations", EditorUtility.FormatBytes(sizeRot));
-            EditorGUILayout.TextField("Scales", EditorUtility.FormatBytes(sizeScl));
-            EditorGUILayout.TextField("Base color", EditorUtility.FormatBytes(sizeCol));
-            EditorGUILayout.TextField("SHs", EditorUtility.FormatBytes(sizeSh));
-            EditorGUILayout.TextField("Chunks", EditorUtility.FormatBytes(sizeChk));
+            EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {texPos.graphicsFormat}");
+            EditorGUILayout.TextField("Rotations", $"{EditorUtility.FormatBytes(sizeRot)}  {texRot.graphicsFormat}");
+            EditorGUILayout.TextField("Scales", $"{EditorUtility.FormatBytes(sizeScl)}  {texScl.graphicsFormat}");
+            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {texCol.graphicsFormat}");
+            EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSh)}  {texSh1.graphicsFormat}");
+            EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
             EditorGUI.indentLevel--;
 
             EditorGUILayout.Vector3Field("Bounds Min", gs.m_BoundsMin);
