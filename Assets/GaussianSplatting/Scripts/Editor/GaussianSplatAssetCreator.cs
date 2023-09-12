@@ -125,7 +125,7 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         if (m_ReorderMorton)
         {
-            EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading PLY file", 0.2f);
+            EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Morton reordering", 0.2f);
             ReorderMorton(inputSplats);
         }
 
@@ -133,23 +133,27 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.3f);
-        AssetDatabase.StartAssetEditing();
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
         asset.m_Cameras = cameras;
 
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Calc chunks", 0.3f);
+        LinearizeData(inputSplats);
+        asset.m_Chunks = CalcChunkData(inputSplats);
+
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.4f);
+        AssetDatabase.StartAssetEditing();
         List<string> imageFiles = CreateTextureFiles(inputSplats, asset, m_OutputFolder, baseName);
 
         // files are created, import them so we can get to the importer objects, ugh
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.4f);
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.5f);
         AssetDatabase.StopAssetEditing();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
         AssetDatabase.StartAssetEditing();
 
         // set their import settings
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.5f);
+        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.6f);
         foreach (var ifile in imageFiles)
         {
             var imp = AssetImporter.GetAtPath(ifile) as TextureImporter;
@@ -290,6 +294,164 @@ public class GaussianSplatAssetCreator : EditorWindow
         order.m_Order.Dispose();
     }
 
+    struct LinearizeDataJob : IJobParallelFor
+    {
+        public NativeArray<InputSplatData> splatData;
+        public void Execute(int index)
+        {
+            var splat = splatData[index];
+
+            // rot
+            var q = splat.rot;
+            var qq = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
+            splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
+
+            // scale
+            splat.scale = GaussianUtils.LinearScale(splat.scale);
+
+            // color
+            splat.dc0 = GaussianUtils.SH0ToColor(splat.dc0);
+            splat.opacity = GaussianUtils.Sigmoid(splat.opacity);
+
+            splatData[index] = splat;
+        }
+    }
+
+    static void LinearizeData(NativeArray<InputSplatData> splatData)
+    {
+        LinearizeDataJob job = new LinearizeDataJob();
+        job.splatData = splatData;
+        job.Schedule(splatData.Length, 4096).Complete();
+    }
+
+    struct CalcChunkDataJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<InputSplatData> splatData;
+        public NativeArray<GaussianSplatAsset.ChunkInfo> chunks;
+
+        public void Execute(int chunkIdx)
+        {
+            GaussianSplatAsset.BoundsInfo chunkMin;
+            chunkMin.pos = (float3) float.PositiveInfinity;
+            chunkMin.scl = (float3) float.PositiveInfinity;
+            chunkMin.col = (float4) float.PositiveInfinity;
+            chunkMin.sh1 = (float3) float.PositiveInfinity;
+            chunkMin.sh2 = (float3) float.PositiveInfinity;
+            chunkMin.sh3 = (float3) float.PositiveInfinity;
+            chunkMin.sh4 = (float3) float.PositiveInfinity;
+            chunkMin.sh5 = (float3) float.PositiveInfinity;
+            chunkMin.sh6 = (float3) float.PositiveInfinity;
+            chunkMin.sh7 = (float3) float.PositiveInfinity;
+            chunkMin.sh8 = (float3) float.PositiveInfinity;
+            chunkMin.sh9 = (float3) float.PositiveInfinity;
+            chunkMin.shA = (float3) float.PositiveInfinity;
+            chunkMin.shB = (float3) float.PositiveInfinity;
+            chunkMin.shC = (float3) float.PositiveInfinity;
+            chunkMin.shD = (float3) float.PositiveInfinity;
+            chunkMin.shE = (float3) float.PositiveInfinity;
+            chunkMin.shF = (float3) float.PositiveInfinity;
+            GaussianSplatAsset.BoundsInfo chunkMax;
+            chunkMax.pos = (float3) float.NegativeInfinity;
+            chunkMax.scl = (float3) float.NegativeInfinity;
+            chunkMax.col = (float4) float.NegativeInfinity;
+            chunkMax.sh1 = (float3) float.NegativeInfinity;
+            chunkMax.sh2 = (float3) float.NegativeInfinity;
+            chunkMax.sh3 = (float3) float.NegativeInfinity;
+            chunkMax.sh4 = (float3) float.NegativeInfinity;
+            chunkMax.sh5 = (float3) float.NegativeInfinity;
+            chunkMax.sh6 = (float3) float.NegativeInfinity;
+            chunkMax.sh7 = (float3) float.NegativeInfinity;
+            chunkMax.sh8 = (float3) float.NegativeInfinity;
+            chunkMax.sh9 = (float3) float.NegativeInfinity;
+            chunkMax.shA = (float3) float.NegativeInfinity;
+            chunkMax.shB = (float3) float.NegativeInfinity;
+            chunkMax.shC = (float3) float.NegativeInfinity;
+            chunkMax.shD = (float3) float.NegativeInfinity;
+            chunkMax.shE = (float3) float.NegativeInfinity;
+            chunkMax.shF = (float3) float.NegativeInfinity;
+
+            int splatBegin = math.min(chunkIdx * GaussianSplatAsset.kChunkSize, splatData.Length);
+            int splatEnd = math.min((chunkIdx + 1) * GaussianSplatAsset.kChunkSize, splatData.Length);
+            for (int i = splatBegin; i < splatEnd; ++i)
+            {
+                InputSplatData s = splatData[i];
+                chunkMin.pos = math.min(chunkMin.pos, s.pos);
+                chunkMin.scl = math.min(chunkMin.scl, s.scale);
+                chunkMin.col = math.min(chunkMin.col, new float4(s.dc0, s.opacity));
+                chunkMin.sh1 = math.min(chunkMin.sh1, s.sh1);
+                chunkMin.sh2 = math.min(chunkMin.sh2, s.sh2);
+                chunkMin.sh3 = math.min(chunkMin.sh3, s.sh3);
+                chunkMin.sh4 = math.min(chunkMin.sh4, s.sh4);
+                chunkMin.sh5 = math.min(chunkMin.sh5, s.sh5);
+                chunkMin.sh6 = math.min(chunkMin.sh6, s.sh6);
+                chunkMin.sh7 = math.min(chunkMin.sh7, s.sh7);
+                chunkMin.sh8 = math.min(chunkMin.sh8, s.sh8);
+                chunkMin.sh9 = math.min(chunkMin.sh9, s.sh9);
+                chunkMin.shA = math.min(chunkMin.shA, s.shA);
+                chunkMin.shB = math.min(chunkMin.shB, s.shB);
+                chunkMin.shC = math.min(chunkMin.shC, s.shC);
+                chunkMin.shD = math.min(chunkMin.shD, s.shD);
+                chunkMin.shE = math.min(chunkMin.shE, s.shE);
+                chunkMin.shF = math.min(chunkMin.shF, s.shF);
+
+                chunkMax.pos = math.max(chunkMax.pos, s.pos);
+                chunkMax.scl = math.max(chunkMax.scl, s.scale);
+                chunkMax.col = math.max(chunkMax.col, new float4(s.dc0, s.opacity));
+                chunkMax.sh1 = math.max(chunkMax.sh1, s.sh1);
+                chunkMax.sh2 = math.max(chunkMax.sh2, s.sh2);
+                chunkMax.sh3 = math.max(chunkMax.sh3, s.sh3);
+                chunkMax.sh4 = math.max(chunkMax.sh4, s.sh4);
+                chunkMax.sh5 = math.max(chunkMax.sh5, s.sh5);
+                chunkMax.sh6 = math.max(chunkMax.sh6, s.sh6);
+                chunkMax.sh7 = math.max(chunkMax.sh7, s.sh7);
+                chunkMax.sh8 = math.max(chunkMax.sh8, s.sh8);
+                chunkMax.sh9 = math.max(chunkMax.sh9, s.sh9);
+                chunkMax.shA = math.max(chunkMax.shA, s.shA);
+                chunkMax.shB = math.max(chunkMax.shB, s.shB);
+                chunkMax.shC = math.max(chunkMax.shC, s.shC);
+                chunkMax.shD = math.max(chunkMax.shD, s.shD);
+                chunkMax.shE = math.max(chunkMax.shE, s.shE);
+                chunkMax.shF = math.max(chunkMax.shF, s.shF);
+            }
+
+            GaussianSplatAsset.ChunkInfo info;
+            info.boundsMin = chunkMin;
+            info.boundsInvSize.pos = 1.0f / (float3)(chunkMax.pos - chunkMin.pos);
+            info.boundsInvSize.scl = 1.0f / (float3)(chunkMax.scl - chunkMin.scl);
+            info.boundsInvSize.col = 1.0f / (float4)(chunkMax.col - chunkMin.col);
+            info.boundsInvSize.sh1 = 1.0f / (float3)(chunkMax.sh1 - chunkMin.sh1);
+            info.boundsInvSize.sh2 = 1.0f / (float3)(chunkMax.sh2 - chunkMin.sh2);
+            info.boundsInvSize.sh3 = 1.0f / (float3)(chunkMax.sh3 - chunkMin.sh3);
+            info.boundsInvSize.sh4 = 1.0f / (float3)(chunkMax.sh4 - chunkMin.sh4);
+            info.boundsInvSize.sh5 = 1.0f / (float3)(chunkMax.sh5 - chunkMin.sh5);
+            info.boundsInvSize.sh6 = 1.0f / (float3)(chunkMax.sh6 - chunkMin.sh6);
+            info.boundsInvSize.sh7 = 1.0f / (float3)(chunkMax.sh7 - chunkMin.sh7);
+            info.boundsInvSize.sh8 = 1.0f / (float3)(chunkMax.sh8 - chunkMin.sh8);
+            info.boundsInvSize.sh9 = 1.0f / (float3)(chunkMax.sh9 - chunkMin.sh9);
+            info.boundsInvSize.shA = 1.0f / (float3)(chunkMax.shA - chunkMin.shA);
+            info.boundsInvSize.shB = 1.0f / (float3)(chunkMax.shB - chunkMin.shB);
+            info.boundsInvSize.shC = 1.0f / (float3)(chunkMax.shC - chunkMin.shC);
+            info.boundsInvSize.shD = 1.0f / (float3)(chunkMax.shD - chunkMin.shD);
+            info.boundsInvSize.shE = 1.0f / (float3)(chunkMax.shE - chunkMin.shE);
+            info.boundsInvSize.shF = 1.0f / (float3)(chunkMax.shF - chunkMin.shF);
+            chunks[chunkIdx] = info;
+        }
+    }
+
+    static GaussianSplatAsset.ChunkInfo[] CalcChunkData(NativeArray<InputSplatData> splatData)
+    {
+        int chunkCount = (splatData.Length + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
+        CalcChunkDataJob job = new CalcChunkDataJob();
+        job.splatData = splatData;
+        job.chunks = new(chunkCount, Allocator.TempJob);
+
+        job.Schedule(chunkCount, 8).Complete();
+
+        GaussianSplatAsset.ChunkInfo[] res = job.chunks.ToArray();
+        job.chunks.Dispose();
+        return res;
+    }
+
     [BurstCompile]
     public struct InitTextureDataJob : IJob
     {
@@ -389,14 +551,14 @@ public class GaussianSplatAssetCreator : EditorWindow
 
                 // rot
                 var q = splat.rot;
-                dataRot[i] = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
+                dataRot[i] = new float4(q.x, q.y, q.z, q.w);
 
                 // scale
-                dataScl[i] = GaussianUtils.LinearScale(splat.scale);
+                dataScl[i] = splat.scale;
 
                 // color
-                var c = GaussianUtils.SH0ToColor(splat.dc0);
-                var a = GaussianUtils.Sigmoid(splat.opacity);
+                var c = splat.dc0;
+                var a = splat.opacity;
                 dataCol[i] = new float4(c.x, c.y, c.z, a);
 
                 // SHs

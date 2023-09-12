@@ -3,6 +3,8 @@ using UnityEngine;
 
 public class GaussianSplatAsset : ScriptableObject
 {
+    public const int kChunkSize = 256;
+
     [HideInInspector] public int m_SplatCount;
     [HideInInspector] public Vector3 m_BoundsMin;
     [HideInInspector] public Vector3 m_BoundsMax;
@@ -43,8 +45,8 @@ public class GaussianSplatAsset : ScriptableObject
     public struct BoundsInfo
     {
         public Vector3 pos;
-        public Vector3 scale;
-        public Vector4 colorOp;
+        public Vector3 scl;
+        public Vector4 col;
         public Vector3 sh1;
         public Vector3 sh2;
         public Vector3 sh3;
