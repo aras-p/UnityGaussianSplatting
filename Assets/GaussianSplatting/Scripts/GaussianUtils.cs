@@ -23,6 +23,40 @@ public static class GaussianUtils
         return math.normalize(wxyz).yzwx;
     }
 
+    // Returns three smallest quaternion components in xyz (normalized to 0..1 range), and index/3 of the largest one in w
+    public static float4 PackSmallest3Rotation(float4 q)
+    {
+        // find biggest component
+        float4 absQ = math.abs(q);
+        int index = 0;
+        float maxV = absQ.x;
+        if (absQ.y > maxV)
+        {
+            index = 1;
+            maxV = absQ.y;
+        }
+        if (absQ.z > maxV)
+        {
+            index = 2;
+            maxV = absQ.z;
+        }
+        if (absQ.w > maxV)
+        {
+            index = 3;
+            maxV = absQ.w;
+        }
+
+        if (index == 0) q = q.yzwx;
+        if (index == 1) q = q.xzwy;
+        if (index == 2) q = q.xywz;
+
+        float3 three = q.xyz * (q.w >= 0 ? 1 : -1); // -1/sqrt2..+1/sqrt2 range
+        three = (three * math.SQRT2) * 0.5f + 0.5f; // 0..1 range
+
+        return new float4(three, index / 3.0f);
+    }
+
+
     // Based on https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
     // Insert two 0 bits after each of the 21 low bits of x
     static ulong MortonPart1By2(ulong x)

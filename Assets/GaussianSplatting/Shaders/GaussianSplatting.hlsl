@@ -219,6 +219,19 @@ struct SplatData
     SplatSHData sh;
 };
 
+// Decode quaternion from a "smallest 3" 10.10.10.2 format
+float4 DecodeRotation(float4 pq)
+{
+    uint idx = (uint)(pq.w * 3.0);
+    float4 q;
+    q.xyz = pq.xyz * sqrt(2.0) - (1.0 / sqrt(2.0));
+    q.w = sqrt(1.0 - saturate(dot(q.xyz, q.xyz)));
+    if (idx == 0) q = q.wxyz;
+    if (idx == 1) q = q.xwyz;
+    if (idx == 2) q = q.xywz;
+    return q;
+}
+
 SplatData LoadSplatData(uint idx)
 {
     SplatData s;
@@ -228,7 +241,7 @@ SplatData LoadSplatData(uint idx)
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
 
     s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, _TexPos.Load(coord).rgb);
-    s.rot       = _TexRot.Load(coord);
+    s.rot       = DecodeRotation(_TexRot.Load(coord));
     s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, _TexScl.Load(coord).rgb);
     half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, _TexCol.Load(coord));
     s.opacity   = col.a;

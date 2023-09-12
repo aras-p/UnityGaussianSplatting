@@ -304,6 +304,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             // rot
             var q = splat.rot;
             var qq = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
+            qq = GaussianUtils.PackSmallest3Rotation(qq);
             splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
 
             // scale
