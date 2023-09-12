@@ -1,3 +1,8 @@
+// Unity exposes the GraphicsFormats for it, but does not allow to use :(
+// it deems them to not be "Sample" usage supported, only because there's no corresponding legacy TextureFormat
+// enum for them...
+//#define ENABLE_RGB10A2_SUPPORT
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,12 +23,38 @@ public class GaussianSplatAssetCreator : EditorWindow
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
 
+    public enum DataQuality
+    {
+        Custom,
+        VeryLow,
+        Low,
+        Medium,
+        High,
+        VeryHigh,
+    }
+
+    public enum DataFormat
+    {
+        Float32x4,
+        Float16x4,
+        #if ENABLE_RGB10A2_SUPPORT
+        UNorm10_2,
+        #endif
+        UNorm8x4,
+    }
+
     readonly FolderPickerPropertyDrawer m_FolderPicker = new();
 
     [SerializeField] string m_InputFolder;
     [SerializeField] bool m_Use30k = true;
 
     [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
+    [SerializeField] DataQuality m_Quality = DataQuality.High;
+    [SerializeField] DataFormat m_FormatPos = DataFormat.Float16x4;
+    [SerializeField] DataFormat m_FormatRot = DataFormat.Float16x4;
+    [SerializeField] DataFormat m_FormatScale = DataFormat.Float16x4;
+    [SerializeField] DataFormat m_FormatColor = DataFormat.UNorm8x4;
+    [SerializeField] DataFormat m_FormatSH = DataFormat.UNorm8x4;
     [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
@@ -50,6 +81,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         rect = EditorGUILayout.GetControlRect(true);
         m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
         m_ReorderMorton = EditorGUILayout.Toggle("Morton Reorder", m_ReorderMorton);
+        m_Quality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
+        m_FormatPos = (DataFormat)EditorGUILayout.EnumPopup("Format Position", m_FormatPos);
+        m_FormatRot = (DataFormat)EditorGUILayout.EnumPopup("Format Rotation", m_FormatRot);
+        m_FormatScale = (DataFormat)EditorGUILayout.EnumPopup("Format Scale", m_FormatScale);
+        m_FormatColor = (DataFormat)EditorGUILayout.EnumPopup("Format Color", m_FormatColor);
+        m_FormatSH = (DataFormat)EditorGUILayout.EnumPopup("Format SH", m_FormatSH);
 
         EditorGUILayout.Space();
         GUILayout.BeginHorizontal();
@@ -152,31 +189,12 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.4f);
         AssetDatabase.StartAssetEditing();
-        List<string> imageFiles = CreateTextureFiles(inputSplats, asset, m_OutputFolder, baseName);
+        List<string> imageFiles = CreateTextureFiles(inputSplats, asset, baseName);
 
-        // files are created, import them so we can get to the importer objects, ugh
+        // files are created, import them so we can get to the imported objects, ugh
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.5f);
         AssetDatabase.StopAssetEditing();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
-        AssetDatabase.StartAssetEditing();
-
-        // set their import settings
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Set texture import settings", 0.6f);
-        foreach (var ifile in imageFiles)
-        {
-            var imp = AssetImporter.GetAtPath(ifile) as TextureImporter;
-            imp.isReadable = false;
-            imp.mipmapEnabled = false;
-            imp.npotScale = TextureImporterNPOTScale.None;
-            imp.textureCompression = TextureImporterCompression.Uncompressed;
-            imp.maxTextureSize = 8192;
-            // obsolete API
-#pragma warning disable CS0618
-            imp.SetPlatformTextureSettings("Standalone", 8192, TextureImporterFormat.RGBAFloat);
-#pragma warning restore CS0618
-            AssetDatabase.ImportAsset(ifile);
-        }
-        AssetDatabase.StopAssetEditing();
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Setup textures onto asset", 0.8f);
         for (int i = 0; i < imageFiles.Count; ++i)
@@ -610,47 +628,124 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static string SaveExr(string path, int width, int height, NativeArray<float3> data)
+    static GraphicsFormat DataFormatToGraphics(DataFormat format)
     {
-        var exrData = ImageConversion.EncodeNativeArrayToEXR(data, GraphicsFormat.R32G32B32_SFloat, (uint)width, (uint)height, flags: Texture2D.EXRFlags.OutputAsFloat);
-        File.WriteAllBytes(path, exrData.ToArray());
-        exrData.Dispose();
-        return path;
+        return format switch
+        {
+            DataFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
+            DataFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
+            #if ENABLE_RGB10A2_SUPPORT
+            DataFormat.UNorm10_2 => GraphicsFormat.A2B10G10R10_UNormPack32,
+            #endif
+            DataFormat.UNorm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+        };
     }
-    static string SaveExr(string path, int width, int height, NativeArray<float4> data)
+
+    [BurstCompile]
+    struct ConvertDataJob : IJobParallelFor
     {
-        var exrData = ImageConversion.EncodeNativeArrayToEXR(data, GraphicsFormat.R32G32B32A32_SFloat, (uint)width, (uint)height, flags: Texture2D.EXRFlags.OutputAsFloat);
-        File.WriteAllBytes(path, exrData.ToArray());
-        exrData.Dispose();
+        public int width, height, channels;
+        [ReadOnly] public NativeArray<float> inputData;
+        [NativeDisableParallelForRestriction] public NativeArray<byte> outputData;
+        public DataFormat format;
+        public int formatBytesPerPixel;
+
+        public unsafe void Execute(int y)
+        {
+            int srcIdx = y * width * channels;
+            byte* dstPtr = (byte*) outputData.GetUnsafePtr() + y * width * formatBytesPerPixel;
+            for (int x = 0; x < width; ++x)
+            {
+                float4 pix = 1.0f;
+                pix.x = inputData[srcIdx + 0];
+                pix.y = inputData[srcIdx + 1];
+                pix.z = inputData[srcIdx + 2];
+                if (channels == 4)
+                    pix.w = inputData[srcIdx + 3];
+
+                switch (format)
+                {
+                    case DataFormat.Float32x4:
+                        *(float4*) dstPtr = pix;
+                        break;
+                    case DataFormat.Float16x4:
+                    {
+                        half4 enc = new half4(pix);
+                        *(half4*) dstPtr = enc;
+                    }
+                        break;
+                    #if ENABLE_RGB10A2_SUPPORT
+                    case DataFormat.UNorm10_2:
+                    {
+                        pix = math.saturate(pix);
+                        uint enc = (uint)(pix.x * 1023.5f) | ((uint)(pix.y * 1023.5f) << 10) | ((uint)(pix.z * 1023.5f) << 20) | ((uint)(pix.w * 3.5f) << 30);
+                        *(uint*) dstPtr = enc;
+                    }
+                        break;
+                    #endif
+                    case DataFormat.UNorm8x4:
+                    {
+                        pix = math.saturate(pix);
+                        uint enc = (uint)(pix.x * 255.5f) | ((uint)(pix.y * 255.5f) << 8) | ((uint)(pix.z * 255.5f) << 16) | ((uint)(pix.w * 255.5f) << 24);
+                        *(uint*) dstPtr = enc;
+                    }
+                        break;
+                }
+
+                srcIdx += channels;
+                dstPtr += formatBytesPerPixel;
+            }
+        }
+    }
+
+    static string SaveTex(string path, int width, int height, NativeArray<float> data, int channels, DataFormat format)
+    {
+        GraphicsFormat gfxFormat = DataFormatToGraphics(format);
+        int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
+
+        ConvertDataJob job = new ConvertDataJob();
+        job.width = width;
+        job.height = height;
+        job.channels = channels;
+        job.inputData = data;
+        job.format = format;
+        job.outputData = new NativeArray<byte>(dstSize, Allocator.TempJob);
+        job.formatBytesPerPixel = dstSize / width / height;
+        job.Schedule(height, 1).Complete();
+
+        GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), path);
+
+        job.outputData.Dispose();
         return path;
     }
 
-    static List<string> CreateTextureFiles(NativeArray<InputSplatData> inputSplats, GaussianSplatAsset asset, string folder, string baseName)
+    List<string> CreateTextureFiles(NativeArray<InputSplatData> inputSplats, GaussianSplatAsset asset, string baseName)
     {
         InitTextureDataJob texData = new InitTextureDataJob(inputSplats);
         texData.Schedule(inputSplats.Length, 4096).Complete();
         asset.m_SplatCount = inputSplats.Length;
 
         List<string> imageFiles = new();
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_pos.exr", texData.width, texData.height, texData.dataPos));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_rot.exr", texData.width, texData.height, texData.dataRot));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_scl.exr", texData.width, texData.height, texData.dataScl));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_col.exr", texData.width, texData.height, texData.dataCol));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh1.exr", texData.width, texData.height, texData.dataSh1));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh2.exr", texData.width, texData.height, texData.dataSh2));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh3.exr", texData.width, texData.height, texData.dataSh3));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh4.exr", texData.width, texData.height, texData.dataSh4));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh5.exr", texData.width, texData.height, texData.dataSh5));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh6.exr", texData.width, texData.height, texData.dataSh6));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh7.exr", texData.width, texData.height, texData.dataSh7));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh8.exr", texData.width, texData.height, texData.dataSh8));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sh9.exr", texData.width, texData.height, texData.dataSh9));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_sha.exr", texData.width, texData.height, texData.dataShA));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_shb.exr", texData.width, texData.height, texData.dataShB));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_shc.exr", texData.width, texData.height, texData.dataShC));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_shd.exr", texData.width, texData.height, texData.dataShD));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_she.exr", texData.width, texData.height, texData.dataShE));
-        imageFiles.Add(SaveExr($"{folder}/{baseName}_shf.exr", texData.width, texData.height, texData.dataShF));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_pos.gstex", texData.width, texData.height, texData.dataPos.Reinterpret<float>(12), 3, m_FormatPos));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_rot.gstex", texData.width, texData.height, texData.dataRot.Reinterpret<float>(16), 4, m_FormatRot));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_scl.gstex", texData.width, texData.height, texData.dataScl.Reinterpret<float>(12), 3, m_FormatScale));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_col.gstex", texData.width, texData.height, texData.dataCol.Reinterpret<float>(16), 4, m_FormatColor));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh1.gstex", texData.width, texData.height, texData.dataSh1.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh2.gstex", texData.width, texData.height, texData.dataSh2.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh3.gstex", texData.width, texData.height, texData.dataSh3.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh4.gstex", texData.width, texData.height, texData.dataSh4.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh5.gstex", texData.width, texData.height, texData.dataSh5.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh6.gstex", texData.width, texData.height, texData.dataSh6.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh7.gstex", texData.width, texData.height, texData.dataSh7.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh8.gstex", texData.width, texData.height, texData.dataSh8.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh9.gstex", texData.width, texData.height, texData.dataSh9.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sha.gstex", texData.width, texData.height, texData.dataShA.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shb.gstex", texData.width, texData.height, texData.dataShB.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shc.gstex", texData.width, texData.height, texData.dataShC.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shd.gstex", texData.width, texData.height, texData.dataShD.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_she.gstex", texData.width, texData.height, texData.dataShE.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shf.gstex", texData.width, texData.height, texData.dataShF.Reinterpret<float>(12), 3, m_FormatSH));
 
         texData.Dispose();
         return imageFiles;
