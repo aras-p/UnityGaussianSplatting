@@ -74,4 +74,14 @@ public static class GaussianUtils
     {
         return (MortonPart1By2(v.z) << 2) | (MortonPart1By2(v.y) << 1) | MortonPart1By2(v.x);
     }
+
+    // See GaussianSplatting.hlsl
+    public static uint2 DecodeMorton2D_16x16(uint t)
+    {
+        t = (t & 0xFF) | ((t & 0xFE) << 7); // -EAFBGCHEAFBGCHD
+        t &= 0x5555;                        // -E-F-G-H-A-B-C-D
+        t = (t ^ (t >> 1)) & 0x3333;        // --EF--GH--AB--CD
+        t = (t ^ (t >> 2)) & 0x0f0f;        // ----EFGH----ABCD
+        return new uint2(t & 0xF, t >> 8);  // --------EFGHABCD
+    }
 }

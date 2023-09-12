@@ -22,6 +22,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
+    const int kTextureWidth = 2048; //@TODO: bump to 4k
 
     enum DataQuality
     {
@@ -575,25 +576,25 @@ public class GaussianSplatAssetCreator : EditorWindow
     public struct InitTextureDataJob : IJobParallelFor
     {
         public int width, height;
-        public NativeArray<float3> dataPos;
-        public NativeArray<float4> dataRot;
-        public NativeArray<float3> dataScl;
-        public NativeArray<float4> dataCol;
-        public NativeArray<float3> dataSh1;
-        public NativeArray<float3> dataSh2;
-        public NativeArray<float3> dataSh3;
-        public NativeArray<float3> dataSh4;
-        public NativeArray<float3> dataSh5;
-        public NativeArray<float3> dataSh6;
-        public NativeArray<float3> dataSh7;
-        public NativeArray<float3> dataSh8;
-        public NativeArray<float3> dataSh9;
-        public NativeArray<float3> dataShA;
-        public NativeArray<float3> dataShB;
-        public NativeArray<float3> dataShC;
-        public NativeArray<float3> dataShD;
-        public NativeArray<float3> dataShE;
-        public NativeArray<float3> dataShF;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataPos;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataRot;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataScl;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataCol;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh1;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh2;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh3;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh4;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh5;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh6;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh7;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh8;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh9;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShA;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShB;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShC;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShD;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShE;
+        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShF;
 
         [ReadOnly] NativeArray<InputSplatData> inputSplats;
 
@@ -601,11 +602,10 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             inputSplats = input;
 
-            const int kTextureWidth = 2048; //@TODO: bump to 4k
             width = kTextureWidth;
             height = math.max(1, (input.Length + width - 1) / width);
-            // height multiple of compressed block heights
-            int blockHeight = 4;
+            // our swizzle tiles are 16x16, so make texture multiple of that height
+            int blockHeight = 16;
             height = (height + blockHeight - 1) / blockHeight * blockHeight;
 
             dataPos = new NativeArray<float3>(width * height, Allocator.Persistent);
@@ -652,9 +652,20 @@ public class GaussianSplatAssetCreator : EditorWindow
             dataShF.Dispose();
         }
 
-        public void Execute(int i)
+        static int SplatIndexToTextureIndex(uint idx)
         {
-            var splat = inputSplats[i];
+            uint2 xy = GaussianUtils.DecodeMorton2D_16x16(idx);
+            uint width = kTextureWidth / 16;
+            idx >>= 8;
+            uint x = (idx % width) * 16 + xy.x;
+            uint y = (idx / width) * 16 + xy.y;
+            return (int)(y * kTextureWidth + x);
+        }
+
+        public void Execute(int splatIdx)
+        {
+            var splat = inputSplats[splatIdx];
+            int i = SplatIndexToTextureIndex((uint)splatIdx);
 
             // pos
             float3 pos = splat.pos;

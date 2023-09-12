@@ -96,6 +96,25 @@ float CalcPowerFromConic(float3 conic, float2 d)
     return -0.5 * (conic.x * d.x*d.x + conic.z * d.y*d.y) + conic.y * d.x*d.y;
 }
 
+// Morton interleaving 16x16 group i.e. by 4 bits of coordinates, based on this thread:
+// https://twitter.com/rygorous/status/986715358852608000
+// which is simplified version of https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
+uint EncodeMorton2D_16x16(uint2 c)
+{
+    uint t = ((c.y & 0xF) << 8) | (c.x & 0xF); // ----EFGH----ABCD
+    t = (t ^ (t << 2)) & 0x3333;               // --EF--GH--AB--CD
+    t = (t ^ (t << 1)) & 0x5555;               // -E-F-G-H-A-B-C-D
+    return (t | (t >> 7)) & 0xFF;              // --------EAFBGCHD
+}
+uint2 DecodeMorton2D_16x16(uint t)      // --------EAFBGCHD
+{
+    t = (t & 0xFF) | ((t & 0xFE) << 7); // -EAFBGCHEAFBGCHD
+    t &= 0x5555;                        // -E-F-G-H-A-B-C-D
+    t = (t ^ (t >> 1)) & 0x3333;        // --EF--GH--AB--CD
+    t = (t ^ (t >> 2)) & 0x0f0f;        // ----EFGH----ABCD
+    return uint2(t & 0xF, t >> 8);      // --------EFGHABCD
+}
+
 
 static const float SH_C1 = 0.4886025;
 static const float SH_C2[] = { 1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742 };
@@ -172,8 +191,12 @@ static const uint kTexWidth = 2048;
 uint3 SplatIndexToPixelIndex(uint idx)
 {
     uint3 res;
-    res.x = idx % kTexWidth;
-    res.y = idx / kTexWidth;
+
+    uint2 xy = DecodeMorton2D_16x16(idx);
+    uint width = kTexWidth / 16;
+    idx >>= 8;
+    res.x = (idx % width) * 16 + xy.x;
+    res.y = (idx / width) * 16 + xy.y;
     res.z = 0;
     return res;
 }
