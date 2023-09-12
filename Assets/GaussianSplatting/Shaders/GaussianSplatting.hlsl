@@ -1,6 +1,14 @@
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
 
+float InvSquareCentered01(float x)
+{
+    x -= 0.5;
+    x *= 0.5;
+    x = sqrt(abs(x)) * sign(x);
+    return x + 0.5;
+}
+
 float3 QuatRotateVector(float3 v, float4 r)
 {
     float3 t = 2 * cross(r.xyz, v);
@@ -267,7 +275,7 @@ SplatData LoadSplatData(uint idx)
     s.rot       = DecodeRotation(_TexRot.Load(coord));
     s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, _TexScl.Load(coord).rgb);
     half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, _TexCol.Load(coord));
-    s.opacity   = col.a;
+    s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;
     s.sh.sh1    = lerp(chunk.boundsMin.sh1, chunk.boundsMax.sh1, _TexSH1.Load(coord).rgb);
     s.sh.sh2    = lerp(chunk.boundsMin.sh2, chunk.boundsMax.sh2, _TexSH2.Load(coord).rgb);

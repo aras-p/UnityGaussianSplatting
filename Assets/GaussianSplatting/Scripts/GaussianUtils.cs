@@ -18,6 +18,21 @@ public static class GaussianUtils
         return math.abs(math.exp(logScale));
     }
 
+    public static float SquareCentered01(float x)
+    {
+        x -= 0.5f;
+        x *= x * math.sign(x);
+        return x * 2.0f + 0.5f;
+    }
+
+    public static float InvSquareCentered01(float x)
+    {
+        x -= 0.5f;
+        x *= 0.5f;
+        x = math.sqrt(math.abs(x)) * math.sign(x);
+        return x + 0.5f;
+    }
+
     public static float4 NormalizeSwizzleRotation(float4 wxyz)
     {
         return math.normalize(wxyz).yzwx;
