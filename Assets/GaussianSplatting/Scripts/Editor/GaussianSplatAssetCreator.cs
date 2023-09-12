@@ -15,6 +15,7 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using Object = UnityEngine.Object;
 
 [BurstCompile]
 public class GaussianSplatAssetCreator : EditorWindow
@@ -23,7 +24,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
 
-    public enum DataQuality
+    enum DataQuality
     {
         Custom,
         VeryLow,
@@ -33,14 +34,17 @@ public class GaussianSplatAssetCreator : EditorWindow
         VeryHigh,
     }
 
-    public enum DataFormat
+    enum DataFormat
     {
         Float32x4,
         Float16x4,
         #if ENABLE_RGB10A2_SUPPORT
-        UNorm10_2,
+        Norm10_2,
         #endif
-        UNorm8x4,
+        Norm8x4,
+        Norm565,
+        BC7,
+        BC1
     }
 
     readonly FolderPickerPropertyDrawer m_FolderPicker = new();
@@ -53,8 +57,8 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] DataFormat m_FormatPos = DataFormat.Float16x4;
     [SerializeField] DataFormat m_FormatRot = DataFormat.Float16x4;
     [SerializeField] DataFormat m_FormatScale = DataFormat.Float16x4;
-    [SerializeField] DataFormat m_FormatColor = DataFormat.UNorm8x4;
-    [SerializeField] DataFormat m_FormatSH = DataFormat.UNorm8x4;
+    [SerializeField] DataFormat m_FormatColor = DataFormat.Norm8x4;
+    [SerializeField] DataFormat m_FormatSH = DataFormat.Norm8x4;
     [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
@@ -66,6 +70,11 @@ public class GaussianSplatAssetCreator : EditorWindow
         window.minSize = new Vector2(200, 200);
         window.maxSize = new Vector2(1500, 1500);
         window.Show();
+    }
+
+    void OnEnable()
+    {
+        ApplyQualityLevel();
     }
 
     void OnGUI()
@@ -81,12 +90,21 @@ public class GaussianSplatAssetCreator : EditorWindow
         rect = EditorGUILayout.GetControlRect(true);
         m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
         m_ReorderMorton = EditorGUILayout.Toggle("Morton Reorder", m_ReorderMorton);
-        m_Quality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
-        m_FormatPos = (DataFormat)EditorGUILayout.EnumPopup("Format Position", m_FormatPos);
-        m_FormatRot = (DataFormat)EditorGUILayout.EnumPopup("Format Rotation", m_FormatRot);
-        m_FormatScale = (DataFormat)EditorGUILayout.EnumPopup("Format Scale", m_FormatScale);
-        m_FormatColor = (DataFormat)EditorGUILayout.EnumPopup("Format Color", m_FormatColor);
-        m_FormatSH = (DataFormat)EditorGUILayout.EnumPopup("Format SH", m_FormatSH);
+        var newQuality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
+        if (newQuality != m_Quality)
+        {
+            m_Quality = newQuality;
+            ApplyQualityLevel();
+        }
+        EditorGUI.BeginDisabledGroup(m_Quality != DataQuality.Custom);
+        EditorGUI.indentLevel++;
+        m_FormatPos = (DataFormat)EditorGUILayout.EnumPopup("Position", m_FormatPos);
+        m_FormatRot = (DataFormat)EditorGUILayout.EnumPopup("Rotation", m_FormatRot);
+        m_FormatScale = (DataFormat)EditorGUILayout.EnumPopup("Scale", m_FormatScale);
+        m_FormatColor = (DataFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
+        m_FormatSH = (DataFormat)EditorGUILayout.EnumPopup("SH", m_FormatSH);
+        EditorGUI.indentLevel--;
+        EditorGUI.EndDisabledGroup();
 
         EditorGUILayout.Space();
         GUILayout.BeginHorizontal();
@@ -101,6 +119,52 @@ public class GaussianSplatAssetCreator : EditorWindow
         if (!string.IsNullOrWhiteSpace(m_ErrorMessage))
         {
             EditorGUILayout.HelpBox(m_ErrorMessage, MessageType.Error);
+        }
+    }
+
+    void ApplyQualityLevel()
+    {
+        switch (m_Quality)
+        {
+            case DataQuality.Custom:
+                break;
+            case DataQuality.VeryLow:
+                m_FormatPos = DataFormat.Norm8x4;
+                m_FormatRot = DataFormat.Norm8x4;
+                m_FormatScale = DataFormat.BC7;
+                m_FormatColor = DataFormat.BC7;
+                m_FormatSH = DataFormat.BC1;
+                break;
+            case DataQuality.Low:
+                m_FormatPos = DataFormat.Float16x4;
+                m_FormatRot = DataFormat.Norm8x4;
+                m_FormatScale = DataFormat.Norm8x4;
+                m_FormatColor = DataFormat.BC7;
+                m_FormatSH = DataFormat.BC7;
+                break;
+            case DataQuality.Medium:
+                m_FormatPos = DataFormat.Float16x4;
+                m_FormatRot = DataFormat.Float16x4;
+                m_FormatScale = DataFormat.Float16x4;
+                m_FormatColor = DataFormat.Norm8x4;
+                m_FormatSH = DataFormat.BC7;
+                break;
+            case DataQuality.High:
+                m_FormatPos = DataFormat.Float16x4;
+                m_FormatRot = DataFormat.Float16x4;
+                m_FormatScale = DataFormat.Float16x4;
+                m_FormatColor = DataFormat.Float16x4;
+                m_FormatSH = DataFormat.Norm8x4;
+                break;
+            case DataQuality.VeryHigh:
+                m_FormatPos = DataFormat.Float32x4;
+                m_FormatRot = DataFormat.Float32x4;
+                m_FormatScale = DataFormat.Float32x4;
+                m_FormatColor = DataFormat.Float32x4;
+                m_FormatSH = DataFormat.Float32x4;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
         }
     }
 
@@ -635,9 +699,12 @@ public class GaussianSplatAssetCreator : EditorWindow
             DataFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
             DataFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
             #if ENABLE_RGB10A2_SUPPORT
-            DataFormat.UNorm10_2 => GraphicsFormat.A2B10G10R10_UNormPack32,
+            DataFormat.Norm10_2 => GraphicsFormat.A2B10G10R10_UNormPack32,
             #endif
-            DataFormat.UNorm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+            DataFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+            DataFormat.Norm565 => GraphicsFormat.R5G6B5_UNormPack16,
+            DataFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
+            DataFormat.BC1 => GraphicsFormat.RGBA_DXT1_UNorm,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }
@@ -676,7 +743,7 @@ public class GaussianSplatAssetCreator : EditorWindow
                     }
                         break;
                     #if ENABLE_RGB10A2_SUPPORT
-                    case DataFormat.UNorm10_2:
+                    case DataFormat.Norm10_2:
                     {
                         pix = math.saturate(pix);
                         uint enc = (uint)(pix.x * 1023.5f) | ((uint)(pix.y * 1023.5f) << 10) | ((uint)(pix.z * 1023.5f) << 20) | ((uint)(pix.w * 3.5f) << 30);
@@ -684,11 +751,18 @@ public class GaussianSplatAssetCreator : EditorWindow
                     }
                         break;
                     #endif
-                    case DataFormat.UNorm8x4:
+                    case DataFormat.Norm8x4:
                     {
                         pix = math.saturate(pix);
                         uint enc = (uint)(pix.x * 255.5f) | ((uint)(pix.y * 255.5f) << 8) | ((uint)(pix.z * 255.5f) << 16) | ((uint)(pix.w * 255.5f) << 24);
                         *(uint*) dstPtr = enc;
+                    }
+                        break;
+                    case DataFormat.Norm565:
+                    {
+                        pix = math.saturate(pix);
+                        uint enc = (uint)(pix.x * 31.5f) | ((uint)(pix.y * 63.5f) << 5) | ((uint)(pix.z * 31.5f) << 11);
+                        *(ushort*) dstPtr = (ushort)enc;
                     }
                         break;
                 }
@@ -704,19 +778,31 @@ public class GaussianSplatAssetCreator : EditorWindow
         GraphicsFormat gfxFormat = DataFormatToGraphics(format);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
 
-        ConvertDataJob job = new ConvertDataJob();
-        job.width = width;
-        job.height = height;
-        job.channels = channels;
-        job.inputData = data;
-        job.format = format;
-        job.outputData = new NativeArray<byte>(dstSize, Allocator.TempJob);
-        job.formatBytesPerPixel = dstSize / width / height;
-        job.Schedule(height, 1).Complete();
-
-        GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), path);
-
-        job.outputData.Dispose();
+        if (GraphicsFormatUtility.IsCompressedFormat(gfxFormat))
+        {
+            Texture2D tex = new Texture2D(width, height, channels == 4 ? GraphicsFormat.R32G32B32A32_SFloat : GraphicsFormat.R32G32B32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
+            tex.SetPixelData(data, 0);
+            EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), TextureCompressionQuality.Normal);
+            NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
+            GaussianTexImporter.WriteAsset(width, height, gfxFormat, cmpData.AsReadOnlySpan(), path);
+            DestroyImmediate(tex);
+        }
+        else
+        {
+            ConvertDataJob job = new ConvertDataJob
+            {
+                width = width,
+                height = height,
+                channels = channels,
+                inputData = data,
+                format = format,
+                outputData = new NativeArray<byte>(dstSize, Allocator.TempJob),
+                formatBytesPerPixel = dstSize / width / height
+            };
+            job.Schedule(height, 1).Complete();
+            GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), path);
+            job.outputData.Dispose();
+        }
         return path;
     }
 
