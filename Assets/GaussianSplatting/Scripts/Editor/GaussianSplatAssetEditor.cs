@@ -83,11 +83,11 @@ public class GaussianSplatAssetEditor : Editor
             }
             EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeRot + sizeScl + sizeCol + sizeSh + sizeChk));
             EditorGUI.indentLevel++;
-            EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {texPos.graphicsFormat}");
-            EditorGUILayout.TextField("Rotations", $"{EditorUtility.FormatBytes(sizeRot)}  {texRot.graphicsFormat}");
-            EditorGUILayout.TextField("Scales", $"{EditorUtility.FormatBytes(sizeScl)}  {texScl.graphicsFormat}");
-            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {texCol.graphicsFormat}");
-            EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSh)}  {texSh1.graphicsFormat}");
+            EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {(texPos != null ? texPos.graphicsFormat : "")}");
+            EditorGUILayout.TextField("Rotations", $"{EditorUtility.FormatBytes(sizeRot)}  {(texRot != null ? texRot.graphicsFormat : "")}");
+            EditorGUILayout.TextField("Scales", $"{EditorUtility.FormatBytes(sizeScl)}  {(texScl != null ? texScl.graphicsFormat : "")}");
+            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {(texCol != null ? texCol.graphicsFormat : "")}");
+            EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSh)}  {(texSh1 != null ? texSh1.graphicsFormat : "")}");
             EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
             EditorGUI.indentLevel--;
 
