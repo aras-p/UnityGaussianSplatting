@@ -1,5 +1,7 @@
 using System.IO;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEditor;
@@ -8,7 +10,7 @@ using UnityEngine.Experimental.Rendering;
 public class GaussianSplatValidator
 {
     [MenuItem("Tools/Validate Gaussian Splats")]
-    public static void Validate()
+    public static unsafe void Validate()
     {
         var gaussians = Object.FindObjectOfType(typeof(GaussianSplatRenderer)) as GaussianSplatRenderer;
         {
@@ -41,6 +43,7 @@ public class GaussianSplatValidator
 
         int imageIndex = 1;
 
+
         foreach (var path in paths)
         {
             var gs = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(path);
@@ -48,6 +51,7 @@ public class GaussianSplatValidator
             gaussians.OnEnable();
             for (int camIndex = 0; camIndex <= 40; camIndex += 10)
             {
+                EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", path, (float)imageIndex / (float)(paths.Length * 5));
                 gaussians.ActivateCamera(camIndex);
                 cam.Render();
                 Graphics.SetRenderTarget(renderTarget);
@@ -58,36 +62,24 @@ public class GaussianSplatValidator
 
                 NativeArray<Color32> refPixels = compareTexture.GetPixelData<Color32>(0);
                 NativeArray<Color32> gotPixels = captureTexture.GetPixelData<Color32>(0);
-                const int kDiffThreshold = 15;
+                float psnr = 0, rmse = 0;
                 int errorsCount = 0;
-                for (int j = 0; j < width * height; ++j)
-                {
-                    Color32 cref = refPixels[j];
-                    // note: LoadImage always loads PNGs into ARGB order, so swizzle to normal RGBA
-                    cref = new Color32(cref.g, cref.b, cref.a, cref.r);
-                    cref.a = 255;
-                    refPixels[j] = cref;
-
-                    Color32 cgot = gotPixels[j];
-                    cgot.a = 255;
-                    gotPixels[j] = cgot;
-
-                    Color32 cdif = new Color32(0, 0, 0, 255);
-                    cdif.r = (byte)math.min(255, math.abs(cref.r - cgot.r) * 4);
-                    cdif.g = (byte)math.min(255, math.abs(cref.r - cgot.r) * 4);
-                    cdif.b = (byte)math.min(255, math.abs(cref.r - cgot.r) * 4);
-                    diffPixels[j] = cdif;
-                    if (cdif.r > kDiffThreshold || cdif.g > kDiffThreshold || cdif.b > kDiffThreshold)
-                        ++errorsCount;
-                }
+                DiffImagesJob difJob = new DiffImagesJob();
+                difJob.difPixels = diffPixels;
+                difJob.refPixels = refPixels;
+                difJob.gotPixels = gotPixels;
+                difJob.psnrPtr = &psnr;
+                difJob.rmsePtr = &rmse;
+                difJob.difPixCount = &errorsCount;
+                difJob.Schedule().Complete();
 
                 string pathDif = $"Shot-{imageIndex:0000}-diff.png";
                 string pathRef = $"Shot-{imageIndex:0000}-ref.png";
                 string pathGot = $"Shot-{imageIndex:0000}-got.png";
 
-                if (errorsCount > 10)
+                if (errorsCount > 50 || psnr < 70.0f)
                 {
-                    Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}) had {errorsCount:N0} different pixels");
+                    Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}): RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
                     NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels, GraphicsFormat.R8G8B8A8_SRGB, (uint)width, (uint)height);
                     File.WriteAllBytes(pathDif, pngBytes.ToArray());
@@ -111,6 +103,7 @@ public class GaussianSplatValidator
             gaussians.OnDisable();
         }
 
+
         diffPixels.Dispose();
 
         cam.targetTexture = null;
@@ -121,6 +114,57 @@ public class GaussianSplatValidator
         RenderTexture.ReleaseTemporary(renderTarget);
         Object.DestroyImmediate(captureTexture);
 
+        EditorUtility.ClearProgressBar();
         Debug.Log("Captured a bunch of shots");
+    }
+
+    struct DiffImagesJob : IJob
+    {
+        public NativeArray<Color32> refPixels;
+        public NativeArray<Color32> gotPixels;
+        public NativeArray<Color32> difPixels;
+        [NativeDisableUnsafePtrRestriction] public unsafe float* rmsePtr;
+        [NativeDisableUnsafePtrRestriction] public unsafe float* psnrPtr;
+        [NativeDisableUnsafePtrRestriction] public unsafe int* difPixCount;
+
+        public unsafe void Execute()
+        {
+            const int kDiffScale = 5;
+            const int kDiffThreshold = 3 * kDiffScale;
+            *difPixCount = 0;
+            double sumSqDif = 0;
+            for (int i = 0; i < refPixels.Length; ++i)
+            {
+                Color32 cref = refPixels[i];
+                // note: LoadImage always loads PNGs into ARGB order, so swizzle to normal RGBA
+                cref = new Color32(cref.g, cref.b, cref.a, 255);
+                refPixels[i] = cref;
+
+                Color32 cgot = gotPixels[i];
+                cgot.a = 255;
+                gotPixels[i] = cgot;
+
+                Color32 cdif = new Color32(0, 0, 0, 255);
+                cdif.r = (byte)math.abs(cref.r - cgot.r);
+                cdif.g = (byte)math.abs(cref.g - cgot.g);
+                cdif.b = (byte)math.abs(cref.b - cgot.b);
+                sumSqDif += cdif.r * cdif.r + cdif.g * cdif.g + cdif.b * cdif.b;
+
+                cdif.r = (byte)math.min(255, cdif.r * kDiffScale);
+                cdif.g = (byte)math.min(255, cdif.g * kDiffScale);
+                cdif.b = (byte)math.min(255, cdif.b * kDiffScale);
+                difPixels[i] = cdif;
+                if (cdif.r >= kDiffThreshold || cdif.g >= kDiffThreshold || cdif.b >= kDiffThreshold)
+                {
+                    (*difPixCount)++;
+                }
+            }
+
+            double meanSqDif = sumSqDif / (refPixels.Length * 3);
+            double rmse = math.sqrt(meanSqDif);
+            double psnr = 20.0 * math.log10(255.0) - 10.0 * math.log10(rmse * rmse);
+            *rmsePtr = (float) rmse;
+            *psnrPtr = (float) psnr;
+        }
     }
 }

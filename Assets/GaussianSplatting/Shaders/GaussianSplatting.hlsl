@@ -219,10 +219,10 @@ struct SplatData
     SplatSHData sh;
 };
 
-// Decode quaternion from a "smallest 3" 10.10.10.2 format
+// Decode quaternion from a "smallest 3" e.g. 10.10.10.2 format
 float4 DecodeRotation(float4 pq)
 {
-    uint idx = (uint)(pq.w * 3.0);
+    uint idx = (uint)round(pq.w * 3.0); // note: need to round or index might come out wrong in some formats (e.g. fp16.fp16.fp16.fp16)
     float4 q;
     q.xyz = pq.xyz * sqrt(2.0) - (1.0 / sqrt(2.0));
     q.w = sqrt(1.0 - saturate(dot(q.xyz, q.xyz)));
