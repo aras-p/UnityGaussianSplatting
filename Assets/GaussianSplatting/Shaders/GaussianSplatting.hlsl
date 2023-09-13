@@ -274,6 +274,9 @@ SplatData LoadSplatData(uint idx)
     s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, _TexPos.Load(coord).rgb);
     s.rot       = DecodeRotation(_TexRot.Load(coord));
     s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, _TexScl.Load(coord).rgb);
+    s.scale *= s.scale;
+    s.scale *= s.scale;
+    s.scale *= s.scale;
     half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, _TexCol.Load(coord));
     s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;

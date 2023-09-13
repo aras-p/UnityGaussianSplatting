@@ -415,6 +415,8 @@ public class GaussianSplatAssetCreator : EditorWindow
 
             // scale
             splat.scale = GaussianUtils.LinearScale(splat.scale);
+            // transform scale to be more uniformly distributed
+            splat.scale = math.pow(splat.scale, 1.0f / 8.0f);
 
             // color
             splat.dc0 = GaussianUtils.SH0ToColor(splat.dc0);
