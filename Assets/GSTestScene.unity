@@ -210,8 +210,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 231550833}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.689202, y: -0.23798883, z: -0.67273253, w: 0.12566993}
-  m_LocalPosition: {x: -5.8281107, y: -2.652966, z: -0.70560646}
+  m_LocalRotation: {x: -0.08922883, y: 0.33247223, z: -0.037248928, w: -0.9381434}
+  m_LocalPosition: {x: 13.36584, y: 4.162172, z: -16.524162}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -338,13 +338,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Asset: {fileID: 11400000, guid: 68d90f9ac82946a4aa799a15d76531de, type: 2}
+  m_Asset: {fileID: 11400000, guid: f4ee21923914d0543bb057037b5a9821, type: 2}
   m_SplatScale: 1
   m_SHOrder: 3
   m_SortNthFrame: 1
   m_RenderMode: 0
   m_PointDisplaySize: 3
   m_DisplayData: 0
+  m_DisplayDataScale: 1
   m_PreferFfxSort: 1
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
   m_ShaderComposite: {fileID: 4800000, guid: 7e184af7d01193a408eb916d8acafff9, type: 3}
