@@ -80,17 +80,20 @@ public class GaussianSplatValidator
                 string pathRef = $"Shot-{imageIndex:0000}-ref.png";
                 string pathGot = $"Shot-{imageIndex:0000}-got.png";
 
-                if (errorsCount > 50 || psnr < 70.0f)
+                if ((errorsCount > 50 || psnr < 90.0f) && (imageIndex == 1 || imageIndex == 9 || imageIndex == 14)) // write only some we're interested in
                 {
                     Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}): RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
-                    NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels, GraphicsFormat.R8G8B8A8_SRGB, (uint)width, (uint)height);
+                    NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels,
+                        GraphicsFormat.R8G8B8A8_SRGB, (uint) width, (uint) height);
                     File.WriteAllBytes(pathDif, pngBytes.ToArray());
                     pngBytes.Dispose();
-                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(refPixels, GraphicsFormat.R8G8B8A8_SRGB, (uint)width, (uint)height);
+                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(refPixels, GraphicsFormat.R8G8B8A8_SRGB,
+                        (uint) width, (uint) height);
                     File.WriteAllBytes(pathRef, pngBytes.ToArray());
                     pngBytes.Dispose();
-                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(gotPixels, GraphicsFormat.R8G8B8A8_SRGB, (uint)width, (uint)height);
+                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(gotPixels, GraphicsFormat.R8G8B8A8_SRGB,
+                        (uint) width, (uint) height);
                     File.WriteAllBytes(pathGot, pngBytes.ToArray());
                     pngBytes.Dispose();
                 }
@@ -118,7 +121,6 @@ public class GaussianSplatValidator
         Object.DestroyImmediate(captureTexture);
 
         EditorUtility.ClearProgressBar();
-        Debug.Log("Captured a bunch of shots");
     }
 
     [BurstCompile]
