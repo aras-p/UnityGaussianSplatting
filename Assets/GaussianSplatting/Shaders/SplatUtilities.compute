@@ -43,7 +43,8 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     uint chunkIdx = origIdx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
 
-    float3 pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, _SplatPositions.Load(coord).rgb);
+    float3 pos = LoadSplatPosTex(coord);
+    pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, pos);
 
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz * float3(1,1,-1), 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html

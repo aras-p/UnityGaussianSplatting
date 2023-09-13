@@ -193,6 +193,7 @@ Texture2D _TexSHC;
 Texture2D _TexSHD;
 Texture2D _TexSHE;
 Texture2D _TexSHF;
+uint _TexFlagBits;
 
 static const uint kTexWidth = 2048;
 
@@ -263,6 +264,56 @@ float4 DecodeRotation(float4 pq)
     return q;
 }
 
+float3 DecodePacked_11_10_11(float val)
+{
+    uint enc = asuint(val);
+    return float3(
+        (enc & 2047) / 2047.0,
+        ((enc >> 11) & 1023) / 1023.0,
+        ((enc >> 21) & 2047) / 2047.0);
+}
+
+float4 DecodePacked_10_10_10_2(float val)
+{
+    uint enc = asuint(val);
+    return float4(
+        (enc & 1023) / 1023.0,
+        ((enc >> 10) & 1023) / 1023.0,
+        ((enc >> 20) & 1023) / 1023.0,
+        ((enc >> 30) & 3) / 3.0);
+}
+
+float3 LoadSplatPosTex(uint3 coord)
+{
+    float3 val = _TexPos.Load(coord).rgb;
+    if (_TexFlagBits & 1) val = DecodePacked_11_10_11(val.r);
+    return val;
+}
+float4 LoadSplatRotTex(uint3 coord)
+{
+    float4 val = _TexRot.Load(coord);
+    if (_TexFlagBits & 2) val = DecodePacked_10_10_10_2(val.r);
+    return val;
+}
+float3 LoadSplatSclTex(uint3 coord)
+{
+    float3 val = _TexScl.Load(coord).rgb;
+    if (_TexFlagBits & 4) val = DecodePacked_11_10_11(val.r);
+    return val;
+}
+float4 LoadSplatColTex(uint3 coord)
+{
+    float4 val = _TexCol.Load(coord);
+    if (_TexFlagBits & 8) val = DecodePacked_10_10_10_2(val.r);
+    return val;
+}
+float3 LoadSplatShTex(uint3 coord, Texture2D tex)
+{
+    float3 val = tex.Load(coord).rgb;
+    if (_TexFlagBits & 16) val = DecodePacked_11_10_11(val.r);
+    return val;
+}
+
 SplatData LoadSplatData(uint idx)
 {
     SplatData s;
@@ -271,30 +322,30 @@ SplatData LoadSplatData(uint idx)
     uint chunkIdx = idx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
 
-    s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, _TexPos.Load(coord).rgb);
-    s.rot       = DecodeRotation(_TexRot.Load(coord));
-    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, _TexScl.Load(coord).rgb);
+    s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPosTex(coord));
+    s.rot       = DecodeRotation(LoadSplatRotTex(coord));
+    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadSplatSclTex(coord));
     s.scale *= s.scale;
     s.scale *= s.scale;
     s.scale *= s.scale;
-    half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, _TexCol.Load(coord));
+    half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, LoadSplatColTex(coord));
     s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;
-    s.sh.sh1    = lerp(chunk.boundsMin.sh1, chunk.boundsMax.sh1, _TexSH1.Load(coord).rgb);
-    s.sh.sh2    = lerp(chunk.boundsMin.sh2, chunk.boundsMax.sh2, _TexSH2.Load(coord).rgb);
-    s.sh.sh3    = lerp(chunk.boundsMin.sh3, chunk.boundsMax.sh3, _TexSH3.Load(coord).rgb);
-    s.sh.sh4    = lerp(chunk.boundsMin.sh4, chunk.boundsMax.sh4, _TexSH4.Load(coord).rgb);
-    s.sh.sh5    = lerp(chunk.boundsMin.sh5, chunk.boundsMax.sh5, _TexSH5.Load(coord).rgb);
-    s.sh.sh6    = lerp(chunk.boundsMin.sh6, chunk.boundsMax.sh6, _TexSH6.Load(coord).rgb);
-    s.sh.sh7    = lerp(chunk.boundsMin.sh7, chunk.boundsMax.sh7, _TexSH7.Load(coord).rgb);
-    s.sh.sh8    = lerp(chunk.boundsMin.sh8, chunk.boundsMax.sh8, _TexSH8.Load(coord).rgb);
-    s.sh.sh9    = lerp(chunk.boundsMin.sh9, chunk.boundsMax.sh9, _TexSH9.Load(coord).rgb);
-    s.sh.sh10   = lerp(chunk.boundsMin.shA, chunk.boundsMax.shA, _TexSHA.Load(coord).rgb);
-    s.sh.sh11   = lerp(chunk.boundsMin.shB, chunk.boundsMax.shB, _TexSHB.Load(coord).rgb);
-    s.sh.sh12   = lerp(chunk.boundsMin.shC, chunk.boundsMax.shC, _TexSHC.Load(coord).rgb);
-    s.sh.sh13   = lerp(chunk.boundsMin.shD, chunk.boundsMax.shD, _TexSHD.Load(coord).rgb);
-    s.sh.sh14   = lerp(chunk.boundsMin.shE, chunk.boundsMax.shE, _TexSHE.Load(coord).rgb);
-    s.sh.sh15   = lerp(chunk.boundsMin.shF, chunk.boundsMax.shF, _TexSHF.Load(coord).rgb);
+    s.sh.sh1    = lerp(chunk.boundsMin.sh1, chunk.boundsMax.sh1, LoadSplatShTex(coord, _TexSH1));
+    s.sh.sh2    = lerp(chunk.boundsMin.sh2, chunk.boundsMax.sh2, LoadSplatShTex(coord, _TexSH2));
+    s.sh.sh3    = lerp(chunk.boundsMin.sh3, chunk.boundsMax.sh3, LoadSplatShTex(coord, _TexSH3));
+    s.sh.sh4    = lerp(chunk.boundsMin.sh4, chunk.boundsMax.sh4, LoadSplatShTex(coord, _TexSH4));
+    s.sh.sh5    = lerp(chunk.boundsMin.sh5, chunk.boundsMax.sh5, LoadSplatShTex(coord, _TexSH5));
+    s.sh.sh6    = lerp(chunk.boundsMin.sh6, chunk.boundsMax.sh6, LoadSplatShTex(coord, _TexSH6));
+    s.sh.sh7    = lerp(chunk.boundsMin.sh7, chunk.boundsMax.sh7, LoadSplatShTex(coord, _TexSH7));
+    s.sh.sh8    = lerp(chunk.boundsMin.sh8, chunk.boundsMax.sh8, LoadSplatShTex(coord, _TexSH8));
+    s.sh.sh9    = lerp(chunk.boundsMin.sh9, chunk.boundsMax.sh9, LoadSplatShTex(coord, _TexSH9));
+    s.sh.sh10   = lerp(chunk.boundsMin.shA, chunk.boundsMax.shA, LoadSplatShTex(coord, _TexSHA));
+    s.sh.sh11   = lerp(chunk.boundsMin.shB, chunk.boundsMax.shB, LoadSplatShTex(coord, _TexSHB));
+    s.sh.sh12   = lerp(chunk.boundsMin.shC, chunk.boundsMax.shC, LoadSplatShTex(coord, _TexSHC));
+    s.sh.sh13   = lerp(chunk.boundsMin.shD, chunk.boundsMax.shD, LoadSplatShTex(coord, _TexSHD));
+    s.sh.sh14   = lerp(chunk.boundsMin.shE, chunk.boundsMax.shE, LoadSplatShTex(coord, _TexSHE));
+    s.sh.sh15   = lerp(chunk.boundsMin.shF, chunk.boundsMax.shF, LoadSplatShTex(coord, _TexSHF));
     return s;
 }
 
@@ -303,27 +354,27 @@ SplatData LoadSplatDataRaw(uint2 coord2)
     SplatData s;
     uint3 coord = uint3(coord2, 0);
 
-    s.pos       = _TexPos.Load(coord).rgb;
-    s.rot       = float4(_TexRot.Load(coord).rgb, 1);
-    s.scale     = _TexScl.Load(coord).rgb;
-    half4 col   = _TexCol.Load(coord);
+    s.pos       = LoadSplatPosTex(coord);
+    s.rot       = float4(LoadSplatRotTex(coord).rgb, 1);
+    s.scale     = LoadSplatSclTex(coord);
+    half4 col   = LoadSplatColTex(coord);
     s.opacity   = col.a;
     s.sh.col    = col.rgb;
-    s.sh.sh1    = _TexSH1.Load(coord).rgb;
-    s.sh.sh2    = _TexSH2.Load(coord).rgb;
-    s.sh.sh3    = _TexSH3.Load(coord).rgb;
-    s.sh.sh4    = _TexSH4.Load(coord).rgb;
-    s.sh.sh5    = _TexSH5.Load(coord).rgb;
-    s.sh.sh6    = _TexSH6.Load(coord).rgb;
-    s.sh.sh7    = _TexSH7.Load(coord).rgb;
-    s.sh.sh8    = _TexSH8.Load(coord).rgb;
-    s.sh.sh9    = _TexSH9.Load(coord).rgb;
-    s.sh.sh10   = _TexSHA.Load(coord).rgb;
-    s.sh.sh11   = _TexSHB.Load(coord).rgb;
-    s.sh.sh12   = _TexSHC.Load(coord).rgb;
-    s.sh.sh13   = _TexSHD.Load(coord).rgb;
-    s.sh.sh14   = _TexSHE.Load(coord).rgb;
-    s.sh.sh15   = _TexSHF.Load(coord).rgb;
+    s.sh.sh1    = LoadSplatShTex(coord, _TexSH1);
+    s.sh.sh2    = LoadSplatShTex(coord, _TexSH2);
+    s.sh.sh3    = LoadSplatShTex(coord, _TexSH3);
+    s.sh.sh4    = LoadSplatShTex(coord, _TexSH4);
+    s.sh.sh5    = LoadSplatShTex(coord, _TexSH5);
+    s.sh.sh6    = LoadSplatShTex(coord, _TexSH6);
+    s.sh.sh7    = LoadSplatShTex(coord, _TexSH7);
+    s.sh.sh8    = LoadSplatShTex(coord, _TexSH8);
+    s.sh.sh9    = LoadSplatShTex(coord, _TexSH9);
+    s.sh.sh10   = LoadSplatShTex(coord, _TexSHA);
+    s.sh.sh11   = LoadSplatShTex(coord, _TexSHB);
+    s.sh.sh12   = LoadSplatShTex(coord, _TexSHC);
+    s.sh.sh13   = LoadSplatShTex(coord, _TexSHD);
+    s.sh.sh14   = LoadSplatShTex(coord, _TexSHE);
+    s.sh.sh15   = LoadSplatShTex(coord, _TexSHF);
     return s;
 }
 

@@ -1,8 +1,3 @@
-// Unity exposes the GraphicsFormats for it, but does not allow to use :(
-// it deems them to not be "Sample" usage supported, only because there's no corresponding legacy TextureFormat
-// enum for them...
-//#define ENABLE_RGB10A2_SUPPORT
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -38,9 +33,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     {
         Float32x4,
         Float16x4,
-        #if ENABLE_RGB10A2_SUPPORT
         Norm10_2,
-        #endif
         Norm8x4,
         Norm565,
         BC7,
@@ -710,15 +703,23 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             DataFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
             DataFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
-            #if ENABLE_RGB10A2_SUPPORT
-            DataFormat.Norm10_2 => GraphicsFormat.A2B10G10R10_UNormPack32,
-            #endif
+            // Unity exposes the GraphicsFormat for 10.10.10.2, but does not allow to use :(
+            // it deems them to not be "Sample" usage supported, only because there's no corresponding legacy TextureFormat
+            // enum for them... So we'll emulate that with pretending it's a R32Float, and then within the shader
+            // cast to uint and do bit unpacking manually.
+            DataFormat.Norm10_2 => GraphicsFormat.R32_SFloat,
             DataFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
             DataFormat.Norm565 => GraphicsFormat.B5G6R5_UNormPack16,
             DataFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
             DataFormat.BC1 => GraphicsFormat.RGBA_DXT1_UNorm,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
+    }
+
+    enum Format10_2Variant
+    {
+        Vector, // 11.10.11
+        Quaternion, // 10.10.10.2
     }
 
     [BurstCompile]
@@ -728,6 +729,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         [ReadOnly] public NativeArray<float> inputData;
         [NativeDisableParallelForRestriction] public NativeArray<byte> outputData;
         public DataFormat format;
+        public Format10_2Variant formatVariant;
         public int formatBytesPerPixel;
 
         public unsafe void Execute(int y)
@@ -754,15 +756,17 @@ public class GaussianSplatAssetCreator : EditorWindow
                         *(half4*) dstPtr = enc;
                     }
                         break;
-                    #if ENABLE_RGB10A2_SUPPORT
                     case DataFormat.Norm10_2:
                     {
                         pix = math.saturate(pix);
-                        uint enc = (uint)(pix.x * 1023.5f) | ((uint)(pix.y * 1023.5f) << 10) | ((uint)(pix.z * 1023.5f) << 20) | ((uint)(pix.w * 3.5f) << 30);
+                        uint enc;
+                        if (formatVariant == Format10_2Variant.Vector)
+                            enc = (uint) (pix.x * 2047.5f) | ((uint) (pix.y * 1023.5f) << 11) | ((uint) (pix.z * 2047.5f) << 21);
+                        else
+                            enc = (uint) (pix.x * 1023.5f) | ((uint) (pix.y * 1023.5f) << 10) | ((uint) (pix.z * 1023.5f) << 20) | ((uint) (pix.w * 3.5f) << 30);
                         *(uint*) dstPtr = enc;
                     }
                         break;
-                    #endif
                     case DataFormat.Norm8x4:
                     {
                         pix = math.saturate(pix);
@@ -785,7 +789,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static string SaveTex(string path, int width, int height, NativeArray<float> data, int channels, DataFormat format)
+    static string SaveTex(string path, int width, int height, NativeArray<float> data, int channels, DataFormat format, Format10_2Variant formatVariant = Format10_2Variant.Vector)
     {
         GraphicsFormat gfxFormat = DataFormatToGraphics(format);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
@@ -808,6 +812,7 @@ public class GaussianSplatAssetCreator : EditorWindow
                 channels = channels,
                 inputData = data,
                 format = format,
+                formatVariant = formatVariant,
                 outputData = new NativeArray<byte>(dstSize, Allocator.TempJob),
                 formatBytesPerPixel = dstSize / width / height
             };
@@ -826,9 +831,9 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         List<string> imageFiles = new();
         imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_pos.gstex", texData.width, texData.height, texData.dataPos.Reinterpret<float>(12), 3, m_FormatPos));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_rot.gstex", texData.width, texData.height, texData.dataRot.Reinterpret<float>(16), 4, m_FormatRot));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_rot.gstex", texData.width, texData.height, texData.dataRot.Reinterpret<float>(16), 4, m_FormatRot, Format10_2Variant.Quaternion));
         imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_scl.gstex", texData.width, texData.height, texData.dataScl.Reinterpret<float>(12), 3, m_FormatScale));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_col.gstex", texData.width, texData.height, texData.dataCol.Reinterpret<float>(16), 4, m_FormatColor));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_col.gstex", texData.width, texData.height, texData.dataCol.Reinterpret<float>(16), 4, m_FormatColor, Format10_2Variant.Quaternion));
         imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh1.gstex", texData.width, texData.height, texData.dataSh1.Reinterpret<float>(12), 3, m_FormatSH));
         imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh2.gstex", texData.width, texData.height, texData.dataSh2.Reinterpret<float>(12), 3, m_FormatSH));
         imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh3.gstex", texData.width, texData.height, texData.dataSh3.Reinterpret<float>(12), 3, m_FormatSH));

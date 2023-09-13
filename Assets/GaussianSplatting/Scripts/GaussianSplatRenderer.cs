@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
@@ -215,27 +216,45 @@ public class GaussianSplatRenderer : MonoBehaviour
         }
     }
 
+    static string TextureTypeToPropertyName(GaussianSplatAsset.TexType type)
+    {
+        return type switch
+        {
+            GaussianSplatAsset.TexType.Pos => "_TexPos",
+            GaussianSplatAsset.TexType.Rot => "_TexRot",
+            GaussianSplatAsset.TexType.Scl => "_TexScl",
+            GaussianSplatAsset.TexType.Col => "_TexCol",
+            GaussianSplatAsset.TexType.SH1 => "_TexSH1",
+            GaussianSplatAsset.TexType.SH2 => "_TexSH2",
+            GaussianSplatAsset.TexType.SH3 => "_TexSH3",
+            GaussianSplatAsset.TexType.SH4 => "_TexSH4",
+            GaussianSplatAsset.TexType.SH5 => "_TexSH5",
+            GaussianSplatAsset.TexType.SH6 => "_TexSH6",
+            GaussianSplatAsset.TexType.SH7 => "_TexSH7",
+            GaussianSplatAsset.TexType.SH8 => "_TexSH8",
+            GaussianSplatAsset.TexType.SH9 => "_TexSH9",
+            GaussianSplatAsset.TexType.SHA => "_TexSHA",
+            GaussianSplatAsset.TexType.SHB => "_TexSHB",
+            GaussianSplatAsset.TexType.SHC => "_TexSHC",
+            GaussianSplatAsset.TexType.SHD => "_TexSHD",
+            GaussianSplatAsset.TexType.SHE => "_TexSHE",
+            GaussianSplatAsset.TexType.SHF => "_TexSHF",
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
+        };
+    }
+
     void SetAssetTexturesOnMaterial(Material displayMat)
     {
-        displayMat.SetTexture("_TexPos", m_Asset.GetTex(GaussianSplatAsset.TexType.Pos));
-        displayMat.SetTexture("_TexRot", m_Asset.GetTex(GaussianSplatAsset.TexType.Rot));
-        displayMat.SetTexture("_TexScl", m_Asset.GetTex(GaussianSplatAsset.TexType.Scl));
-        displayMat.SetTexture("_TexCol", m_Asset.GetTex(GaussianSplatAsset.TexType.Col));
-        displayMat.SetTexture("_TexSH1", m_Asset.GetTex(GaussianSplatAsset.TexType.SH1));
-        displayMat.SetTexture("_TexSH2", m_Asset.GetTex(GaussianSplatAsset.TexType.SH2));
-        displayMat.SetTexture("_TexSH3", m_Asset.GetTex(GaussianSplatAsset.TexType.SH3));
-        displayMat.SetTexture("_TexSH4", m_Asset.GetTex(GaussianSplatAsset.TexType.SH4));
-        displayMat.SetTexture("_TexSH5", m_Asset.GetTex(GaussianSplatAsset.TexType.SH5));
-        displayMat.SetTexture("_TexSH6", m_Asset.GetTex(GaussianSplatAsset.TexType.SH6));
-        displayMat.SetTexture("_TexSH7", m_Asset.GetTex(GaussianSplatAsset.TexType.SH7));
-        displayMat.SetTexture("_TexSH8", m_Asset.GetTex(GaussianSplatAsset.TexType.SH8));
-        displayMat.SetTexture("_TexSH9", m_Asset.GetTex(GaussianSplatAsset.TexType.SH9));
-        displayMat.SetTexture("_TexSHA", m_Asset.GetTex(GaussianSplatAsset.TexType.SHA));
-        displayMat.SetTexture("_TexSHB", m_Asset.GetTex(GaussianSplatAsset.TexType.SHB));
-        displayMat.SetTexture("_TexSHC", m_Asset.GetTex(GaussianSplatAsset.TexType.SHC));
-        displayMat.SetTexture("_TexSHD", m_Asset.GetTex(GaussianSplatAsset.TexType.SHD));
-        displayMat.SetTexture("_TexSHE", m_Asset.GetTex(GaussianSplatAsset.TexType.SHE));
-        displayMat.SetTexture("_TexSHF", m_Asset.GetTex(GaussianSplatAsset.TexType.SHF));
+        uint texFlags = 0;
+        for (var t = GaussianSplatAsset.TexType.Pos; t < GaussianSplatAsset.TexType.TypeCount; ++t)
+        {
+            var tex = m_Asset.GetTex(t);
+            if (tex.graphicsFormat == GraphicsFormat.R32_SFloat) // so that a shader knows it needs to interpret R32F as packed integer
+                texFlags |= (1u << (int) t);
+            displayMat.SetTexture(TextureTypeToPropertyName(t), tex);
+        }
+
+        displayMat.SetInteger("_TexFlagBits", (int)texFlags);
     }
 
     public void OnDisable()
@@ -269,7 +288,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         }
 
         // calculate distance to the camera for each splat
-        m_CSSplatUtilities.SetTexture(1, "_SplatPositions", m_Asset.GetTex(GaussianSplatAsset.TexType.Pos));
+        var texPos = m_Asset.GetTex(GaussianSplatAsset.TexType.Pos);
+        m_CSSplatUtilities.SetTexture(1, "_TexPos", texPos);
+        m_CSSplatUtilities.SetInt("_TexFlagBits", texPos.graphicsFormat == GraphicsFormat.R32_SFloat ? 1 : 0);
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetBuffer(1, "_SplatChunks", m_GpuChunks);
