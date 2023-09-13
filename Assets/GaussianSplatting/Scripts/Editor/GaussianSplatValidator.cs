@@ -26,7 +26,8 @@ public class GaussianSplatValidator
         {
             "Assets/GaussianAssets/bicycle_30k.asset",
             "Assets/GaussianAssets/truck_30k.asset",
-            "Assets/GaussianAssets/playroom_30k.asset",
+            "Assets/GaussianAssets/garden_30k.asset",
+            //"Assets/GaussianAssets/playroom_30k.asset",
         };
 
         int width = 1200;

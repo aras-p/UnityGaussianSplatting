@@ -6,9 +6,14 @@ using Unity.Collections;
 
 public static class PLYFileReader
 {
-    public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames, out NativeArray<byte> vertices)
+    public static void ReadFileHeader(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames)
     {
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrNames, fs);
+    }
+
+    static void ReadHeaderImpl(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames, FileStream fs)
+    {
         // C# arrays and NativeArrays make it hard to have a "byte" array larger than 2GB :/
         if (fs.Length >= 2 * 1024 * 1024 * 1024L)
             throw new IOException($"PLY {filePath} read error: currently files larger than 2GB are not supported");
@@ -39,6 +44,13 @@ public static class PLYFileReader
             }
         }
         //Debug.Log($"PLY {filePath} vtx {vertexCount} stride {vertexStride} attrs #{attrNames.Count} {string.Join(',', attrNames)}");
+    }
+
+    public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames, out NativeArray<byte> vertices)
+    {
+        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrNames, fs);
+
         vertices = new NativeArray<byte>(vertexCount * vertexStride, Allocator.Persistent);
         var readBytes = fs.Read(vertices);
         if (readBytes != vertices.Length)

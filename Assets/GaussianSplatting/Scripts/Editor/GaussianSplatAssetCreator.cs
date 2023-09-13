@@ -55,6 +55,10 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
+    string m_PrevPlyPath;
+    int m_PrevVertexCount;
+    int m_PrevVertexStride;
+    long m_PrevFileSize;
 
     [MenuItem("Tools/Create Gaussian Splat Asset")]
     public static void Init()
@@ -78,6 +82,19 @@ public class GaussianSplatAssetCreator : EditorWindow
         m_InputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Input Folder"), m_InputFolder, kPointCloudPly, "PointCloudFolder");
         m_Use30k = EditorGUILayout.Toggle(new GUIContent("Use 30k Version", "Use iteration_30000 point cloud if available. Otherwise uses iteration_7000."), m_Use30k);
 
+        string plyPath = GetPLYFileName(m_InputFolder, m_Use30k);
+        if (plyPath != m_PrevPlyPath)
+        {
+            PLYFileReader.ReadFileHeader(plyPath, out m_PrevVertexCount, out m_PrevVertexStride, out var _);
+            m_PrevFileSize = new FileInfo(plyPath).Length;
+            m_PrevPlyPath = plyPath;
+        }
+
+        if (m_PrevVertexCount > 0)
+        {
+            EditorGUILayout.LabelField("File Size", $"{EditorUtility.FormatBytes(m_PrevFileSize)} - {m_PrevVertexCount:N0} splats");
+        }
+
         EditorGUILayout.Space();
         GUILayout.Label("Output", EditorStyles.boldLabel);
         rect = EditorGUILayout.GetControlRect(true);
@@ -98,6 +115,22 @@ public class GaussianSplatAssetCreator : EditorWindow
         m_FormatSH = (DataFormat)EditorGUILayout.EnumPopup("SH", m_FormatSH);
         EditorGUI.indentLevel--;
         EditorGUI.EndDisabledGroup();
+
+        if (m_PrevVertexCount > 0)
+        {
+            int chunkCount = (m_PrevVertexCount + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
+            int width, height;
+            (width, height) = CalcTextureSize(m_PrevVertexCount);
+            long sizePos = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatPos));
+            long sizeRot = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatRot));
+            long sizeScl = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatScale));
+            long sizeCol = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatColor));
+            long sizeSHs = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatSH)) * 15;
+            long sizeChunk = chunkCount * UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>();
+            long totalSize = sizePos + sizeRot + sizeScl + sizeCol + sizeSHs + sizeChunk;
+            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double)m_PrevFileSize / (double)totalSize:F1}x smaller");
+        }
+
 
         EditorGUILayout.Space();
         GUILayout.BeginHorizontal();
@@ -121,35 +154,35 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             case DataQuality.Custom:
                 break;
-            case DataQuality.VeryLow:
-                m_FormatPos = DataFormat.Norm8x4;
-                m_FormatRot = DataFormat.Norm8x4;
+            case DataQuality.VeryLow: // 18.7x smaller, 24.02 PSNR
+                m_FormatPos = DataFormat.BC7;
+                m_FormatRot = DataFormat.BC7;
                 m_FormatScale = DataFormat.BC7;
                 m_FormatColor = DataFormat.BC7;
                 m_FormatSH = DataFormat.BC1;
                 break;
-            case DataQuality.Low:
-                m_FormatPos = DataFormat.Float16x4;
-                m_FormatRot = DataFormat.Norm8x4;
-                m_FormatScale = DataFormat.Norm8x4;
+            case DataQuality.Low: // 12.2x smaller, 34.79 PSNR
+                m_FormatPos = DataFormat.Norm10_2;
+                m_FormatRot = DataFormat.Norm10_2;
+                m_FormatScale = DataFormat.Norm565;
                 m_FormatColor = DataFormat.BC7;
-                m_FormatSH = DataFormat.BC7;
+                m_FormatSH = DataFormat.BC1;
                 break;
-            case DataQuality.Medium:
-                m_FormatPos = DataFormat.Float16x4;
-                m_FormatRot = DataFormat.Float16x4;
-                m_FormatScale = DataFormat.Float16x4;
+            case DataQuality.Medium: // 5.2x smaller, 47.82 PSNR
+                m_FormatPos = DataFormat.Norm10_2;
+                m_FormatRot = DataFormat.Norm10_2;
+                m_FormatScale = DataFormat.Norm10_2;
                 m_FormatColor = DataFormat.Norm8x4;
-                m_FormatSH = DataFormat.BC7;
+                m_FormatSH = DataFormat.Norm565;
                 break;
-            case DataQuality.High:
+            case DataQuality.High: // 2.9x smaller, 54.82 PSNR
                 m_FormatPos = DataFormat.Float16x4;
-                m_FormatRot = DataFormat.Float16x4;
-                m_FormatScale = DataFormat.Float16x4;
+                m_FormatRot = DataFormat.Norm10_2;
+                m_FormatScale = DataFormat.Norm10_2;
                 m_FormatColor = DataFormat.Float16x4;
-                m_FormatSH = DataFormat.Norm8x4;
+                m_FormatSH = DataFormat.Norm10_2;
                 break;
-            case DataQuality.VeryHigh:
+            case DataQuality.VeryHigh: // 0.8x smaller (larger!),
                 m_FormatPos = DataFormat.Float32x4;
                 m_FormatRot = DataFormat.Float32x4;
                 m_FormatScale = DataFormat.Float32x4;
@@ -267,18 +300,28 @@ public class GaussianSplatAssetCreator : EditorWindow
         Selection.activeObject = savedAsset;
     }
 
-    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string folder, bool use30k)
+    static string GetPLYFileName(string folder, bool use30k)
     {
-        NativeArray<InputSplatData> data = default;
         string plyPath = $"{folder}/{(use30k ? kPointCloud30kPly : kPointCloudPly)}";
         if (!File.Exists(plyPath))
         {
             plyPath = $"{folder}/{kPointCloudPly}";
             if (!File.Exists(plyPath))
             {
-                m_ErrorMessage = $"Did not find {plyPath} file";
-                return data;
+                return null;
             }
+        }
+        return plyPath;
+    }
+
+    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string folder, bool use30k)
+    {
+        NativeArray<InputSplatData> data = default;
+        string plyPath = GetPLYFileName(folder, use30k);
+        if (string.IsNullOrWhiteSpace(plyPath))
+        {
+            m_ErrorMessage = $"Did not find {plyPath} file";
+            return data;
         }
 
         int splatCount = 0;
@@ -567,6 +610,16 @@ public class GaussianSplatAssetCreator : EditorWindow
         return res;
     }
 
+    static (int,int) CalcTextureSize(int splatCount)
+    {
+        int width = kTextureWidth;
+        int height = math.max(1, (splatCount + width - 1) / width);
+        // our swizzle tiles are 16x16, so make texture multiple of that height
+        int blockHeight = 16;
+        height = (height + blockHeight - 1) / blockHeight * blockHeight;
+        return (width, height);
+    }
+
     [BurstCompile]
     public struct InitTextureDataJob : IJobParallelFor
     {
@@ -597,11 +650,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             inputSplats = input;
 
-            width = kTextureWidth;
-            height = math.max(1, (input.Length + width - 1) / width);
-            // our swizzle tiles are 16x16, so make texture multiple of that height
-            int blockHeight = 16;
-            height = (height + blockHeight - 1) / blockHeight * blockHeight;
+            (width, height) = CalcTextureSize(input.Length);
 
             dataPos = new NativeArray<float3>(width * height, Allocator.Persistent);
             dataRot = new NativeArray<float4>(width * height, Allocator.Persistent);
@@ -798,7 +847,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             Texture2D tex = new Texture2D(width, height, channels == 4 ? GraphicsFormat.R32G32B32A32_SFloat : GraphicsFormat.R32G32B32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
             tex.SetPixelData(data, 0);
-            EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), TextureCompressionQuality.Normal);
+            EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), 100);
             NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
             GaussianTexImporter.WriteAsset(width, height, gfxFormat, cmpData.AsReadOnlySpan(), path);
             DestroyImmediate(tex);
