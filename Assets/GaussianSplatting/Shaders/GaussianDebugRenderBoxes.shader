@@ -14,6 +14,7 @@ CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
 #pragma require compute
+#pragma use_dxc metal vulkan
 
 //@TODO: cube face flip opts from https://twitter.com/SebAaltonen/status/1315985267258519553
 static const int kCubeIndices[36] =

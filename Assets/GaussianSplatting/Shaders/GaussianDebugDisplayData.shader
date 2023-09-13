@@ -14,6 +14,7 @@ CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
 #pragma require compute
+#pragma use_dxc metal vulkan
 
 #include "GaussianSplatting.hlsl"
 

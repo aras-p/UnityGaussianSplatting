@@ -3,6 +3,8 @@
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 
+#pragma use_dxc metal vulkan
+
 #include "GaussianSplatting.hlsl"
 
 Texture2D _SplatPositions;
