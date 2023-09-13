@@ -140,10 +140,10 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void OnPreCullCamera(Camera cam)
     {
-        m_RenderCommandBuffer.Clear();
-
         if (m_Asset == null || m_Asset.m_SplatCount == 0)
             return;
+
+        m_RenderCommandBuffer.Clear();
 
         Material displayMat = m_RenderMode switch
         {

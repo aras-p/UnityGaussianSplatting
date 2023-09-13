@@ -46,12 +46,12 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] bool m_Use30k = true;
 
     [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
-    [SerializeField] DataQuality m_Quality = DataQuality.High;
-    [SerializeField] DataFormat m_FormatPos = DataFormat.Float16x4;
-    [SerializeField] DataFormat m_FormatRot = DataFormat.Float16x4;
-    [SerializeField] DataFormat m_FormatScale = DataFormat.Float16x4;
-    [SerializeField] DataFormat m_FormatColor = DataFormat.Norm8x4;
-    [SerializeField] DataFormat m_FormatSH = DataFormat.Norm8x4;
+    [SerializeField] DataQuality m_Quality = DataQuality.Medium;
+    [SerializeField] DataFormat m_FormatPos;
+    [SerializeField] DataFormat m_FormatRot;
+    [SerializeField] DataFormat m_FormatScale;
+    [SerializeField] DataFormat m_FormatColor;
+    [SerializeField] DataFormat m_FormatSH;
     [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
@@ -63,7 +63,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     [MenuItem("Tools/Create Gaussian Splat Asset")]
     public static void Init()
     {
-        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 500, 500), false, "Gaussian Splat Creator", true);
+        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 360), false, "Gaussian Splat Creator", true);
         window.minSize = new Vector2(200, 200);
         window.maxSize = new Vector2(1500, 1500);
         window.Show();
