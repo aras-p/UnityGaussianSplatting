@@ -624,25 +624,25 @@ public class GaussianSplatAssetCreator : EditorWindow
     public struct InitTextureDataJob : IJobParallelFor
     {
         public int width, height;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataPos;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataPos;
         [NativeDisableParallelForRestriction] public NativeArray<float4> dataRot;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataScl;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataScl;
         [NativeDisableParallelForRestriction] public NativeArray<float4> dataCol;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh1;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh2;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh3;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh4;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh5;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh6;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh7;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh8;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataSh9;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShA;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShB;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShC;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShD;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShE;
-        [NativeDisableParallelForRestriction] public NativeArray<float3> dataShF;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh1;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh2;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh3;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh4;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh5;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh6;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh7;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh8;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataSh9;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShA;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShB;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShC;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShD;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShE;
+        [NativeDisableParallelForRestriction] public NativeArray<float4> dataShF;
 
         [ReadOnly] NativeArray<InputSplatData> inputSplats;
 
@@ -652,25 +652,25 @@ public class GaussianSplatAssetCreator : EditorWindow
 
             (width, height) = CalcTextureSize(input.Length);
 
-            dataPos = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataPos = new NativeArray<float4>(width * height, Allocator.Persistent);
             dataRot = new NativeArray<float4>(width * height, Allocator.Persistent);
-            dataScl = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataScl = new NativeArray<float4>(width * height, Allocator.Persistent);
             dataCol = new NativeArray<float4>(width * height, Allocator.Persistent);
-            dataSh1 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh2 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh3 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh4 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh5 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh6 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh7 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh8 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataSh9 = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShA = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShB = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShC = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShD = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShE = new NativeArray<float3>(width * height, Allocator.Persistent);
-            dataShF = new NativeArray<float3>(width * height, Allocator.Persistent);
+            dataSh1 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh2 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh3 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh4 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh5 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh6 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh7 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh8 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataSh9 = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShA = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShB = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShC = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShD = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShE = new NativeArray<float4>(width * height, Allocator.Persistent);
+            dataShF = new NativeArray<float4>(width * height, Allocator.Persistent);
         }
 
         public void Dispose()
@@ -713,14 +713,14 @@ public class GaussianSplatAssetCreator : EditorWindow
 
             // pos
             float3 pos = splat.pos;
-            dataPos[i] = pos;
+            dataPos[i] = new float4(pos, 1);
 
             // rot
             var q = splat.rot;
             dataRot[i] = new float4(q.x, q.y, q.z, q.w);
 
             // scale
-            dataScl[i] = splat.scale;
+            dataScl[i] = new float4(splat.scale, 1);
 
             // color
             var c = splat.dc0;
@@ -728,21 +728,21 @@ public class GaussianSplatAssetCreator : EditorWindow
             dataCol[i] = new float4(c.x, c.y, c.z, a);
 
             // SHs
-            dataSh1[i] = splat.sh1;
-            dataSh2[i] = splat.sh2;
-            dataSh3[i] = splat.sh3;
-            dataSh4[i] = splat.sh4;
-            dataSh5[i] = splat.sh5;
-            dataSh6[i] = splat.sh6;
-            dataSh7[i] = splat.sh7;
-            dataSh8[i] = splat.sh8;
-            dataSh9[i] = splat.sh9;
-            dataShA[i] = splat.shA;
-            dataShB[i] = splat.shB;
-            dataShC[i] = splat.shC;
-            dataShD[i] = splat.shD;
-            dataShE[i] = splat.shE;
-            dataShF[i] = splat.shF;
+            dataSh1[i] = new float4(splat.sh1, 1);
+            dataSh2[i] = new float4(splat.sh2, 1);
+            dataSh3[i] = new float4(splat.sh3, 1);
+            dataSh4[i] = new float4(splat.sh4, 1);
+            dataSh5[i] = new float4(splat.sh5, 1);
+            dataSh6[i] = new float4(splat.sh6, 1);
+            dataSh7[i] = new float4(splat.sh7, 1);
+            dataSh8[i] = new float4(splat.sh8, 1);
+            dataSh9[i] = new float4(splat.sh9, 1);
+            dataShA[i] = new float4(splat.shA, 1);
+            dataShB[i] = new float4(splat.shB, 1);
+            dataShC[i] = new float4(splat.shC, 1);
+            dataShD[i] = new float4(splat.shD, 1);
+            dataShE[i] = new float4(splat.shE, 1);
+            dataShF[i] = new float4(splat.shF, 1);
         }
     }
 
@@ -774,8 +774,8 @@ public class GaussianSplatAssetCreator : EditorWindow
     [BurstCompile]
     struct ConvertDataJob : IJobParallelFor
     {
-        public int width, height, channels;
-        [ReadOnly] public NativeArray<float> inputData;
+        public int width, height;
+        [ReadOnly] public NativeArray<float4> inputData;
         [NativeDisableParallelForRestriction] public NativeArray<byte> outputData;
         public DataFormat format;
         public Format10_2Variant formatVariant;
@@ -783,16 +783,11 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         public unsafe void Execute(int y)
         {
-            int srcIdx = y * width * channels;
+            int srcIdx = y * width;
             byte* dstPtr = (byte*) outputData.GetUnsafePtr() + y * width * formatBytesPerPixel;
             for (int x = 0; x < width; ++x)
             {
-                float4 pix = 1.0f;
-                pix.x = inputData[srcIdx + 0];
-                pix.y = inputData[srcIdx + 1];
-                pix.z = inputData[srcIdx + 2];
-                if (channels == 4)
-                    pix.w = inputData[srcIdx + 3];
+                float4 pix = inputData[srcIdx];
 
                 switch (format)
                 {
@@ -832,20 +827,20 @@ public class GaussianSplatAssetCreator : EditorWindow
                         break;
                 }
 
-                srcIdx += channels;
+                srcIdx++;
                 dstPtr += formatBytesPerPixel;
             }
         }
     }
 
-    static string SaveTex(string path, int width, int height, NativeArray<float> data, int channels, DataFormat format, Format10_2Variant formatVariant = Format10_2Variant.Vector)
+    static string SaveTex(string path, int width, int height, NativeArray<float4> data, DataFormat format, Format10_2Variant formatVariant = Format10_2Variant.Vector)
     {
         GraphicsFormat gfxFormat = DataFormatToGraphics(format);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
 
         if (GraphicsFormatUtility.IsCompressedFormat(gfxFormat))
         {
-            Texture2D tex = new Texture2D(width, height, channels == 4 ? GraphicsFormat.R32G32B32A32_SFloat : GraphicsFormat.R32G32B32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
+            Texture2D tex = new Texture2D(width, height, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
             tex.SetPixelData(data, 0);
             EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), 100);
             NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
@@ -858,7 +853,6 @@ public class GaussianSplatAssetCreator : EditorWindow
             {
                 width = width,
                 height = height,
-                channels = channels,
                 inputData = data,
                 format = format,
                 formatVariant = formatVariant,
@@ -879,25 +873,25 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_SplatCount = inputSplats.Length;
 
         List<string> imageFiles = new();
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_pos.gstex", texData.width, texData.height, texData.dataPos.Reinterpret<float>(12), 3, m_FormatPos));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_rot.gstex", texData.width, texData.height, texData.dataRot.Reinterpret<float>(16), 4, m_FormatRot, Format10_2Variant.Quaternion));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_scl.gstex", texData.width, texData.height, texData.dataScl.Reinterpret<float>(12), 3, m_FormatScale));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_col.gstex", texData.width, texData.height, texData.dataCol.Reinterpret<float>(16), 4, m_FormatColor, Format10_2Variant.Quaternion));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh1.gstex", texData.width, texData.height, texData.dataSh1.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh2.gstex", texData.width, texData.height, texData.dataSh2.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh3.gstex", texData.width, texData.height, texData.dataSh3.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh4.gstex", texData.width, texData.height, texData.dataSh4.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh5.gstex", texData.width, texData.height, texData.dataSh5.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh6.gstex", texData.width, texData.height, texData.dataSh6.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh7.gstex", texData.width, texData.height, texData.dataSh7.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh8.gstex", texData.width, texData.height, texData.dataSh8.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh9.gstex", texData.width, texData.height, texData.dataSh9.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sha.gstex", texData.width, texData.height, texData.dataShA.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shb.gstex", texData.width, texData.height, texData.dataShB.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shc.gstex", texData.width, texData.height, texData.dataShC.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shd.gstex", texData.width, texData.height, texData.dataShD.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_she.gstex", texData.width, texData.height, texData.dataShE.Reinterpret<float>(12), 3, m_FormatSH));
-        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shf.gstex", texData.width, texData.height, texData.dataShF.Reinterpret<float>(12), 3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_pos.gstex", texData.width, texData.height, texData.dataPos, m_FormatPos));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_rot.gstex", texData.width, texData.height, texData.dataRot, m_FormatRot, Format10_2Variant.Quaternion));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_scl.gstex", texData.width, texData.height, texData.dataScl, m_FormatScale));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_col.gstex", texData.width, texData.height, texData.dataCol, m_FormatColor, Format10_2Variant.Quaternion));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh1.gstex", texData.width, texData.height, texData.dataSh1, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh2.gstex", texData.width, texData.height, texData.dataSh2, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh3.gstex", texData.width, texData.height, texData.dataSh3, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh4.gstex", texData.width, texData.height, texData.dataSh4, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh5.gstex", texData.width, texData.height, texData.dataSh5, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh6.gstex", texData.width, texData.height, texData.dataSh6, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh7.gstex", texData.width, texData.height, texData.dataSh7, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh8.gstex", texData.width, texData.height, texData.dataSh8, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sh9.gstex", texData.width, texData.height, texData.dataSh9, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_sha.gstex", texData.width, texData.height, texData.dataShA, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shb.gstex", texData.width, texData.height, texData.dataShB, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shc.gstex", texData.width, texData.height, texData.dataShC, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shd.gstex", texData.width, texData.height, texData.dataShD, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_she.gstex", texData.width, texData.height, texData.dataShE, m_FormatSH));
+        imageFiles.Add(SaveTex($"{m_OutputFolder}/{baseName}_shf.gstex", texData.width, texData.height, texData.dataShF, m_FormatSH));
 
         texData.Dispose();
         return imageFiles;
