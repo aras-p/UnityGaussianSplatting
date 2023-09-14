@@ -96,6 +96,8 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void CreateResourcesForAsset()
     {
+        if (!HasValidAsset)
+            return;
         m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
         m_GpuChunks.SetData(asset.m_Chunks);
 
@@ -126,13 +128,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_FrameCounter = 0;
         m_RenderCommandBuffer = null;
-        if (!HasValidAsset)
-            return;
-        if (m_Asset == null || m_Asset.m_SplatCount == 0)
-        {
-            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} asset is null or empty", this);
-            return;
-        }
         if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_ShaderDebugData == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
             return;
         if (!SystemInfo.supportsComputeShaders)
@@ -153,10 +148,10 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void OnPreCullCamera(Camera cam)
     {
+        m_RenderCommandBuffer.Clear();
+
         if (!HasValidRenderSetup)
             return;
-
-        m_RenderCommandBuffer.Clear();
 
         Material displayMat = m_RenderMode switch
         {
@@ -276,6 +271,8 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void DisposeResourcesForAsset()
     {
+        m_CameraCommandBuffersDone?.Clear();
+        
         m_GpuChunks?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
@@ -292,7 +289,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         
         Camera.onPreCull -= OnPreCullCamera;
 
-        m_CameraCommandBuffersDone?.Clear();
         m_RenderCommandBuffer?.Clear();
         m_RenderCommandBuffer = null;
 
