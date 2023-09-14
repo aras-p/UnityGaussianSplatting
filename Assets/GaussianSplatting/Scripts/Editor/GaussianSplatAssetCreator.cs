@@ -154,28 +154,28 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             case DataQuality.Custom:
                 break;
-            case DataQuality.VeryLow: // 18.7x smaller, 24.02 PSNR
+            case DataQuality.VeryLow: // 20.7x smaller, 24.07 PSNR
                 m_FormatPos = DataFormat.BC7;
                 m_FormatRot = DataFormat.BC7;
                 m_FormatScale = DataFormat.BC7;
                 m_FormatColor = DataFormat.BC7;
                 m_FormatSH = DataFormat.BC1;
                 break;
-            case DataQuality.Low: // 12.2x smaller, 34.79 PSNR
+            case DataQuality.Low: // 13.1x smaller, 34.76 PSNR
                 m_FormatPos = DataFormat.Norm10_2;
                 m_FormatRot = DataFormat.Norm10_2;
                 m_FormatScale = DataFormat.Norm565;
                 m_FormatColor = DataFormat.BC7;
                 m_FormatSH = DataFormat.BC1;
                 break;
-            case DataQuality.Medium: // 5.2x smaller, 47.82 PSNR
+            case DataQuality.Medium: // 5.3x smaller, 47.51 PSNR
                 m_FormatPos = DataFormat.Norm10_2;
                 m_FormatRot = DataFormat.Norm10_2;
                 m_FormatScale = DataFormat.Norm10_2;
                 m_FormatColor = DataFormat.Norm8x4;
                 m_FormatSH = DataFormat.Norm565;
                 break;
-            case DataQuality.High: // 2.9x smaller, 54.82 PSNR
+            case DataQuality.High: // 2.9x smaller, 54.87 PSNR
                 m_FormatPos = DataFormat.Float16x4;
                 m_FormatRot = DataFormat.Norm10_2;
                 m_FormatScale = DataFormat.Norm10_2;
@@ -481,40 +481,12 @@ public class GaussianSplatAssetCreator : EditorWindow
             chunkMin.pos = (float3) float.PositiveInfinity;
             chunkMin.scl = (float3) float.PositiveInfinity;
             chunkMin.col = (float4) float.PositiveInfinity;
-            chunkMin.sh1 = (float3) float.PositiveInfinity;
-            chunkMin.sh2 = (float3) float.PositiveInfinity;
-            chunkMin.sh3 = (float3) float.PositiveInfinity;
-            chunkMin.sh4 = (float3) float.PositiveInfinity;
-            chunkMin.sh5 = (float3) float.PositiveInfinity;
-            chunkMin.sh6 = (float3) float.PositiveInfinity;
-            chunkMin.sh7 = (float3) float.PositiveInfinity;
-            chunkMin.sh8 = (float3) float.PositiveInfinity;
-            chunkMin.sh9 = (float3) float.PositiveInfinity;
-            chunkMin.shA = (float3) float.PositiveInfinity;
-            chunkMin.shB = (float3) float.PositiveInfinity;
-            chunkMin.shC = (float3) float.PositiveInfinity;
-            chunkMin.shD = (float3) float.PositiveInfinity;
-            chunkMin.shE = (float3) float.PositiveInfinity;
-            chunkMin.shF = (float3) float.PositiveInfinity;
+            chunkMin.shs = (float3) float.PositiveInfinity;
             GaussianSplatAsset.BoundsInfo chunkMax;
             chunkMax.pos = (float3) float.NegativeInfinity;
             chunkMax.scl = (float3) float.NegativeInfinity;
             chunkMax.col = (float4) float.NegativeInfinity;
-            chunkMax.sh1 = (float3) float.NegativeInfinity;
-            chunkMax.sh2 = (float3) float.NegativeInfinity;
-            chunkMax.sh3 = (float3) float.NegativeInfinity;
-            chunkMax.sh4 = (float3) float.NegativeInfinity;
-            chunkMax.sh5 = (float3) float.NegativeInfinity;
-            chunkMax.sh6 = (float3) float.NegativeInfinity;
-            chunkMax.sh7 = (float3) float.NegativeInfinity;
-            chunkMax.sh8 = (float3) float.NegativeInfinity;
-            chunkMax.sh9 = (float3) float.NegativeInfinity;
-            chunkMax.shA = (float3) float.NegativeInfinity;
-            chunkMax.shB = (float3) float.NegativeInfinity;
-            chunkMax.shC = (float3) float.NegativeInfinity;
-            chunkMax.shD = (float3) float.NegativeInfinity;
-            chunkMax.shE = (float3) float.NegativeInfinity;
-            chunkMax.shF = (float3) float.NegativeInfinity;
+            chunkMax.shs = (float3) float.NegativeInfinity;
 
             int splatBegin = math.min(chunkIdx * GaussianSplatAsset.kChunkSize, splatData.Length);
             int splatEnd = math.min((chunkIdx + 1) * GaussianSplatAsset.kChunkSize, splatData.Length);
@@ -526,40 +498,40 @@ public class GaussianSplatAssetCreator : EditorWindow
                 chunkMin.pos = math.min(chunkMin.pos, s.pos);
                 chunkMin.scl = math.min(chunkMin.scl, s.scale);
                 chunkMin.col = math.min(chunkMin.col, new float4(s.dc0, s.opacity));
-                chunkMin.sh1 = math.min(chunkMin.sh1, s.sh1);
-                chunkMin.sh2 = math.min(chunkMin.sh2, s.sh2);
-                chunkMin.sh3 = math.min(chunkMin.sh3, s.sh3);
-                chunkMin.sh4 = math.min(chunkMin.sh4, s.sh4);
-                chunkMin.sh5 = math.min(chunkMin.sh5, s.sh5);
-                chunkMin.sh6 = math.min(chunkMin.sh6, s.sh6);
-                chunkMin.sh7 = math.min(chunkMin.sh7, s.sh7);
-                chunkMin.sh8 = math.min(chunkMin.sh8, s.sh8);
-                chunkMin.sh9 = math.min(chunkMin.sh9, s.sh9);
-                chunkMin.shA = math.min(chunkMin.shA, s.shA);
-                chunkMin.shB = math.min(chunkMin.shB, s.shB);
-                chunkMin.shC = math.min(chunkMin.shC, s.shC);
-                chunkMin.shD = math.min(chunkMin.shD, s.shD);
-                chunkMin.shE = math.min(chunkMin.shE, s.shE);
-                chunkMin.shF = math.min(chunkMin.shF, s.shF);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh1);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh2);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh3);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh4);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh5);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh6);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh7);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh8);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh9);
+                chunkMin.shs = math.min(chunkMin.shs, s.shA);
+                chunkMin.shs = math.min(chunkMin.shs, s.shB);
+                chunkMin.shs = math.min(chunkMin.shs, s.shC);
+                chunkMin.shs = math.min(chunkMin.shs, s.shD);
+                chunkMin.shs = math.min(chunkMin.shs, s.shE);
+                chunkMin.shs = math.min(chunkMin.shs, s.shF);
 
                 chunkMax.pos = math.max(chunkMax.pos, s.pos);
                 chunkMax.scl = math.max(chunkMax.scl, s.scale);
                 chunkMax.col = math.max(chunkMax.col, new float4(s.dc0, s.opacity));
-                chunkMax.sh1 = math.max(chunkMax.sh1, s.sh1);
-                chunkMax.sh2 = math.max(chunkMax.sh2, s.sh2);
-                chunkMax.sh3 = math.max(chunkMax.sh3, s.sh3);
-                chunkMax.sh4 = math.max(chunkMax.sh4, s.sh4);
-                chunkMax.sh5 = math.max(chunkMax.sh5, s.sh5);
-                chunkMax.sh6 = math.max(chunkMax.sh6, s.sh6);
-                chunkMax.sh7 = math.max(chunkMax.sh7, s.sh7);
-                chunkMax.sh8 = math.max(chunkMax.sh8, s.sh8);
-                chunkMax.sh9 = math.max(chunkMax.sh9, s.sh9);
-                chunkMax.shA = math.max(chunkMax.shA, s.shA);
-                chunkMax.shB = math.max(chunkMax.shB, s.shB);
-                chunkMax.shC = math.max(chunkMax.shC, s.shC);
-                chunkMax.shD = math.max(chunkMax.shD, s.shD);
-                chunkMax.shE = math.max(chunkMax.shE, s.shE);
-                chunkMax.shF = math.max(chunkMax.shF, s.shF);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh1);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh2);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh3);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh4);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh5);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh6);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh7);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh8);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh9);
+                chunkMax.shs = math.max(chunkMax.shs, s.shA);
+                chunkMax.shs = math.max(chunkMax.shs, s.shB);
+                chunkMax.shs = math.max(chunkMax.shs, s.shC);
+                chunkMax.shs = math.max(chunkMax.shs, s.shD);
+                chunkMax.shs = math.max(chunkMax.shs, s.shE);
+                chunkMax.shs = math.max(chunkMax.shs, s.shF);
             }
 
             // store chunk info
@@ -576,21 +548,21 @@ public class GaussianSplatAssetCreator : EditorWindow
                 s.scale = (s.scale - chunkMin.scl) / (float3)(chunkMax.scl - chunkMin.scl);
                 s.dc0 = ((float3)s.dc0 - ((float4)chunkMin.col).xyz) / (((float4)chunkMax.col).xyz - ((float4)chunkMin.col).xyz);
                 s.opacity = (s.opacity - chunkMin.col.w) / (chunkMax.col.w - chunkMin.col.w);
-                s.sh1 = (s.sh1 - chunkMin.sh1) / (float3)(chunkMax.sh1 - chunkMin.sh1);
-                s.sh2 = (s.sh2 - chunkMin.sh2) / (float3)(chunkMax.sh2 - chunkMin.sh2);
-                s.sh3 = (s.sh3 - chunkMin.sh3) / (float3)(chunkMax.sh3 - chunkMin.sh3);
-                s.sh4 = (s.sh4 - chunkMin.sh4) / (float3)(chunkMax.sh4 - chunkMin.sh4);
-                s.sh5 = (s.sh5 - chunkMin.sh5) / (float3)(chunkMax.sh5 - chunkMin.sh5);
-                s.sh6 = (s.sh6 - chunkMin.sh6) / (float3)(chunkMax.sh6 - chunkMin.sh6);
-                s.sh7 = (s.sh7 - chunkMin.sh7) / (float3)(chunkMax.sh7 - chunkMin.sh7);
-                s.sh8 = (s.sh8 - chunkMin.sh8) / (float3)(chunkMax.sh8 - chunkMin.sh8);
-                s.sh9 = (s.sh9 - chunkMin.sh9) / (float3)(chunkMax.sh9 - chunkMin.sh9);
-                s.shA = (s.shA - chunkMin.shA) / (float3)(chunkMax.shA - chunkMin.shA);
-                s.shB = (s.shB - chunkMin.shB) / (float3)(chunkMax.shB - chunkMin.shB);
-                s.shC = (s.shC - chunkMin.shC) / (float3)(chunkMax.shC - chunkMin.shC);
-                s.shD = (s.shD - chunkMin.shD) / (float3)(chunkMax.shD - chunkMin.shD);
-                s.shE = (s.shE - chunkMin.shE) / (float3)(chunkMax.shE - chunkMin.shE);
-                s.shF = (s.shF - chunkMin.shF) / (float3)(chunkMax.shF - chunkMin.shF);
+                s.sh1 = (s.sh1 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh2 = (s.sh2 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh3 = (s.sh3 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh4 = (s.sh4 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh5 = (s.sh5 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh6 = (s.sh6 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh7 = (s.sh7 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh8 = (s.sh8 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh9 = (s.sh9 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shA = (s.shA - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shB = (s.shB - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shC = (s.shC - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shD = (s.shD - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shE = (s.shE - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shF = (s.shF - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
                 splatData[i] = s;
             }
         }
