@@ -22,14 +22,20 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 First download or clone this repository and open as a Unity (2022.3) project. Note that the project defaults to DX12 on Windows,
 since then it can use a faster sorting routine (DX11 should also work, but sorting will be slower).
 
+<img align="right" src="Doc/shotAssetCreator.png" width="250px">
+
 Next up, **create some GaussianSplat assets**: open `Tools -> Create Gaussian Splat Asset` menu within Unity. In the dialog point it to
 your gaussian splat "model" directory (it is expected to contain `cameras.json` and `point_cloud/iteration_7000/point_cloud.ply` inside of it,
 and be an actual Gaussian Splat model, not something else). Pick desired compression options and output folder, and press "Create Asset" button.
+
+<img align="left" src="Doc/shotAsset.png" width="500px">
+
 If everything was fine, there should be a GaussianSplat asset that has a bunch of data images next to it.
 
 Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
 [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
 [14GB zip](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) of their models.
+
 
 In the game object that has a `GaussianSplatRenderer` script, **point the Asset field to** one of your created assets.
 There are various controls on the script to debug/visualize the data, as well as a slider to move game camera into one of asset's camera
