@@ -28,9 +28,9 @@ Next up, **create some GaussianSplat assets**: open `Tools -> Create Gaussian Sp
 your gaussian splat "model" directory (it is expected to contain `cameras.json` and `point_cloud/iteration_7000/point_cloud.ply` inside of it,
 and be an actual Gaussian Splat model, not something else). Pick desired compression options and output folder, and press "Create Asset" button.
 
-<img src="Doc/shotAsset.png" width="600px">
+If everything was fine, there should be a GaussianSplat asset that has a bunch of data images next to it:
 
-If everything was fine, there should be a GaussianSplat asset that has a bunch of data images next to it.
+<img src="Doc/shotAsset.png" width="600px">
 
 Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
 [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
