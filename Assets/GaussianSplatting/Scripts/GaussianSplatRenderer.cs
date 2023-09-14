@@ -6,6 +6,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Serialization;
 
+[ExecuteInEditMode]
 public class GaussianSplatRenderer : MonoBehaviour
 {
     public enum RenderMode
@@ -88,21 +89,26 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public GaussianSplatAsset asset => m_Asset;
 
+    public bool HasValidAsset => m_Asset != null && m_Asset.m_SplatCount > 0;
+    public bool HasValidRenderSetup => m_RenderCommandBuffer != null;
+
     public void OnEnable()
     {
         Camera.onPreCull += OnPreCullCamera;
 
         m_FrameCounter = 0;
+        m_RenderCommandBuffer = null;
+        if (!HasValidAsset)
+            return;
         if (m_Asset == null || m_Asset.m_SplatCount == 0)
         {
             Debug.LogWarning($"{nameof(GaussianSplatRenderer)} asset is null or empty", this);
             return;
         }
         if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_ShaderDebugData == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
-        {
-            Debug.LogWarning($"{nameof(GaussianSplatRenderer)} shader references are not set up", this);
             return;
-        }
+        if (!SystemInfo.supportsComputeShaders)
+            return;
 
         m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
         m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
@@ -140,7 +146,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void OnPreCullCamera(Camera cam)
     {
-        if (m_Asset == null || m_Asset.m_SplatCount == 0)
+        if (!HasValidRenderSetup)
             return;
 
         m_RenderCommandBuffer.Clear();
@@ -204,7 +210,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
         m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
 
-
         if (m_DisplayData != DisplayDataMode.None)
         {
             SetAssetTexturesOnMaterial(m_MatDebugData);
@@ -263,11 +268,16 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_CameraCommandBuffersDone?.Clear();
         m_RenderCommandBuffer?.Clear();
+        m_RenderCommandBuffer = null;
 
         m_GpuChunks?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
+        
+        m_GpuChunks = null;
+        m_GpuSortDistances = null;
+        m_GpuSortKeys = null;
 
         DestroyImmediate(m_MatSplats);
         DestroyImmediate(m_MatComposite);

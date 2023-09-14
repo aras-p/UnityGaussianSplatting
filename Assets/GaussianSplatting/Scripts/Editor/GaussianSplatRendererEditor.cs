@@ -14,9 +14,19 @@ public class GaussianSplatRendererEditor : Editor
         var gs = target as GaussianSplatRenderer;
         if (!gs)
             return;
-        var asset = gs.asset;
-        if (!asset)
+        if (!gs.HasValidAsset)
+        {
+            EditorGUILayout.HelpBox("Gaussian Splat asset is null or empty", MessageType.Error);
             return;
+        }
+        if (!gs.enabled || !gs.gameObject.activeInHierarchy)
+            return;
+        if (!gs.HasValidRenderSetup)
+        {
+            EditorGUILayout.HelpBox("Shader resources are not set up", MessageType.Error);
+            return;
+        }
+        var asset = gs.asset;
 
         EditorGUILayout.Space();
         GUILayout.Label("Stats / Controls", EditorStyles.boldLabel);
