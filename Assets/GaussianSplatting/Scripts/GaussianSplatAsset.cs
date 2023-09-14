@@ -8,6 +8,7 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public int m_SplatCount;
     [HideInInspector] public Vector3 m_BoundsMin;
     [HideInInspector] public Vector3 m_BoundsMax;
+    [HideInInspector] public Hash128 m_DataHash;
 
     public enum TexType
     {
@@ -33,7 +34,7 @@ public class GaussianSplatAsset : ScriptableObject
         TypeCount
     }
 
-    [NonReorderable]
+    [NonReorderable] [HideInInspector]
     public Texture2D[] m_Tex = new Texture2D[(int) TexType.TypeCount];
 
     public Texture2D GetTex(TexType idx) => m_Tex[(int)idx];

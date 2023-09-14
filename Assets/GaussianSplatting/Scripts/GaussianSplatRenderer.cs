@@ -86,7 +86,8 @@ public class GaussianSplatRenderer : MonoBehaviour
     Material m_MatDebugData;
 
     int m_FrameCounter;
-    GaussianSplatAsset m_PrevAsset = null;
+    GaussianSplatAsset m_PrevAsset;
+    Hash128 m_PrevHash;
 
     public GaussianSplatAsset asset => m_Asset;
 
@@ -338,9 +339,11 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void Update()
     {
-        if (m_PrevAsset != m_Asset)
+        var curHash = m_Asset ? m_Asset.m_DataHash : new Hash128();
+        if (m_PrevAsset != m_Asset || m_PrevHash != curHash)
         {
             m_PrevAsset = m_Asset;
+            m_PrevHash = curHash;
             DisposeResourcesForAsset();
             CreateResourcesForAsset();
         }

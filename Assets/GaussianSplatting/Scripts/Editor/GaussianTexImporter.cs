@@ -22,6 +22,7 @@ public class GaussianTexImporter : ScriptedImporter
             int width = br.ReadInt32();
             int height = br.ReadInt32();
             int format = br.ReadInt32();
+            ulong dataHash = br.ReadUInt64();
             if (magic != kMagic || width < 1 || width > kMaxTexSize || height < 1 || height > kMaxTexSize ||
                 format < 1 ||
                 format > (int) GraphicsFormat.D16_UNorm_S8_UInt)
@@ -44,6 +45,7 @@ public class GaussianTexImporter : ScriptedImporter
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.filterMode = FilterMode.Point;
             tex.anisoLevel = 0;
+            tex.imageContentsHash = new Hash128(dataHash, ((uint)width) | ((ulong)height << 16) | ((ulong)format << 32));
             tex.SetPixelData(data, 0);
             tex.Apply(false, true); // make non-readable
 
@@ -60,7 +62,7 @@ public class GaussianTexImporter : ScriptedImporter
         }
     }
 
-    public static void WriteAsset(int width, int height, GraphicsFormat format, ReadOnlySpan<byte> data, string path)
+    public static void WriteAsset(int width, int height, GraphicsFormat format, ReadOnlySpan<byte> data, ulong dataHash, string path)
     {
         int dataSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, format);
         if (data.Length != dataSize)
@@ -72,6 +74,7 @@ public class GaussianTexImporter : ScriptedImporter
         br.Write(width);
         br.Write(height);
         br.Write((int)format);
+        br.Write(dataHash);
         br.Write(data);
     }
 }

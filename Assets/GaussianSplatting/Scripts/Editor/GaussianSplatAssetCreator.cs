@@ -288,7 +288,12 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Setup textures onto asset", 0.8f);
         for (int i = 0; i < imageFiles.Count; ++i)
-            asset.m_Tex[i] = AssetDatabase.LoadAssetAtPath<Texture2D>(imageFiles[i]);
+        {
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(imageFiles[i]); 
+            asset.m_Tex[i] = tex;
+            var texHash = tex.imageContentsHash;
+            asset.m_DataHash.Append(ref texHash);
+        }
 
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
         var savedAsset = CreateOrReplaceAsset(asset, assetPath);
@@ -805,7 +810,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static string SaveTex(string path, int width, int height, NativeArray<float4> data, DataFormat format, Format10_2Variant formatVariant = Format10_2Variant.Vector)
+    static unsafe string SaveTex(string path, int width, int height, NativeArray<float4> data, DataFormat format, Format10_2Variant formatVariant = Format10_2Variant.Vector)
     {
         GraphicsFormat gfxFormat = DataFormatToGraphics(format);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
@@ -816,7 +821,8 @@ public class GaussianSplatAssetCreator : EditorWindow
             tex.SetPixelData(data, 0);
             EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), 100);
             NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
-            GaussianTexImporter.WriteAsset(width, height, gfxFormat, cmpData.AsReadOnlySpan(), path);
+            uint2 dataHash = xxHash3.Hash64(cmpData.GetUnsafeReadOnlyPtr(), cmpData.Length);
+            GaussianTexImporter.WriteAsset(width, height, gfxFormat, cmpData.AsReadOnlySpan(), (ulong)dataHash.x<<32 | dataHash.y, path);
             DestroyImmediate(tex);
         }
         else
@@ -832,7 +838,8 @@ public class GaussianSplatAssetCreator : EditorWindow
                 formatBytesPerPixel = dstSize / width / height
             };
             job.Schedule(height, 1).Complete();
-            GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), path);
+            uint2 dataHash = xxHash3.Hash64(job.outputData.GetUnsafeReadOnlyPtr(), job.outputData.Length);
+            GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), (ulong)dataHash.x<<32 | dataHash.y, path);
             job.outputData.Dispose();
         }
         return path;

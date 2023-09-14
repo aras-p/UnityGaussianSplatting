@@ -93,6 +93,8 @@ public class GaussianSplatAssetEditor : Editor
 
             EditorGUILayout.Vector3Field("Bounds Min", gs.m_BoundsMin);
             EditorGUILayout.Vector3Field("Bounds Max", gs.m_BoundsMax);
+            
+            EditorGUILayout.TextField("Data Hash", gs.m_DataHash.ToString());
         }
 
         /*
