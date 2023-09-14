@@ -86,11 +86,38 @@ public class GaussianSplatRenderer : MonoBehaviour
     Material m_MatDebugData;
 
     int m_FrameCounter;
+    GaussianSplatAsset m_PrevAsset = null;
 
     public GaussianSplatAsset asset => m_Asset;
 
     public bool HasValidAsset => m_Asset != null && m_Asset.m_SplatCount > 0;
-    public bool HasValidRenderSetup => m_RenderCommandBuffer != null;
+    public bool HasValidRenderSetup => m_RenderCommandBuffer != null && m_GpuChunks != null;
+
+    void CreateResourcesForAsset()
+    {
+        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
+        m_GpuChunks.SetData(asset.m_Chunks);
+
+        int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
+        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
+        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortIndices" };
+
+        // init keys buffer to splat indices
+        m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
+        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
+        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+
+        m_SorterIslandArgs.keys = m_GpuSortDistances;
+        m_SorterIslandArgs.values = m_GpuSortKeys;
+        m_SorterIslandArgs.count = (uint)splatCountNextPot;
+
+        m_SorterFfxArgs.inputKeys = m_GpuSortDistances;
+        m_SorterFfxArgs.inputValues = m_GpuSortKeys;
+        m_SorterFfxArgs.count = (uint) m_Asset.m_SplatCount;
+        if (m_SorterFfx.Valid)
+            m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_Asset.m_SplatCount);
+    }
 
     public void OnEnable()
     {
@@ -115,33 +142,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
         m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
         m_MatDebugData = new Material(m_ShaderDebugData) {name = "GaussianDebugData"};
-
-        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
-        m_GpuChunks.SetData(asset.m_Chunks);
-
-        int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
-        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
-        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortIndices" };
-
-        // init keys buffer to splat indices
-        m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
-        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
-
+        
         m_SorterIsland = new IslandGPUSort(m_CSIslandSort);
-        m_SorterIslandArgs.keys = m_GpuSortDistances;
-        m_SorterIslandArgs.values = m_GpuSortKeys;
-        m_SorterIslandArgs.count = (uint)splatCountNextPot;
-
         m_SorterFfx = new FfxParallelSort(m_CSFfxSort);
-        m_SorterFfxArgs.inputKeys = m_GpuSortDistances;
-        m_SorterFfxArgs.inputValues = m_GpuSortKeys;
-        m_SorterFfxArgs.count = (uint) m_Asset.m_SplatCount;
-        if (m_SorterFfx.Valid)
-            m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_Asset.m_SplatCount);
-
-        m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};
+        m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};        
+        
+        CreateResourcesForAsset();
     }
 
     void OnPreCullCamera(Camera cam)
@@ -262,14 +268,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetInteger("_TexFlagBits", (int)texFlags);
     }
 
-    public void OnDisable()
+    void DisposeResourcesForAsset()
     {
-        Camera.onPreCull -= OnPreCullCamera;
-
-        m_CameraCommandBuffersDone?.Clear();
-        m_RenderCommandBuffer?.Clear();
-        m_RenderCommandBuffer = null;
-
         m_GpuChunks?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
@@ -278,6 +278,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuChunks = null;
         m_GpuSortDistances = null;
         m_GpuSortKeys = null;
+    }
+
+    public void OnDisable()
+    {
+        DisposeResourcesForAsset();
+        
+        Camera.onPreCull -= OnPreCullCamera;
+
+        m_CameraCommandBuffersDone?.Clear();
+        m_RenderCommandBuffer?.Clear();
+        m_RenderCommandBuffer = null;
 
         DestroyImmediate(m_MatSplats);
         DestroyImmediate(m_MatComposite);
@@ -315,6 +326,16 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
         else
             m_SorterIsland.Dispatch(m_RenderCommandBuffer, m_SorterIslandArgs);
+    }
+
+    public void Update()
+    {
+        if (m_PrevAsset != m_Asset)
+        {
+            m_PrevAsset = m_Asset;
+            DisposeResourcesForAsset();
+            CreateResourcesForAsset();
+        }
     }
 
     public void ActivateCamera(int index)
