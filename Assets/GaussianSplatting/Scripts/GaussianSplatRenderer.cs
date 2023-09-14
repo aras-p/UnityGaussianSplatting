@@ -48,7 +48,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
     public DisplayDataMode m_DisplayData = DisplayDataMode.None;
     [Range(1, 8)] public int m_DisplayDataScale = 1;
-
+    public bool m_RenderInSceneView = true;
     [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
     public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
 
@@ -208,13 +208,18 @@ public class GaussianSplatRenderer : MonoBehaviour
             instanceCount = m_GpuChunks.count;
 
         int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
-        m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
-        m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
-        m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0,0,0,0), 0, 0);
-        m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, displayMat, 0, topology, vertexCount, instanceCount);
-        m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-        m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
-        m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
+        if (cam.cameraType != CameraType.Preview && (m_RenderInSceneView || cam.cameraType != CameraType.SceneView))
+        {
+            m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point,
+                GraphicsFormat.R16G16B16A16_SFloat);
+            m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
+            m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+            m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, displayMat, 0, topology, vertexCount,
+                instanceCount);
+            m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
+            m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
+        }
 
         if (m_DisplayData != DisplayDataMode.None)
         {
@@ -299,6 +304,9 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void SortPoints(Camera cam)
     {
+        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+            return;
+        
         bool useFfx = m_PreferFfxSort && m_SorterFfx.Valid;
         Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
         if (useFfx)
