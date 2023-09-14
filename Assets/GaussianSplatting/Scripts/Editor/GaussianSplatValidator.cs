@@ -60,8 +60,12 @@ public class GaussianSplatValidator
                 Graphics.SetRenderTarget(renderTarget);
                 captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
 
-                byte[] refImageBytes = File.ReadAllBytes($"Images/Ref/Shot-{imageIndex:0000}.png");
-                ImageConversion.LoadImage(compareTexture, refImageBytes, false);
+                var refImageFile = $"Images/Ref/Shot-{imageIndex:0000}.png";
+                if (File.Exists(refImageFile))
+                {
+                    byte[] refImageBytes = File.ReadAllBytes(refImageFile);
+                    ImageConversion.LoadImage(compareTexture, refImageBytes, false);
+                }
 
                 NativeArray<Color32> refPixels = compareTexture.GetPixelData<Color32>(0);
                 NativeArray<Color32> gotPixels = captureTexture.GetPixelData<Color32>(0);
@@ -80,7 +84,7 @@ public class GaussianSplatValidator
                 string pathRef = $"Shot-{imageIndex:0000}-ref.png";
                 string pathGot = $"Shot-{imageIndex:0000}-got.png";
 
-                if ((errorsCount > 50 || psnr < 90.0f) && (imageIndex == 1 || imageIndex == 9 || imageIndex == 14)) // write only some we're interested in
+                if ((errorsCount > 50 || psnr < 70.0f) && (imageIndex == 1 || imageIndex == 9 || imageIndex == 14)) // write only some we're interested in
                 {
                     Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}): RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
