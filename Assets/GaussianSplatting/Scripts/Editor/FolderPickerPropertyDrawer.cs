@@ -11,51 +11,60 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
 {
     const string kLastPathPref = "nesnausk.utils.FolderPickerLastPath";
     static Texture2D s_FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
-    static GUIStyle s_StyleTextFieldText = new GUIStyle("TextFieldDropDownText");
-    static GUIStyle s_StyleTextFieldDropdown = new GUIStyle("TextFieldDropdown");
+    static GUIStyle s_StyleTextFieldText;
+    static GUIStyle s_StyleTextFieldDropdown;
     static readonly int kPathFieldControlID = "FolderPickerPathField".GetHashCode();
     const int kIconSize = 15;
     const int kRecentPathsCount = 10;
 
-    List<string> m_PreviousPaths;
-    GUIContent[] m_PreviousPathsContent;
+    class PreviousPaths
+    {
+        public PreviousPaths(List<string> paths)
+        {
+            this.paths = paths;
+            UpdateContent();
+        }
+        public void UpdateContent()
+        {
+            this.content = paths.Select(p => new UnityEngine.GUIContent(Path.GetFileName(p))).ToArray();
+        }
+        public List<string> paths;
+        public GUIContent[] content;
+    }
+    Dictionary<string, PreviousPaths> m_PreviousPaths = new();
 
     void PopulatePreviousPaths(string nameKey)
     {
-        if (m_PreviousPaths != null)
+        if (m_PreviousPaths.ContainsKey(nameKey))
             return;
 
-        m_PreviousPaths = new List<string>();
+        List<string> prevPaths = new();
         for (int i = 0; i < kRecentPathsCount; ++i)
         {
             string path = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}-{i}");
             if (!string.IsNullOrWhiteSpace(path))
-                m_PreviousPaths.Add(path);
+                prevPaths.Add(path);
         }
-
-        UpdatePreviousPathsGUIContent();
+        m_PreviousPaths.Add(nameKey, new PreviousPaths(prevPaths));
     }
 
     void UpdatePreviousPaths(string nameKey, string path)
     {
-        m_PreviousPaths ??= new List<string>();
-
-        m_PreviousPaths.Remove(path);
-        m_PreviousPaths.Insert(0, path);
-        while (m_PreviousPaths.Count > kRecentPathsCount)
-            m_PreviousPaths.RemoveAt(m_PreviousPaths.Count - 1);
-
-        UpdatePreviousPathsGUIContent();
-
-        for (int i = 0; i < m_PreviousPaths.Count; ++i)
+        if (!m_PreviousPaths.ContainsKey(nameKey))
         {
-            EditorPrefs.SetString($"{kLastPathPref}-{nameKey}-{i}", m_PreviousPaths[i]);
+            m_PreviousPaths.Add(nameKey, new PreviousPaths(new List<string>()));
         }
-    }
+        var prevPaths = m_PreviousPaths[nameKey];
+        prevPaths.paths.Remove(path);
+        prevPaths.paths.Insert(0, path);
+        while (prevPaths.paths.Count > kRecentPathsCount)
+            prevPaths.paths.RemoveAt(prevPaths.paths.Count - 1);
+        prevPaths.UpdateContent();
 
-    void UpdatePreviousPathsGUIContent()
-    {
-        m_PreviousPathsContent = m_PreviousPaths.Select(p => new UnityEngine.GUIContent(Path.GetFileName(p))).ToArray();
+        for (int i = 0; i < prevPaths.paths.Count; ++i)
+        {
+            EditorPrefs.SetString($"{kLastPathPref}-{nameKey}-{i}", prevPaths.paths[i]);
+        }
     }
 
     static bool CheckPath(string path, string hasToContainFile)
@@ -109,14 +118,16 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
     {
         PopulatePreviousPaths(nameKey);
 
-        EditorGUI.BeginDisabledGroup(m_PreviousPathsContent == null || m_PreviousPathsContent.Length == 0);
+        m_PreviousPaths.TryGetValue(nameKey, out var prevPaths);
+
+        EditorGUI.BeginDisabledGroup(prevPaths == null || prevPaths.paths.Count == 0);
         EditorGUI.BeginChangeCheck();
         int oldIndent = EditorGUI.indentLevel;
         EditorGUI.indentLevel = 0;
-        int parameterIndex = EditorGUI.Popup(position, GUIContent.none, -1, m_PreviousPathsContent, s_StyleTextFieldDropdown);
-        if (EditorGUI.EndChangeCheck() && parameterIndex < m_PreviousPaths.Count)
+        int parameterIndex = EditorGUI.Popup(position, GUIContent.none, -1, prevPaths.content, s_StyleTextFieldDropdown);
+        if (EditorGUI.EndChangeCheck() && parameterIndex < prevPaths.paths.Count)
         {
-            string newValue = m_PreviousPaths[parameterIndex];
+            string newValue = prevPaths.paths[parameterIndex];
             if (CheckAndSetNewPath(ref newValue, nameKey, hasToContainFile))
                 value = newValue;
         }
@@ -125,8 +136,10 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         return value;
     }
 
-    string PathFieldGUI(Rect position, GUIContent label, string value, string hasToContainFile, string nameKey)
+    public string PathFieldGUI(Rect position, GUIContent label, string value, string hasToContainFile, string nameKey)
     {
+        if (s_StyleTextFieldText == null) s_StyleTextFieldText = new GUIStyle("TextFieldDropDownText");
+        if (s_StyleTextFieldDropdown == null) s_StyleTextFieldDropdown = new GUIStyle("TextFieldDropdown");
 
         int controlId = GUIUtility.GetControlID(kPathFieldControlID, FocusType.Keyboard, position);
         Rect fullRect = EditorGUI.PrefixLabel(position, controlId, label);
@@ -183,11 +196,6 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
                         EditorUtility.RevealInFinder(value);
                     }
                     GUIUtility.keyboardControl = controlId;
-                }
-
-                if (dropdownRect.Contains(evt.mousePosition))
-                {
-
                 }
                 break;
             case EventType.DragUpdated:

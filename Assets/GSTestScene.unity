@@ -210,8 +210,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 231550833}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.689202, y: -0.23798883, z: -0.67273253, w: 0.12566993}
-  m_LocalPosition: {x: -5.8281107, y: -2.652966, z: -0.70560646}
+  m_LocalRotation: {x: -0.08922883, y: 0.33247223, z: -0.037248928, w: -0.9381434}
+  m_LocalPosition: {x: 13.36584, y: 4.162172, z: -16.524162}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -302,8 +302,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1462254335}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.90152323, y: 0.05462407, z: 0.42328975, w: 0.071399786}
-  m_LocalPosition: {x: -3.0026746, y: 1.4007691, z: 2.2284043}
+  m_LocalRotation: {x: 0.90152323, y: 0.054624073, z: 0.42328972, w: 0.07139974}
+  m_LocalPosition: {x: -3.0026817, y: 1.4007727, z: 2.2284005}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -338,16 +338,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_PointCloudFolder: Assets/Models~/bicycle
-  m_Use30kVersion: 1
+  m_Asset: {fileID: 11400000, guid: f4ee21923914d0543bb057037b5a9821, type: 2}
   m_SplatScale: 1
   m_SHOrder: 3
   m_SortNthFrame: 1
   m_RenderMode: 0
   m_PointDisplaySize: 3
   m_DisplayData: 0
+  m_DisplayDataScale: 1
+  m_RenderInSceneView: 1
   m_PreferFfxSort: 1
-  m_ScaleDown: 1
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
   m_ShaderComposite: {fileID: 4800000, guid: 7e184af7d01193a408eb916d8acafff9, type: 3}
   m_ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
