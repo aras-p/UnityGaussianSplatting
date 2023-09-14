@@ -19,6 +19,8 @@ This is not a fast implementation yet!
 
 ## Usage
 
+:warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
+
 - Within Unity (2022.3), there's a `Scene.unity` that has a `GaussianSplatRenderer` script attached to it.
   - The project defaults to DX12 on Windows, since then it can use a faster GPU sorting routine. DX11 should also work, at expense of performance.
   - Metal and Vulkan also use the faster sorting approach.
@@ -30,8 +32,6 @@ This is not a fast implementation yet!
   - The gaussian splat renderer component inspector will have a slider to move the game view camera into one of the cameras from the model directory.
     Or you can just move the game/scene view camera however you please.
   - There are also various controls in the script to debug or visualize the data.
-
-:warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. I told you so!
 
 Wishlist that I may or might not do at some point:
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
