@@ -43,12 +43,19 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     boxSize *= _SplatScale;
 
     float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
+    splatRotScaleMat[2] *= -1;
+	splatRotScaleMat = mul((float3x3)unity_ObjectToWorld, splatRotScaleMat);
 
-    float3 centerWorldPos = splat.pos * float3(1,1,-1);
+	float3 centerWorldPos = splat.pos;
+	centerWorldPos.z = -centerWorldPos.z;
+	centerWorldPos = mul(unity_ObjectToWorld, float4(centerWorldPos,1)).xyz;
 
-    float3 viewDir = normalize(UnityWorldSpaceViewDir(centerWorldPos));
+	float3 worldViewDir = _WorldSpaceCameraPos.xyz - centerWorldPos;
+	float3 objViewDir = mul((float3x3)unity_WorldToObject, worldViewDir);
+	objViewDir.z *= -1;
+	objViewDir = normalize(objViewDir);
 
-    o.col.rgb = ShadeSH(splat.sh, viewDir, _SHOrder);
+    o.col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder);
     o.col.a = splat.opacity;
 
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
@@ -56,7 +63,6 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
     float3 cov3d0, cov3d1;
-    splatRotScaleMat[2] *= -1;
     CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
     float3 cov2d = CalcCovariance2D(centerWorldPos, cov3d0, cov3d1, UNITY_MATRIX_V, UNITY_MATRIX_P, _ScreenParams);
 

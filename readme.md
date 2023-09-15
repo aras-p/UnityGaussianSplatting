@@ -26,7 +26,9 @@ since then it can use a faster sorting routine (DX11 should also work, but sorti
 
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity. In the dialog point it to
 your gaussian splat "model" directory (it is expected to contain `cameras.json` and `point_cloud/iteration_7000/point_cloud.ply` inside of it,
-and be an actual Gaussian Splat model, not something else). Pick desired compression options and output folder, and press "Create Asset" button.
+and be an actual Gaussian Splat model, not something else).
+
+Pick desired compression options and output folder, and press "Create Asset" button.
 
 If everything was fine, there should be a GaussianSplat asset that has a bunch of data images next to it:
 
@@ -41,10 +43,14 @@ In the game object that has a `GaussianSplatRenderer` script, **point the Asset 
 There are various controls on the script to debug/visualize the data, as well as a slider to move game camera into one of asset's camera
 locations.
 
+The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
+-160 degrees around X axis, so in the sample scene the object has that rotation on it, and the camera is setup as a child object.
+
+
 _That's it!_
 
 Wishlist that I may or might not do at some point:
-- [ ] Make it respect the game object transform
+- [x] Make it respect the game object transform
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
 - [ ] Look at ways to make the data sets smaller (both on-disk and in-memory)
 - [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)

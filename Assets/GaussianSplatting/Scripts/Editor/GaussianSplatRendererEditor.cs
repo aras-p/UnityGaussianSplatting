@@ -46,19 +46,4 @@ public class GaussianSplatRendererEditor : Editor
             }
         }
     }
-
-    public bool HasFrameBounds()
-    {
-        var gs = target as GaussianSplatRenderer;
-        if (!gs || !gs.HasValidAsset)
-            return false;
-        return true;
-    }
-
-    public Bounds OnGetFrameBounds()
-    {
-        var gs = target as GaussianSplatRenderer;
-        var asset = gs.asset;
-        return new Bounds((asset.m_BoundsMin + asset.m_BoundsMax) / 2.0f, (asset.m_BoundsMax - asset.m_BoundsMin) * 0.3f);
-    }
 }

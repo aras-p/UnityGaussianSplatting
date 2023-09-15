@@ -148,7 +148,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void OnPreCullCamera(Camera cam)
     {
-        m_RenderCommandBuffer.Clear();
+        m_RenderCommandBuffer?.Clear();
 
         if (!HasValidRenderSetup)
             return;
@@ -185,8 +185,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetInteger("_DisplayLine", displayAsLine ? 1 : 0);
         displayMat.SetInteger("_DisplayChunks", m_RenderMode == RenderMode.DebugChunkBounds ? 1 : 0);
 
+        var matrix = transform.localToWorldMatrix;
         if (m_FrameCounter % m_SortNthFrame == 0)
-            SortPoints(cam);
+            SortPoints(cam, matrix);
         ++m_FrameCounter;
 
         int vertexCount = 6;
@@ -210,7 +211,7 @@ public class GaussianSplatRenderer : MonoBehaviour
                 GraphicsFormat.R16G16B16A16_SFloat);
             m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
             m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
-            m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, displayMat, 0, topology, vertexCount,
+            m_RenderCommandBuffer.DrawProcedural(matrix, displayMat, 0, topology, vertexCount,
                 instanceCount);
             m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
@@ -299,7 +300,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         DestroyImmediate(m_MatDebugData);
     }
 
-    void SortPoints(Camera cam)
+    void SortPoints(Camera cam, Matrix4x4 matrix)
     {
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
             return;
@@ -320,6 +321,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
         m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetBuffer(1, "_SplatChunks", m_GpuChunks);
+        m_CSSplatUtilities.SetMatrix("_LocalToWorldMatrix", matrix);
         m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", worldToCamMatrix);
         m_CSSplatUtilities.SetInt("_SplatCount", m_Asset.m_SplatCount);
         m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
@@ -351,8 +353,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (mainCam != null)
         {
             var cam = m_Asset.m_Cameras[index];
-            mainCam.transform.position = cam.pos;
-            mainCam.transform.LookAt(cam.pos + cam.axisZ, cam.axisY);
+            mainCam.transform.localPosition = cam.pos;
+            mainCam.transform.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
             #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(mainCam.transform);
             #endif

@@ -136,7 +136,6 @@ struct SplatSHData
 half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder)
 {
     dir *= -1;
-    dir.z *= -1;
 
     half x = dir.x, y = dir.y, z = dir.z;
 

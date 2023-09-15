@@ -8,6 +8,7 @@
 #include "GaussianSplatting.hlsl"
 
 Texture2D _SplatPositions;
+float4x4 _LocalToWorldMatrix;
 float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
@@ -23,7 +24,6 @@ void CSSetIndices (uint3 id : SV_DispatchThreadID)
 
     _SplatSortKeys[idx] = idx;
 }
-
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcDistances (uint3 id : SV_DispatchThreadID)
@@ -47,8 +47,9 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 
     float3 pos = LoadSplatPosTex(coord);
     pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, pos);
-
-    pos = mul(_WorldToCameraMatrix, float4(pos.xyz * float3(1,1,-1), 1)).xyz;
+    pos.z = -pos.z;
+    pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
+    pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html
     uint fu = asuint(pos.z);
     uint mask = -((int)(fu >> 31)) | 0x80000000;
