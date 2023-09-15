@@ -35,8 +35,8 @@ public class GaussianSplatValidator
 
         var cam = Camera.main;
         var oldAsset = gaussians.asset;
-        var oldCamPos = cam.transform.position;
-        var oldCamRot = cam.transform.rotation;
+        var oldCamPos = cam.transform.localPosition;
+        var oldCamRot = cam.transform.localRotation;
         var renderTarget = RenderTexture.GetTemporary(width, height, 24, GraphicsFormat.R8G8B8A8_SRGB);
         cam.targetTexture = renderTarget;
 
@@ -51,7 +51,7 @@ public class GaussianSplatValidator
         {
             var gs = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(path);
             gaussians.m_Asset = gs;
-            gaussians.OnEnable();
+            gaussians.Update();
             for (int camIndex = 0; camIndex <= 40; camIndex += 10)
             {
                 EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", path, (float)imageIndex / (float)(paths.Length * 5));
@@ -110,7 +110,6 @@ public class GaussianSplatValidator
 
                 ++imageIndex;
             }
-            gaussians.OnDisable();
         }
 
 
@@ -118,8 +117,9 @@ public class GaussianSplatValidator
 
         cam.targetTexture = null;
         gaussians.m_Asset = oldAsset;
-        cam.transform.position = oldCamPos;
-        cam.transform.rotation = oldCamRot;
+        gaussians.Update();
+        cam.transform.localPosition = oldCamPos;
+        cam.transform.localRotation = oldCamRot;
 
         RenderTexture.ReleaseTemporary(renderTarget);
         Object.DestroyImmediate(captureTexture);

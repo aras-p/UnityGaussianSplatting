@@ -88,7 +88,6 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         o.col.rgb = palette((float)instID / (float)_SplatChunkCount, half3(0.5,0.5,0.5), half3(0.5,0.5,0.5), half3(1,1,1), half3(0.0, 0.33, 0.67));
         o.col.a = 0.1;
     }
-    localPos.z *= -1;
 
     float3 worldPos = centerWorldPos + localPos;
     o.vertex = UnityWorldToClipPos(worldPos);

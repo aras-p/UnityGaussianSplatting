@@ -43,16 +43,13 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     boxSize *= _SplatScale;
 
     float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
-    splatRotScaleMat[2] *= -1;
 	splatRotScaleMat = mul((float3x3)unity_ObjectToWorld, splatRotScaleMat);
 
 	float3 centerWorldPos = splat.pos;
-	centerWorldPos.z = -centerWorldPos.z;
 	centerWorldPos = mul(unity_ObjectToWorld, float4(centerWorldPos,1)).xyz;
 
 	float3 worldViewDir = _WorldSpaceCameraPos.xyz - centerWorldPos;
 	float3 objViewDir = mul((float3x3)unity_WorldToObject, worldViewDir);
-	objViewDir.z *= -1;
 	objViewDir = normalize(objViewDir);
 
     o.col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder);

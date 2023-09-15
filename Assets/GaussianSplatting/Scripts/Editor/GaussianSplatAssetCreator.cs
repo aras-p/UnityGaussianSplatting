@@ -897,11 +897,8 @@ public class GaussianSplatAssetCreator : EditorWindow
             var axisy = new Vector3(jsonCam.rotation[0][1], jsonCam.rotation[1][1], jsonCam.rotation[2][1]);
             var axisz = new Vector3(jsonCam.rotation[0][2], jsonCam.rotation[1][2], jsonCam.rotation[2][2]);
 
-            pos.z *= -1;
             axisy *= -1;
-            axisx.z *= -1;
-            axisy.z *= -1;
-            axisz.z *= -1;
+            axisz *= -1;
 
             var cam = new GaussianSplatAsset.CameraInfo
             {

@@ -272,8 +272,19 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void DisposeResourcesForAsset()
     {
-        m_CameraCommandBuffersDone?.Clear();
-        
+        if (m_CameraCommandBuffersDone != null)
+        {
+            if (m_RenderCommandBuffer != null)
+            {
+                foreach (var cam in m_CameraCommandBuffersDone)
+                {
+                    if (cam)
+                        cam.RemoveCommandBuffer(CameraEvent.BeforeForwardAlpha, m_RenderCommandBuffer);
+                }
+            }
+            m_CameraCommandBuffersDone.Clear();
+        }
+
         m_GpuChunks?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();

@@ -44,7 +44,8 @@ There are various controls on the script to debug/visualize the data, as well as
 locations.
 
 The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
--160 degrees around X axis, so in the sample scene the object has that rotation on it, and the camera is setup as a child object.
+-160 degrees around X axis, and mirrored around Z axis, so in the sample scene the object has such a transform set up, and the camera is setup as a
+child object.
 
 
 _That's it!_

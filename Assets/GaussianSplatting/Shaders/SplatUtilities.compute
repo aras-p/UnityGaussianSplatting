@@ -47,7 +47,6 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 
     float3 pos = LoadSplatPosTex(coord);
     pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, pos);
-    pos.z = -pos.z;
     pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
     // make distance radix sort friendly from http://stereopsis.com/radix.html
