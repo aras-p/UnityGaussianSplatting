@@ -27,7 +27,7 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
     [Range(0, 1)] public float m_ScaleUniformness = 0.7f;
     public int m_RandomSeed = 1;
 
-    [MenuItem("Tools/Generate Synthetic Splat File")]
+    [MenuItem("Tools/Gaussian Splats/Debug/Generate Synthetic PLY")]
     static void CreateWizard()
     {
         DisplayWizard<GaussianSplatGenSynthetic>("Generate Synthetic Gaussian Splat File", "Create");

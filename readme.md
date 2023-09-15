@@ -24,7 +24,7 @@ since then it can use a faster sorting routine (DX11 should also work, but sorti
 
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
-Next up, **create some GaussianSplat assets**: open `Tools -> Create Gaussian Splat Asset` menu within Unity. In the dialog point it to
+Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity. In the dialog point it to
 your gaussian splat "model" directory (it is expected to contain `cameras.json` and `point_cloud/iteration_7000/point_cloud.ply` inside of it,
 and be an actual Gaussian Splat model, not something else). Pick desired compression options and output folder, and press "Create Asset" button.
 

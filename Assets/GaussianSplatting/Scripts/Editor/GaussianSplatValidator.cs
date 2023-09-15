@@ -11,7 +11,7 @@ using UnityEngine.Experimental.Rendering;
 [BurstCompile]
 public class GaussianSplatValidator
 {
-    [MenuItem("Tools/Validate Gaussian Splats")]
+    [MenuItem("Tools/Gaussian Splats/Debug/Validate Rendering")]
     public static unsafe void Validate()
     {
         var gaussians = Object.FindObjectOfType(typeof(GaussianSplatRenderer)) as GaussianSplatRenderer;

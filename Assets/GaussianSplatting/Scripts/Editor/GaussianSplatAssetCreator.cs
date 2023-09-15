@@ -60,7 +60,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     int m_PrevVertexStride;
     long m_PrevFileSize;
 
-    [MenuItem("Tools/Create Gaussian Splat Asset")]
+    [MenuItem("Tools/Gaussian Splats/Create GaussianSplatAsset")]
     public static void Init()
     {
         var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 360), false, "Gaussian Splat Creator", true);
