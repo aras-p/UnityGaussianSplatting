@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Profiling;
+using Unity.Profiling.LowLevel;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
@@ -90,6 +92,11 @@ public class GaussianSplatRenderer : MonoBehaviour
     int m_FrameCounter;
     GaussianSplatAsset m_PrevAsset;
     Hash128 m_PrevHash;
+
+    static ProfilerMarker s_ProfSort = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfView = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfDraw = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfCompose = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
 
     public GaussianSplatAsset asset => m_Asset;
 
@@ -222,12 +229,16 @@ public class GaussianSplatRenderer : MonoBehaviour
         {
             m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point,
                 GraphicsFormat.R16G16B16A16_SFloat);
+            m_RenderCommandBuffer.BeginSample(s_ProfDraw);
             m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
             m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
             m_RenderCommandBuffer.DrawProcedural(matrix, displayMat, 0, topology, vertexCount,
                 instanceCount);
+            m_RenderCommandBuffer.EndSample(s_ProfDraw);
+            m_RenderCommandBuffer.BeginSample(s_ProfCompose);
             m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
+            m_RenderCommandBuffer.EndSample(s_ProfCompose);
             m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
         }
 
@@ -345,7 +356,9 @@ public class GaussianSplatRenderer : MonoBehaviour
             return;
         if (!m_ComputeView)
             return;
-        
+
+        using var prof = s_ProfView.Auto();
+
         var tr = transform;
 
         Matrix4x4 matView = cam.worldToCameraMatrix;
@@ -384,7 +397,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     {
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
             return;
-        
+
         bool useFfx = m_PreferFfxSort && m_SorterFfx.Valid;
         Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
         if (useFfx)
@@ -395,24 +408,27 @@ public class GaussianSplatRenderer : MonoBehaviour
         }
 
         // calculate distance to the camera for each splat
+        int kernelIdx = 1;
+        m_RenderCommandBuffer.BeginSample(s_ProfSort);
         var texPos = m_Asset.GetTex(GaussianSplatAsset.TexType.Pos);
-        m_CSSplatUtilities.SetTexture(1, "_TexPos", texPos);
-        m_CSSplatUtilities.SetInt("_TexFlagBits", texPos.graphicsFormat == GraphicsFormat.R32_SFloat ? 1 : 0);
-        m_CSSplatUtilities.SetBuffer(1, "_SplatSortDistances", m_GpuSortDistances);
-        m_CSSplatUtilities.SetBuffer(1, "_SplatSortKeys", m_GpuSortKeys);
-        m_CSSplatUtilities.SetBuffer(1, "_SplatChunks", m_GpuChunks);
-        m_CSSplatUtilities.SetMatrix("_LocalToWorldMatrix", matrix);
-        m_CSSplatUtilities.SetMatrix("_WorldToCameraMatrix", worldToCamMatrix);
-        m_CSSplatUtilities.SetInt("_SplatCount", m_Asset.m_SplatCount);
-        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(1, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(1, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_RenderCommandBuffer.SetComputeTextureParam(m_CSSplatUtilities, kernelIdx, "_TexPos", texPos);
+        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_TexFlagBits", texPos.graphicsFormat == GraphicsFormat.R32_SFloat ? 1 : 0);
+        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortDistances", m_GpuSortDistances);
+        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortKeys", m_GpuSortKeys);
+        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
+        m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_LocalToWorldMatrix", matrix);
+        m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_WorldToCameraMatrix", worldToCamMatrix);
+        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatCountPOT", m_GpuSortDistances.count);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out _, out _);
+        m_RenderCommandBuffer.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
         if (useFfx)
             m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
         else
             m_SorterIsland.Dispatch(m_RenderCommandBuffer, m_SorterIslandArgs);
+        m_RenderCommandBuffer.EndSample(s_ProfSort);
     }
 
     public void Update()
