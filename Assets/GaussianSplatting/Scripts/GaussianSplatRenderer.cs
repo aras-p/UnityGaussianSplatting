@@ -49,6 +49,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public DisplayDataMode m_DisplayData = DisplayDataMode.None;
     [Range(1, 8)] public int m_DisplayDataScale = 1;
     public bool m_RenderInSceneView = true;
+    public bool m_ComputeView = true;
     [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
     public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
 
@@ -70,6 +71,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     GraphicsBuffer m_GpuSortDistances;
     GraphicsBuffer m_GpuSortKeys;
     GraphicsBuffer m_GpuChunks;
+    GraphicsBuffer m_GpuView;
 
     IslandGPUSort m_SorterIsland;
     IslandGPUSort.Args m_SorterIslandArgs;
@@ -100,6 +102,8 @@ public class GaussianSplatRenderer : MonoBehaviour
             return;
         m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
         m_GpuChunks.SetData(asset.m_Chunks);
+
+        m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
 
         int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
@@ -175,6 +179,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetBuffer("_SplatChunks", m_GpuChunks);
         displayMat.SetInteger("_SplatChunkCount", m_GpuChunks.count);
 
+        displayMat.SetBuffer("_SplatViewData", m_GpuView);
+        if (m_ComputeView)
+            displayMat.EnableKeyword("USE_VIEW_DATA");
+        else
+            displayMat.DisableKeyword("USE_VIEW_DATA");
+        
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
         displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
@@ -189,6 +199,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (m_FrameCounter % m_SortNthFrame == 0)
             SortPoints(cam, matrix);
         ++m_FrameCounter;
+
+        if (m_ComputeView)
+            CalcViewData(cam, matrix);
 
         int vertexCount = 6;
         int instanceCount = m_Asset.m_SplatCount;
@@ -256,6 +269,19 @@ public class GaussianSplatRenderer : MonoBehaviour
         };
     }
 
+    void SetAssetTexturesOnCS(ComputeShader cs, int kernelIndex)
+    {
+        uint texFlags = 0;
+        for (var t = GaussianSplatAsset.TexType.Pos; t < GaussianSplatAsset.TexType.TypeCount; ++t)
+        {
+            var tex = m_Asset.GetTex(t);
+            if (tex.graphicsFormat == GraphicsFormat.R32_SFloat) // so that a shader knows it needs to interpret R32F as packed integer
+                texFlags |= (1u << (int) t);
+            cs.SetTexture(kernelIndex, TextureTypeToPropertyName(t), tex);
+        }
+        cs.SetInt("_TexFlagBits", (int)texFlags);
+    }
+
     void SetAssetTexturesOnMaterial(Material displayMat)
     {
         uint texFlags = 0;
@@ -286,11 +312,13 @@ public class GaussianSplatRenderer : MonoBehaviour
         }
 
         m_GpuChunks?.Dispose();
+        m_GpuView?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
         
         m_GpuChunks = null;
+        m_GpuView = null;
         m_GpuSortDistances = null;
         m_GpuSortKeys = null;
     }
@@ -309,6 +337,47 @@ public class GaussianSplatRenderer : MonoBehaviour
         DestroyImmediate(m_MatDebugPoints);
         DestroyImmediate(m_MatDebugBoxes);
         DestroyImmediate(m_MatDebugData);
+    }
+
+    void CalcViewData(Camera cam, Matrix4x4 matrix)
+    {
+        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+            return;
+        if (!m_ComputeView)
+            return;
+        
+        var tr = transform;
+
+        Matrix4x4 matView = cam.worldToCameraMatrix;
+        Matrix4x4 matProj = GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
+        Matrix4x4 matO2W = tr.localToWorldMatrix;
+        Matrix4x4 matW2O = tr.worldToLocalMatrix;
+        int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
+        Vector4 screenPar = new Vector4(screenW, screenH, 0, 0);
+        Vector4 camPos = cam.transform.position;
+        
+        // calculate view dependent data for each splat
+        const int kernelIdx = 2;
+        SetAssetTexturesOnCS(m_CSSplatUtilities, kernelIdx);
+        
+        m_CSSplatUtilities.SetInt("_SplatCount", m_GpuView.count);
+        m_CSSplatUtilities.SetBuffer(kernelIdx, "_SplatViewData", m_GpuView);
+        m_CSSplatUtilities.SetBuffer(kernelIdx, "_OrderBuffer", m_GpuSortKeys);
+        m_CSSplatUtilities.SetBuffer(kernelIdx, "_SplatChunks", m_GpuChunks);
+        
+        m_CSSplatUtilities.SetMatrix("_MatrixVP", matProj * matView);
+        m_CSSplatUtilities.SetMatrix("_MatrixV", matView);
+        m_CSSplatUtilities.SetMatrix("_MatrixP", matProj);
+        m_CSSplatUtilities.SetMatrix("_MatrixObjectToWorld", matO2W);
+        m_CSSplatUtilities.SetMatrix("_MatrixWorldToObject", matW2O);
+        
+        m_CSSplatUtilities.SetVector("_VecScreenParams", screenPar);
+        m_CSSplatUtilities.SetVector("_VecWorldSpaceCameraPos", camPos);
+        m_CSSplatUtilities.SetFloat("_SplatScale", m_SplatScale);
+        m_CSSplatUtilities.SetInt("_SHOrder", m_SHOrder);
+
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out uint gsY, out uint gsZ);
+        m_CSSplatUtilities.Dispatch(kernelIdx, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
     }
 
     void SortPoints(Camera cam, Matrix4x4 matrix)

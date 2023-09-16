@@ -347,6 +347,7 @@ MonoBehaviour:
   m_DisplayData: 0
   m_DisplayDataScale: 1
   m_RenderInSceneView: 1
+  m_ComputeView: 1
   m_PreferFfxSort: 1
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
   m_ShaderComposite: {fileID: 4800000, guid: 7e184af7d01193a408eb916d8acafff9, type: 3}

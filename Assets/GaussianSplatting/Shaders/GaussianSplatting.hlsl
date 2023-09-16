@@ -365,4 +365,11 @@ SplatData LoadSplatDataRaw(uint2 coord2)
     return s;
 }
 
+struct SplatViewData
+{
+    float4 pos;
+    float4 conicRadius;
+    uint2 color; // 4xFP16
+};
+
 #endif // GAUSSIAN_SPLATTING_HLSL
