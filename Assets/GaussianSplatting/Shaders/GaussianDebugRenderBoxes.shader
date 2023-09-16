@@ -16,17 +16,6 @@ CGPROGRAM
 #pragma require compute
 #pragma use_dxc metal vulkan
 
-//@TODO: cube face flip opts from https://twitter.com/SebAaltonen/status/1315985267258519553
-static const int kCubeIndices[36] =
-{
-    0, 1, 2, 1, 3, 2,
-    4, 6, 5, 5, 6, 7,
-    0, 2, 4, 4, 2, 6,
-    1, 5, 3, 5, 7, 3,
-    0, 4, 1, 4, 5, 1,
-    2, 3, 6, 3, 7, 6
-};
-
 #include "UnityCG.cginc"
 #include "GaussianSplatting.hlsl"
 
@@ -54,7 +43,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
     bool chunks = _DisplayChunks;
-	uint idx = kCubeIndices[vtxID];
+	uint idx = vtxID;
 	float3 localPos = float3(idx&1, (idx>>1)&1, (idx>>2)&1) * 2.0 - 1.0;
 
     float3 centerWorldPos = 0;

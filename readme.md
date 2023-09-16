@@ -74,7 +74,7 @@ at "Medium" asset quality level (273MB asset file):
   * Unity, DX12 or Vulkan: 12.6ms (79FPS) - 9.4ms rendering, 2.4ms sorting, 0.7ms splat view calc. 1.2GB VRAM usage.
   * Unity, DX11: 20.8ms (48FPS) - 9.6ms rendering, 10.4ms sorting, 0.6ms splat view calc.
 * Mac (Apple M1 Max):
-  * Unity, Metal: 55.0ms (18FPS).
+  * Unity, Metal: 31.8ms (31FPS).
 
 Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 48 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).

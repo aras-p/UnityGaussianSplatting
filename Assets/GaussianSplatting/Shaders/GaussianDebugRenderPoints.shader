@@ -25,17 +25,12 @@ struct v2f
 
 float _SplatSize;
 bool _DisplayIndex;
-bool _DisplayLine;
 int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o;
-    uint splatIndex;
-    if (_DisplayLine)
-        splatIndex = vtxID;
-    else
-        splatIndex = instID;
+    uint splatIndex = instID;
 
     SplatData splat = LoadSplatData(splatIndex);
 
@@ -45,14 +40,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
 
     o.vertex = centerClipPos;
-    if (!_DisplayLine)
-    {
-	    // two bits per vertex index to result in 0,1,2,1,3,2 from lowest: 0b1011'0110'0100
-	    uint quadIndices = 0xB64;
-	    uint idx = quadIndices >> (vtxID * 2);
-        float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
-        o.vertex.xy += (quadPos * _SplatSize / _ScreenParams.xy) * o.vertex.w;
-    }
+	uint idx = vtxID;
+    float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
+    o.vertex.xy += (quadPos * _SplatSize / _ScreenParams.xy) * o.vertex.w;
 
     o.color.rgb = saturate(splat.sh.col);
     if (_DisplayIndex)

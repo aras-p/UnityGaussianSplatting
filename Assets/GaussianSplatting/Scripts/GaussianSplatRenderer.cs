@@ -73,6 +73,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     GraphicsBuffer m_GpuSortKeys;
     GraphicsBuffer m_GpuChunks;
     GraphicsBuffer m_GpuView;
+    GraphicsBuffer m_GpuIndexBuffer;
 
     IslandGPUSort m_SorterIsland;
     IslandGPUSort.Args m_SorterIslandArgs;
@@ -110,6 +111,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuChunks.SetData(asset.m_Chunks);
 
         m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
+        m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
+        // cube indices, most often we use only the first quad
+        m_GpuIndexBuffer.SetData(new ushort[]
+        {
+            0, 1, 2, 1, 3, 2,
+            4, 6, 5, 5, 6, 7,
+            0, 2, 4, 4, 2, 6,
+            1, 5, 3, 5, 7, 3,
+            0, 4, 1, 4, 5, 1,
+            2, 3, 6, 3, 7, 6
+        });
 
         int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
         m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
@@ -193,8 +205,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetInteger("_SplatCount", m_Asset.m_SplatCount);
         displayMat.SetInteger("_SHOrder", m_SHOrder);
         displayMat.SetInteger("_DisplayIndex", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
-        bool displayAsLine = false; //m_RenderMode == RenderMode.DebugPointIndices;
-        displayMat.SetInteger("_DisplayLine", displayAsLine ? 1 : 0);
         displayMat.SetInteger("_DisplayChunks", m_RenderMode == RenderMode.DebugChunkBounds ? 1 : 0);
 
         var matrix = transform.localToWorldMatrix;
@@ -204,17 +214,11 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         CalcViewData(cam, matrix);
 
-        int vertexCount = 6;
+        int indexCount = 6;
         int instanceCount = m_Asset.m_SplatCount;
         MeshTopology topology = MeshTopology.Triangles;
         if (m_RenderMode is RenderMode.DebugBoxes or RenderMode.DebugChunkBounds)
-            vertexCount = 36;
-        if (displayAsLine)
-        {
-            topology = MeshTopology.LineStrip;
-            vertexCount = m_Asset.m_SplatCount;
-            instanceCount = 1;
-        }
+            indexCount = 36;
         if (m_RenderMode == RenderMode.DebugChunkBounds)
             instanceCount = m_GpuChunks.count;
 
@@ -226,7 +230,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_RenderCommandBuffer.BeginSample(s_ProfDraw);
             m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
             m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
-            m_RenderCommandBuffer.DrawProcedural(matrix, displayMat, 0, topology, vertexCount, instanceCount);
+            m_RenderCommandBuffer.DrawProcedural(m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount);
             m_RenderCommandBuffer.EndSample(s_ProfDraw);
             m_RenderCommandBuffer.BeginSample(s_ProfCompose);
             m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
@@ -317,12 +321,14 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_GpuChunks?.Dispose();
         m_GpuView?.Dispose();
+        m_GpuIndexBuffer?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
         
         m_GpuChunks = null;
         m_GpuView = null;
+        m_GpuIndexBuffer = null;
         m_GpuSortDistances = null;
         m_GpuSortKeys = null;
     }

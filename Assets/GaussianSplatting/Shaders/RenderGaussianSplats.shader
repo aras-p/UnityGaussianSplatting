@@ -46,10 +46,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 	bool behindCam = centerClipPos.w <= 0;
     o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
-	// two bits per vertex index to result in 0,1,2,1,3,2 from lowest:
-	// 0b1011'0110'0100
-	uint quadIndices = 0xB64;
-	uint idx = quadIndices >> (vtxID * 2);
+	uint idx = vtxID;
     float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
 
 	float radius = view.conicRadius.w;
