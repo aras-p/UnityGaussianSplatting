@@ -49,9 +49,8 @@ public class GaussianSplatRenderer : MonoBehaviour
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
     public DisplayDataMode m_DisplayData = DisplayDataMode.None;
-    [Range(1, 8)] public int m_DisplayDataScale = 1;
+    [Range(1, 8)] public int m_DisplayDataScale = 2;
     public bool m_RenderInSceneView = true;
-    public bool m_ComputeView = true;
     [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
     public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
 
@@ -187,10 +186,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         displayMat.SetInteger("_SplatChunkCount", m_GpuChunks.count);
 
         displayMat.SetBuffer("_SplatViewData", m_GpuView);
-        if (m_ComputeView)
-            displayMat.EnableKeyword("USE_VIEW_DATA");
-        else
-            displayMat.DisableKeyword("USE_VIEW_DATA");
         
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
@@ -207,8 +202,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             SortPoints(cam, matrix);
         ++m_FrameCounter;
 
-        if (m_ComputeView)
-            CalcViewData(cam, matrix);
+        CalcViewData(cam, matrix);
 
         int vertexCount = 6;
         int instanceCount = m_Asset.m_SplatCount;
@@ -232,8 +226,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_RenderCommandBuffer.BeginSample(s_ProfDraw);
             m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
             m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
-            m_RenderCommandBuffer.DrawProcedural(matrix, displayMat, 0, topology, vertexCount,
-                instanceCount);
+            m_RenderCommandBuffer.DrawProcedural(matrix, displayMat, 0, topology, vertexCount, instanceCount);
             m_RenderCommandBuffer.EndSample(s_ProfDraw);
             m_RenderCommandBuffer.BeginSample(s_ProfCompose);
             m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
@@ -353,8 +346,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     void CalcViewData(Camera cam, Matrix4x4 matrix)
     {
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
-            return;
-        if (!m_ComputeView)
             return;
 
         using var prof = s_ProfView.Auto();
