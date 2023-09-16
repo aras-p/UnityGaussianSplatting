@@ -2,12 +2,12 @@
 
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
+#pragma kernel CSCalcViewData
 
 #pragma use_dxc metal vulkan
 
 #include "GaussianSplatting.hlsl"
 
-Texture2D _SplatPositions;
 float4x4 _LocalToWorldMatrix;
 float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
@@ -54,3 +54,70 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     uint mask = -((int)(fu >> 31)) | 0x80000000;
     _SplatSortDistances[idx] = fu ^ mask;
 }
+
+RWStructuredBuffer<SplatViewData> _SplatViewData;
+
+float4x4 _MatrixVP;
+float4x4 _MatrixV;
+float4x4 _MatrixP;
+float4x4 _MatrixObjectToWorld;
+float4x4 _MatrixWorldToObject;
+float4 _VecScreenParams;
+float4 _VecWorldSpaceCameraPos;
+
+float _SplatScale;
+uint _SHOrder;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCalcViewData (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    SplatData splat = LoadSplatData(idx);
+    SplatViewData view = (SplatViewData)0;
+    
+    float3 centerWorldPos = splat.pos;
+    
+    centerWorldPos = mul(_MatrixObjectToWorld, float4(centerWorldPos,1)).xyz;
+    float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
+    view.pos = centerClipPos;
+    bool behindCam = centerClipPos.w <= 0;
+    if (!behindCam)
+    {
+        float4 boxRot = splat.rot;
+        float3 boxSize = splat.scale;
+        boxSize *= _SplatScale;
+
+        float3x3 splatRotScaleMat = CalcMatrixFromRotationScale(boxRot, boxSize);
+        splatRotScaleMat = mul((float3x3)_MatrixObjectToWorld, splatRotScaleMat);
+        
+        float3 cov3d0, cov3d1;
+        CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
+        float3 cov2d = CalcCovariance2D(centerWorldPos, cov3d0, cov3d1, _MatrixV, _MatrixP, _VecScreenParams);
+        
+        float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
+
+        float mid = 0.5f * (cov2d.x + cov2d.z);
+        float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
+        float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
+        float radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
+
+        float3 conic = float3(cov2d.z, -cov2d.y, cov2d.x) * rcp(det);
+        view.conicRadius = float4(conic, radius);
+
+        float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
+        float3 objViewDir = mul((float3x3)_MatrixWorldToObject, worldViewDir);
+        objViewDir = normalize(objViewDir);
+
+        half4 col;
+        col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder);
+        col.a = splat.opacity;
+        view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
+        view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
+    }
+    
+    _SplatViewData[idx] = view;
+}
+

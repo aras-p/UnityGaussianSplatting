@@ -39,7 +39,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
     SplatData splat = LoadSplatData(splatIndex);
 
-    float3 centerWorldPos = splat.pos * float3(1,1,-1);
+    float3 centerWorldPos = splat.pos;
+    centerWorldPos = mul(unity_ObjectToWorld, float4(centerWorldPos,1)).xyz;
 
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
 
