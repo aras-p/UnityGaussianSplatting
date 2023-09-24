@@ -38,8 +38,8 @@ public class GaussianSplatAssetEditor : Editor
             EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {gs.m_PosFormat}");
             EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  {gs.m_OtherFormat}");
             EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {(gs.m_ColorData != null ? gs.m_ColorData.graphicsFormat : "")}");
-            EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}");
-            EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChk)} ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
+            EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.m_SHFormat})");
+            EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
             EditorGUI.indentLevel--;
 
             EditorGUILayout.Vector3Field("Bounds Min", gs.m_BoundsMin);

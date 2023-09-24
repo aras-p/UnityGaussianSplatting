@@ -320,7 +320,7 @@ float3 LoadSplatPos(uint index)
 float4 LoadSplatColTex(uint3 coord)
 {
     float4 val = _SplatColor.Load(coord);
-    uint fmt = (_SplatFormat >> 16) & 0xFF;
+    uint fmt = (_SplatFormat >> 24) & 0xFF;
     if (fmt == 49) val = DecodePacked_10_10_10_2(val.r); // R32_SFloat
     return val;
 }
@@ -353,6 +353,10 @@ SplatData LoadSplatData(uint idx)
 
     uint shItemSize = 96; // 15 * 3 * sizeof(fp16), rounded up to be multiple of 16
     uint shIndex = idx;
+    uint shFormat = (_SplatFormat >> 16) & 0xFF;
+    if (shFormat != 0)
+        shIndex = otherData.z >> 16;
+
     uint shOffset = shIndex * shItemSize;
     uint4 shRaw0 = _SplatSH.Load4(shOffset);
     uint4 shRaw1 = _SplatSH.Load4(shOffset + 16);

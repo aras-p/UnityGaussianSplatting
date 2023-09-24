@@ -33,13 +33,36 @@ public class GaussianSplatAsset : ScriptableObject
         Default,
     }
 
+    public enum SHFormat
+    {
+        Full,
+        Cluster64k,
+        Cluster16k,
+        Cluster4k,
+        Cluster1k
+    }
+
     public static int GetOtherSize(OtherFormat fmt)
     {
         return 4 + 6 + 2; // rot + scale + SH index
     }
 
+    public static int GetSHCount(SHFormat fmt, int splatCount)
+    {
+        return fmt switch
+        {
+            SHFormat.Full => splatCount,
+            SHFormat.Cluster64k => 64 * 1024,
+            SHFormat.Cluster16k => 16 * 1024,
+            SHFormat.Cluster4k => 4 * 1024,
+            SHFormat.Cluster1k => 1 * 1024,
+            _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
+        };
+    }
+
     [HideInInspector] public PosFormat m_PosFormat = PosFormat.Norm11;
     [HideInInspector] public OtherFormat m_OtherFormat = OtherFormat.Default;
+    [HideInInspector] public SHFormat m_SHFormat = SHFormat.Full;
 
     [HideInInspector] public TextAsset m_PosData;
     [HideInInspector] public Texture2D m_ColorData;
