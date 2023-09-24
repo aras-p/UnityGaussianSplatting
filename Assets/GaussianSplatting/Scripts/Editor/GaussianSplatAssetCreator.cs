@@ -30,15 +30,11 @@ public class GaussianSplatAssetCreator : EditorWindow
         VeryHigh,
     }
 
-    enum DataFormat
+    enum ColorFormat
     {
-        Float32x4,
         Float16x4,
-        Norm10_2,
         Norm8x4,
-        Norm565,
         BC7,
-        BC1
     }
 
     readonly FolderPickerPropertyDrawer m_FolderPicker = new();
@@ -51,7 +47,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] GaussianSplatAsset.PosFormat m_FormatPos;
     [SerializeField] GaussianSplatAsset.OtherFormat m_FormatOther;
     [SerializeField] GaussianSplatAsset.SHFormat m_FormatSH;
-    [SerializeField] DataFormat m_FormatColor;
+    [SerializeField] ColorFormat m_FormatColor;
     [SerializeField] bool m_ReorderMorton = true;
 
     string m_ErrorMessage;
@@ -110,7 +106,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         m_FormatPos = (GaussianSplatAsset.PosFormat)EditorGUILayout.EnumPopup("Position", m_FormatPos);
         m_FormatOther = (GaussianSplatAsset.OtherFormat)EditorGUILayout.EnumPopup("Other", m_FormatOther);
         m_FormatSH = (GaussianSplatAsset.SHFormat) EditorGUILayout.EnumPopup("SH", m_FormatSH);
-        m_FormatColor = (DataFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
+        m_FormatColor = (ColorFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
         EditorGUI.indentLevel--;
         EditorGUI.EndDisabledGroup();
 
@@ -121,7 +117,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             (width, height) = CalcTextureSize(m_PrevVertexCount);
             long sizePos = m_PrevVertexCount * GaussianSplatAsset.GetPosSize(m_FormatPos);
             long sizeOther = m_PrevVertexCount * GaussianSplatAsset.GetOtherSize(m_FormatOther);
-            long sizeCol = GraphicsFormatUtility.ComputeMipmapSize(width, height, DataFormatToGraphics(m_FormatColor));
+            long sizeCol = GraphicsFormatUtility.ComputeMipmapSize(width, height, ColorFormatToGraphics(m_FormatColor));
             long sizeSHs = GaussianSplatAsset.GetSHCount(m_FormatSH, m_PrevVertexCount) * UnsafeUtility.SizeOf<CreateSHDataJob.SH>();
             long sizeChunk = chunkCount * UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>();
             long totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
@@ -160,31 +156,31 @@ public class GaussianSplatAssetCreator : EditorWindow
             case DataQuality.VeryLow:
                 m_FormatPos = GaussianSplatAsset.PosFormat.Norm6;
                 m_FormatOther = GaussianSplatAsset.OtherFormat.Default;
-                m_FormatColor = DataFormat.BC7;
+                m_FormatColor = ColorFormat.BC7;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster1k;
                 break;
             case DataQuality.Low:
                 m_FormatPos = GaussianSplatAsset.PosFormat.Norm6;
                 m_FormatOther = GaussianSplatAsset.OtherFormat.Default;
-                m_FormatColor = DataFormat.BC7;
+                m_FormatColor = ColorFormat.BC7;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster4k;
                 break;
             case DataQuality.Medium:
                 m_FormatPos = GaussianSplatAsset.PosFormat.Norm11;
                 m_FormatOther = GaussianSplatAsset.OtherFormat.Default;
-                m_FormatColor = DataFormat.Norm8x4;
+                m_FormatColor = ColorFormat.Norm8x4;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster16k;
                 break;
             case DataQuality.High:
                 m_FormatPos = GaussianSplatAsset.PosFormat.Norm16;
                 m_FormatOther = GaussianSplatAsset.OtherFormat.Default;
-                m_FormatColor = DataFormat.Float16x4;
+                m_FormatColor = ColorFormat.Float16x4;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Full;
                 break;
             case DataQuality.VeryHigh:
                 m_FormatPos = GaussianSplatAsset.PosFormat.Norm16;
                 m_FormatOther = GaussianSplatAsset.OtherFormat.Default;
-                m_FormatColor = DataFormat.Float32x4;
+                m_FormatColor = ColorFormat.Float16x4;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Full;
                 break;
             default:
@@ -652,39 +648,24 @@ public class GaussianSplatAssetCreator : EditorWindow
         return (width, height);
     }
 
-    static GraphicsFormat DataFormatToGraphics(DataFormat format)
+    static GraphicsFormat ColorFormatToGraphics(ColorFormat format)
     {
         return format switch
         {
-            DataFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
-            DataFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
-            // Unity exposes the GraphicsFormat for 10.10.10.2, but does not allow to use :(
-            // it deems them to not be "Sample" usage supported, only because there's no corresponding legacy TextureFormat
-            // enum for them... So we'll emulate that with pretending it's a R32Float, and then within the shader
-            // cast to uint and do bit unpacking manually.
-            DataFormat.Norm10_2 => GraphicsFormat.R32_SFloat,
-            DataFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
-            DataFormat.Norm565 => GraphicsFormat.B5G6R5_UNormPack16,
-            DataFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
-            DataFormat.BC1 => GraphicsFormat.RGBA_DXT1_UNorm,
+            ColorFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
+            ColorFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+            ColorFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }
 
-    enum Format10_2Variant
-    {
-        Vector, // 11.10.11
-        Quaternion, // 10.10.10.2
-    }
-
     [BurstCompile]
-    struct ConvertDataJob : IJobParallelFor
+    struct ConvertColorJob : IJobParallelFor
     {
         public int width, height;
         [ReadOnly] public NativeArray<float4> inputData;
         [NativeDisableParallelForRestriction] public NativeArray<byte> outputData;
-        public DataFormat format;
-        public Format10_2Variant formatVariant;
+        public ColorFormat format;
         public int formatBytesPerPixel;
 
         public unsafe void Execute(int y)
@@ -697,38 +678,17 @@ public class GaussianSplatAssetCreator : EditorWindow
 
                 switch (format)
                 {
-                    case DataFormat.Float32x4:
-                        *(float4*) dstPtr = pix;
-                        break;
-                    case DataFormat.Float16x4:
+                    case ColorFormat.Float16x4:
                     {
                         half4 enc = new half4(pix);
                         *(half4*) dstPtr = enc;
                     }
                         break;
-                    case DataFormat.Norm10_2:
-                    {
-                        pix = math.saturate(pix);
-                        uint enc;
-                        if (formatVariant == Format10_2Variant.Vector)
-                            enc = (uint) (pix.x * 2047.5f) | ((uint) (pix.y * 1023.5f) << 11) | ((uint) (pix.z * 2047.5f) << 21);
-                        else
-                            enc = (uint) (pix.x * 1023.5f) | ((uint) (pix.y * 1023.5f) << 10) | ((uint) (pix.z * 1023.5f) << 20) | ((uint) (pix.w * 3.5f) << 30);
-                        *(uint*) dstPtr = enc;
-                    }
-                        break;
-                    case DataFormat.Norm8x4:
+                    case ColorFormat.Norm8x4:
                     {
                         pix = math.saturate(pix);
                         uint enc = (uint)(pix.x * 255.5f) | ((uint)(pix.y * 255.5f) << 8) | ((uint)(pix.z * 255.5f) << 16) | ((uint)(pix.w * 255.5f) << 24);
                         *(uint*) dstPtr = enc;
-                    }
-                        break;
-                    case DataFormat.Norm565:
-                    {
-                        pix = math.saturate(pix);
-                        uint enc = ((uint)(pix.x * 31.5f) << 11) | ((uint)(pix.y * 63.5f) << 5) | (uint)(pix.z * 31.5f);
-                        *(ushort*) dstPtr = (ushort)enc;
                     }
                         break;
                 }
@@ -739,10 +699,9 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static unsafe void SaveTex(string path, int width, int height, NativeArray<float4> data, DataFormat format,
-        Format10_2Variant formatVariant = Format10_2Variant.Vector)
+    static unsafe void SaveTex(string path, int width, int height, NativeArray<float4> data, ColorFormat format)
     {
-        GraphicsFormat gfxFormat = DataFormatToGraphics(format);
+        GraphicsFormat gfxFormat = ColorFormatToGraphics(format);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
 
         if (GraphicsFormatUtility.IsCompressedFormat(gfxFormat))
@@ -757,13 +716,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
         else
         {
-            ConvertDataJob job = new ConvertDataJob
+            ConvertColorJob job = new ConvertColorJob
             {
                 width = width,
                 height = height,
                 inputData = data,
                 format = format,
-                formatVariant = formatVariant,
                 outputData = new NativeArray<byte>(dstSize, Allocator.TempJob),
                 formatBytesPerPixel = dstSize / width / height
             };
@@ -948,7 +906,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         dataHash.Append(data);
         dataHash.Append((int)m_FormatColor);
 
-        SaveTex(filePath, width, height, data, m_FormatColor, Format10_2Variant.Quaternion);
+        SaveTex(filePath, width, height, data, m_FormatColor);
 
         data.Dispose();
     }

@@ -242,10 +242,6 @@ float3 DecodePacked_11_10_11(uint enc)
         ((enc >> 11) & 1023) / 1023.0,
         ((enc >> 21) & 2047) / 2047.0);
 }
-float3 DecodePacked_11_10_11(float val)
-{
-    return DecodePacked_11_10_11(asuint(val));
-}
 
 float3 DecodePacked_16_16_16(uint2 enc)
 {
@@ -262,10 +258,6 @@ float4 DecodePacked_10_10_10_2(uint enc)
         ((enc >> 10) & 1023) / 1023.0,
         ((enc >> 20) & 1023) / 1023.0,
         ((enc >> 30) & 3) / 3.0);
-}
-float4 DecodePacked_10_10_10_2(float val)
-{
-    return DecodePacked_10_10_10_2(asuint(val));
 }
 
 ByteAddressBuffer _SplatPos;
@@ -317,12 +309,9 @@ float3 LoadSplatPos(uint index)
     return res;
 }
 
-float4 LoadSplatColTex(uint3 coord)
+half4 LoadSplatColTex(uint3 coord)
 {
-    float4 val = _SplatColor.Load(coord);
-    uint fmt = (_SplatFormat >> 24) & 0xFF;
-    if (fmt == 49) val = DecodePacked_10_10_10_2(val.r); // R32_SFloat
-    return val;
+    return _SplatColor.Load(coord);
 }
 
 float2 Unpack2xFP16(uint v)

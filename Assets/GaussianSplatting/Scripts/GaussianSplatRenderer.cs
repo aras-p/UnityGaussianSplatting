@@ -240,7 +240,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cs.SetBuffer(kernelIndex, "_SplatOther", m_GpuOtherData);
         cs.SetBuffer(kernelIndex, "_SplatSH", m_GpuSHData);
         cs.SetTexture(kernelIndex, "_SplatColor", m_Asset.m_ColorData);
-        uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_OtherFormat << 8) | ((uint)m_Asset.m_SHFormat << 16) | ((uint)m_Asset.m_ColorData.graphicsFormat << 24);
+        uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_OtherFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
         cs.SetInt("_SplatFormat", (int)format);
     }
 
@@ -250,7 +250,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         mat.SetBuffer("_SplatOther", m_GpuOtherData);
         mat.SetBuffer("_SplatSH", m_GpuSHData);
         mat.SetTexture("_SplatColor", m_Asset.m_ColorData);
-        uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_OtherFormat << 8) | ((uint)m_Asset.m_SHFormat << 16) | ((uint)m_Asset.m_ColorData.graphicsFormat << 24);
+        uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_OtherFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
         mat.SetInteger("_SplatFormat", (int)format);
     }
 
