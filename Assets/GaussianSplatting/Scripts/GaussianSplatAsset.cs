@@ -10,34 +10,41 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public Vector3 m_BoundsMax;
     [HideInInspector] public Hash128 m_DataHash;
 
-    public enum TexType
+    public enum PosFormat
     {
-        Pos = 0,
-        Rot,
-        Scl,
-        Col,
-        SH1,
-        SH2,
-        SH3,
-        SH4,
-        SH5,
-        SH6,
-        SH7,
-        SH8,
-        SH9,
-        SHA,
-        SHB,
-        SHC,
-        SHD,
-        SHE,
-        SHF,
-        TypeCount
+        Norm16,
+        Norm11,
+        Norm6
     }
 
-    [NonReorderable] [HideInInspector]
-    public Texture2D[] m_Tex = new Texture2D[(int) TexType.TypeCount];
+    public static int GetPosSize(PosFormat fmt)
+    {
+        return fmt switch
+        {
+            PosFormat.Norm16 => 6,
+            PosFormat.Norm11 => 4,
+            PosFormat.Norm6 => 2,
+            _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
+        };
+    }
 
-    public Texture2D GetTex(TexType idx) => m_Tex[(int)idx];
+    public enum OtherFormat
+    {
+        Default,
+    }
+
+    public static int GetOtherSize(OtherFormat fmt)
+    {
+        return 4 + 6 + 2; // rot + scale + SH index
+    }
+
+    [HideInInspector] public PosFormat m_PosFormat = PosFormat.Norm11;
+    [HideInInspector] public OtherFormat m_OtherFormat = OtherFormat.Default;
+
+    [HideInInspector] public TextAsset m_PosData;
+    [HideInInspector] public Texture2D m_ColorData;
+    [HideInInspector] public TextAsset m_OtherData;
+    [HideInInspector] public TextAsset m_SHData;
 
     [HideInInspector] public ChunkInfo[] m_Chunks;
     [HideInInspector] public CameraInfo[] m_Cameras;
