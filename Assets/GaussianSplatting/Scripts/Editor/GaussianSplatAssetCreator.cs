@@ -14,6 +14,7 @@ using UnityEngine.Experimental.Rendering;
 [BurstCompile]
 public class GaussianSplatAssetCreator : EditorWindow
 {
+    const string kProgressTitle = "Creating Gaussian Splat Asset";
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
@@ -53,6 +54,9 @@ public class GaussianSplatAssetCreator : EditorWindow
     [SerializeField] DataFormat m_FormatColor;
     [SerializeField] DataFormat m_FormatSH;
     [SerializeField] bool m_ReorderMorton = true;
+    [SerializeField] int m_ClusterSHs = -1;
+    [SerializeField] int m_ClusterIterations = 1;
+    [SerializeField] int m_ClusterNth = 47;
 
     string m_ErrorMessage;
     string m_PrevPlyPath;
@@ -63,8 +67,8 @@ public class GaussianSplatAssetCreator : EditorWindow
     [MenuItem("Tools/Gaussian Splats/Create GaussianSplatAsset")]
     public static void Init()
     {
-        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 360), false, "Gaussian Splat Creator", true);
-        window.minSize = new Vector2(200, 200);
+        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 400), false, "Gaussian Splat Creator", true);
+        window.minSize = new Vector2(200, 400);
         window.maxSize = new Vector2(1500, 1500);
         window.Show();
     }
@@ -100,6 +104,10 @@ public class GaussianSplatAssetCreator : EditorWindow
         rect = EditorGUILayout.GetControlRect(true);
         m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
         m_ReorderMorton = EditorGUILayout.Toggle("Morton Reorder", m_ReorderMorton);
+        m_ClusterSHs = EditorGUILayout.IntField("Cluster SHs", m_ClusterSHs);
+        m_ClusterIterations = EditorGUILayout.IntSlider("Cluster iterations", m_ClusterIterations, 1, 8);
+        m_ClusterNth = EditorGUILayout.IntField("Cluster every Nth", m_ClusterNth);
+        m_ClusterNth = math.max(1, m_ClusterNth);
         var newQuality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
         if (newQuality != m_Quality)
         {
@@ -239,10 +247,8 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
         Directory.CreateDirectory(m_OutputFolder);
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading cameras info", 0.0f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
         GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFolder);
-
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Reading PLY file", 0.1f);
         using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFolder, m_Use30k);
         if (inputSplats.Length == 0)
         {
@@ -261,8 +267,14 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         if (m_ReorderMorton)
         {
-            EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Morton reordering", 0.2f);
+            EditorUtility.DisplayProgressBar(kProgressTitle, "Morton reordering", 0.1f);
             ReorderMorton(inputSplats, boundsMin, boundsMax);
+        }
+
+        if (m_ClusterSHs > 1)
+        {
+            EditorUtility.DisplayProgressBar(kProgressTitle, "Cluster SHs", 0.2f);
+            ClusterSHs(inputSplats, m_ClusterSHs, m_ClusterIterations, m_ClusterNth);
         }
 
         string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
@@ -273,20 +285,20 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_BoundsMin = boundsMin;
         asset.m_BoundsMax = boundsMax;
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Calc chunks", 0.3f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Calc chunks", 0.7f);
         LinearizeData(inputSplats);
         asset.m_Chunks = CalcChunkData(inputSplats);
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Creating texture objects", 0.4f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Creating texture objects", 0.75f);
         AssetDatabase.StartAssetEditing();
         List<string> imageFiles = CreateTextureFiles(inputSplats, asset, baseName);
 
         // files are created, import them so we can get to the imported objects, ugh
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Initial texture import", 0.5f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Initial texture import", 0.85f);
         AssetDatabase.StopAssetEditing();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Setup textures onto asset", 0.8f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Setup textures onto asset", 0.95f);
         for (int i = 0; i < imageFiles.Count; ++i)
         {
             var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(imageFiles[i]); 
@@ -298,7 +310,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         var assetPath = $"{m_OutputFolder}/{baseName}.asset";
         var savedAsset = CreateOrReplaceAsset(asset, assetPath);
 
-        EditorUtility.DisplayProgressBar("Creating Gaussian Splat Asset", "Saving assets", 0.9f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Saving assets", 0.99f);
         AssetDatabase.SaveAssets();
         EditorUtility.ClearProgressBar();
 
@@ -439,6 +451,56 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         order.m_Order.Dispose();
     }
+
+    [BurstCompile]
+    static unsafe void GatherSHs(int splatCount, InputSplatData* splatData, float* shData)
+    {
+        for (int i = 0; i < splatCount; ++i)
+        {
+            UnsafeUtility.MemCpy(shData, ((float*)splatData) + 9, 15 * 3 * sizeof(float));
+            splatData++;
+            shData += 15 * 3;
+        }
+    }
+
+    [BurstCompile]
+    static unsafe void ScatterSHs(int splatCount, InputSplatData* splatData, int clusterCount, float* shData, int* clusters)
+    {
+        for (int i = 0; i < splatCount; ++i)
+        {
+            int cluster = clusters[i];
+            float* shSrc = shData + 15 * 3 * cluster;
+            UnsafeUtility.MemCpy(((float*)splatData) + 9, shSrc, 15 * 3 * sizeof(float));
+            splatData++;
+        }
+    }
+
+    static bool ClusterProgress(float val)
+    {
+        EditorUtility.DisplayProgressBar(kProgressTitle, $"Cluster SHs ({val:P0})", 0.2f + val * 0.5f);
+        return true;
+    }
+
+    static unsafe void ClusterSHs(NativeArray<InputSplatData> splatData, int clusters, int iterations, int nth)
+    {
+        float t0 = Time.realtimeSinceStartup;
+        NativeArray<float> shData = new(splatData.Length * 15 * 3, Allocator.Persistent);
+        GatherSHs(splatData.Length, (InputSplatData*) splatData.GetUnsafeReadOnlyPtr(), (float*) shData.GetUnsafePtr());
+
+        NativeArray<float> shMeans = new(clusters * 15 * 3, Allocator.Persistent);
+        NativeArray<int> shClusters = new(splatData.Length, Allocator.Persistent);
+
+        KMeansClustering.Calculate(15 * 3, nth, shData, shMeans, shClusters, iterations, 0.0001f, false, ClusterProgress);
+
+        ScatterSHs(splatData.Length, (InputSplatData*)splatData.GetUnsafePtr(), clusters, (float*)shMeans.GetUnsafeReadOnlyPtr(), (int*)shClusters.GetUnsafeReadOnlyPtr());
+        shData.Dispose();
+        shMeans.Dispose();
+        shClusters.Dispose();
+        GL.Flush();
+        float t1 = Time.realtimeSinceStartup;
+        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs (every {nth}) into {clusters} in {t1-t0:F1}s");
+    }
+
 
     [BurstCompile]
     struct LinearizeDataJob : IJobParallelFor
