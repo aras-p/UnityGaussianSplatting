@@ -193,7 +193,6 @@ struct SplatBoundsInfo
     float4 col;
     float3 pos;
     float3 scl;
-    float3 shs;
 };
 
 struct SplatChunkInfo
@@ -326,6 +325,11 @@ float4 LoadSplatColTex(uint3 coord)
     return val;
 }
 
+float2 Unpack2xFP16(uint v)
+{
+    return float2(f16tof32(v), f16tof32(v >> 16));
+}
+
 SplatData LoadSplatData(uint idx)
 {
     SplatData s;
@@ -333,8 +337,6 @@ SplatData LoadSplatData(uint idx)
 
     uint chunkIdx = idx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 shMin = chunk.boundsMin.shs;
-    float3 shMax = chunk.boundsMax.shs; 
 
     s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPos(idx));
 
@@ -349,22 +351,30 @@ SplatData LoadSplatData(uint idx)
     s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;
 
-    uint shIdx = idx * 12 * 15;
-    s.sh.sh1    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*0)));
-    s.sh.sh2    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*1)));
-    s.sh.sh3    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*2)));
-    s.sh.sh4    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*3)));
-    s.sh.sh5    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*4)));
-    s.sh.sh6    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*5)));
-    s.sh.sh7    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*6)));
-    s.sh.sh8    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*7)));
-    s.sh.sh9    = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*8)));
-    s.sh.sh10   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*9)));
-    s.sh.sh11   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*10)));
-    s.sh.sh12   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*11)));
-    s.sh.sh13   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*12)));
-    s.sh.sh14   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*13)));
-    s.sh.sh15   = lerp(shMin, shMax, asfloat(_SplatSH.Load3(shIdx + 12*14)));
+    uint shItemSize = 96; // 15 * 3 * sizeof(fp16), rounded up to be multiple of 16
+    uint shIndex = idx;
+    uint shOffset = shIndex * shItemSize;
+    uint4 shRaw0 = _SplatSH.Load4(shOffset);
+    uint4 shRaw1 = _SplatSH.Load4(shOffset + 16);
+    uint4 shRaw2 = _SplatSH.Load4(shOffset + 32);
+    uint4 shRaw3 = _SplatSH.Load4(shOffset + 48);
+    uint4 shRaw4 = _SplatSH.Load4(shOffset + 64);
+    uint3 shRaw5 = _SplatSH.Load3(shOffset + 80);
+    s.sh.sh1.r  = f16tof32(shRaw0.x      ); s.sh.sh1.g =  f16tof32(shRaw0.x >> 16); s.sh.sh1.b =  f16tof32(shRaw0.y      );
+    s.sh.sh2.r  = f16tof32(shRaw0.y >> 16); s.sh.sh2.g =  f16tof32(shRaw0.z      ); s.sh.sh2.b =  f16tof32(shRaw0.z >> 16);
+    s.sh.sh3.r  = f16tof32(shRaw0.w      ); s.sh.sh3.g =  f16tof32(shRaw0.w >> 16); s.sh.sh3.b =  f16tof32(shRaw1.x      );
+    s.sh.sh4.r  = f16tof32(shRaw1.x >> 16); s.sh.sh4.g =  f16tof32(shRaw1.y      ); s.sh.sh4.b =  f16tof32(shRaw1.y >> 16);
+    s.sh.sh5.r  = f16tof32(shRaw1.z      ); s.sh.sh5.g =  f16tof32(shRaw1.z >> 16); s.sh.sh5.b =  f16tof32(shRaw1.w      );
+    s.sh.sh6.r  = f16tof32(shRaw1.w >> 16); s.sh.sh6.g =  f16tof32(shRaw2.x      ); s.sh.sh6.b =  f16tof32(shRaw2.x >> 16);
+    s.sh.sh7.r  = f16tof32(shRaw2.y      ); s.sh.sh7.g =  f16tof32(shRaw2.y >> 16); s.sh.sh7.b =  f16tof32(shRaw2.z      );
+    s.sh.sh8.r  = f16tof32(shRaw2.z >> 16); s.sh.sh8.g =  f16tof32(shRaw2.w      ); s.sh.sh8.b =  f16tof32(shRaw2.w >> 16);
+    s.sh.sh9.r  = f16tof32(shRaw3.x      ); s.sh.sh9.g =  f16tof32(shRaw3.x >> 16); s.sh.sh9.b =  f16tof32(shRaw3.y      );
+    s.sh.sh10.r = f16tof32(shRaw3.y >> 16); s.sh.sh10.g = f16tof32(shRaw3.z      ); s.sh.sh10.b = f16tof32(shRaw3.z >> 16);
+    s.sh.sh11.r = f16tof32(shRaw3.w      ); s.sh.sh11.g = f16tof32(shRaw3.w >> 16); s.sh.sh11.b = f16tof32(shRaw4.x      );
+    s.sh.sh12.r = f16tof32(shRaw4.x >> 16); s.sh.sh12.g = f16tof32(shRaw4.y      ); s.sh.sh12.b = f16tof32(shRaw4.y >> 16);
+    s.sh.sh13.r = f16tof32(shRaw4.z      ); s.sh.sh13.g = f16tof32(shRaw4.z >> 16); s.sh.sh13.b = f16tof32(shRaw4.w      );
+    s.sh.sh14.r = f16tof32(shRaw4.w >> 16); s.sh.sh14.g = f16tof32(shRaw5.x      ); s.sh.sh14.b = f16tof32(shRaw5.x >> 16);
+    s.sh.sh15.r = f16tof32(shRaw5.y      ); s.sh.sh15.g = f16tof32(shRaw5.y >> 16); s.sh.sh15.b = f16tof32(shRaw5.z      );
     return s;
 }
 

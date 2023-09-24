@@ -55,7 +55,6 @@ public class GaussianSplatAsset : ScriptableObject
         public Vector4 col;
         public Vector3 pos;
         public Vector3 scl;
-        public Vector3 shs;
     }
 
     [Serializable]
