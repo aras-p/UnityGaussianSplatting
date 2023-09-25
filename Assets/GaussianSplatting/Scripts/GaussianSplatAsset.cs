@@ -1,9 +1,13 @@
 using System;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
     public const int kChunkSize = 256;
+    public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
     [HideInInspector] public int m_SplatCount;
     [HideInInspector] public Vector3 m_BoundsMin;
@@ -37,6 +41,12 @@ public class GaussianSplatAsset : ScriptableObject
         Cluster1k
     }
 
+    public struct SHTableItem
+    {
+        public half3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
+        public half3 shPadding; // pad to multiple of 16 bytes
+    }
+
     public static int GetOtherSize(VectorFormat scaleFormat)
     {
         return
@@ -56,6 +66,39 @@ public class GaussianSplatAsset : ScriptableObject
             SHFormat.Cluster1k => 1 * 1024,
             _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
         };
+    }
+
+    public static (int,int) CalcTextureSize(int splatCount)
+    {
+        int width = kTextureWidth;
+        int height = math.max(1, (splatCount + width - 1) / width);
+        // our swizzle tiles are 16x16, so make texture multiple of that height
+        int blockHeight = 16;
+        height = (height + blockHeight - 1) / blockHeight * blockHeight;
+        return (width, height);
+    }
+
+    public static long CalcPosDataSize(int splatCount, VectorFormat formatPos)
+    {
+        return splatCount * GetVectorSize(formatPos);
+    }
+    public static long CalcOtherDataSize(int splatCount, VectorFormat formatScale)
+    {
+        return splatCount * (GetOtherSize(formatScale) - 2); // SH indices will get attributed to SH size
+    }
+    public static long CalcColorDataSize(int splatCount, GraphicsFormat formatColor)
+    {
+        var (width, height) = CalcTextureSize(splatCount);
+        return GraphicsFormatUtility.ComputeMipmapSize(width, height, formatColor);
+    }
+    public static long CalcSHDataSize(int splatCount, SHFormat formatSh)
+    {
+        return GetSHCount(formatSh, splatCount) * UnsafeUtility.SizeOf<SHTableItem>() + splatCount * 2;
+    }
+    public static long CalcChunkDataSize(int splatCount)
+    {
+        int chunkCount = (splatCount + kChunkSize - 1) / kChunkSize;
+        return chunkCount * UnsafeUtility.SizeOf<ChunkInfo>();
     }
 
     [HideInInspector] public VectorFormat m_PosFormat = VectorFormat.Norm11;

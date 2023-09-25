@@ -18,7 +18,6 @@ public class GaussianSplatAssetCreator : EditorWindow
     const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
     const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
     const string kCamerasJson = "cameras.json";
-    const int kTextureWidth = 2048; //@TODO: bump to 4k
 
     enum DataQuality
     {
@@ -57,8 +56,8 @@ public class GaussianSplatAssetCreator : EditorWindow
     [MenuItem("Tools/Gaussian Splats/Create GaussianSplatAsset")]
     public static void Init()
     {
-        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 400), false, "Gaussian Splat Creator", true);
-        window.minSize = new Vector2(200, 400);
+        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 340), false, "Gaussian Splat Creator", true);
+        window.minSize = new Vector2(320, 320);
         window.maxSize = new Vector2(1500, 1500);
         window.Show();
     }
@@ -77,7 +76,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         m_Use30k = EditorGUILayout.Toggle(new GUIContent("Use 30k Version", "Use iteration_30000 point cloud if available. Otherwise uses iteration_7000."), m_Use30k);
 
         string plyPath = GetPLYFileName(m_InputFolder, m_Use30k);
-        if (plyPath != m_PrevPlyPath)
+        if (plyPath != m_PrevPlyPath && !string.IsNullOrWhiteSpace(plyPath))
         {
             PLYFileReader.ReadFileHeader(plyPath, out m_PrevVertexCount, out var _, out var _);
             m_PrevFileSize = new FileInfo(plyPath).Length;
@@ -85,9 +84,9 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
 
         if (m_PrevVertexCount > 0)
-        {
             EditorGUILayout.LabelField("File Size", $"{EditorUtility.FormatBytes(m_PrevFileSize)} - {m_PrevVertexCount:N0} splats");
-        }
+        else
+            GUILayout.Space(EditorGUIUtility.singleLineHeight);
 
         EditorGUILayout.Space();
         GUILayout.Label("Output", EditorStyles.boldLabel);
@@ -99,28 +98,43 @@ public class GaussianSplatAssetCreator : EditorWindow
             m_Quality = newQuality;
             ApplyQualityLevel();
         }
-        EditorGUI.BeginDisabledGroup(m_Quality != DataQuality.Custom);
-        EditorGUI.indentLevel++;
-        m_FormatPos = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Position", m_FormatPos);
-        m_FormatScale = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Scale", m_FormatScale);
-        m_FormatSH = (GaussianSplatAsset.SHFormat) EditorGUILayout.EnumPopup("SH", m_FormatSH);
-        m_FormatColor = (ColorFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
-        EditorGUI.indentLevel--;
-        EditorGUI.EndDisabledGroup();
 
+        long sizePos = 0, sizeOther = 0, sizeCol = 0, sizeSHs = 0, totalSize = 0;
         if (m_PrevVertexCount > 0)
         {
-            int chunkCount = (m_PrevVertexCount + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
-            int width, height;
-            (width, height) = CalcTextureSize(m_PrevVertexCount);
-            long sizePos = m_PrevVertexCount * GaussianSplatAsset.GetVectorSize(m_FormatPos);
-            long sizeOther = m_PrevVertexCount * GaussianSplatAsset.GetOtherSize(m_FormatScale);
-            long sizeCol = GraphicsFormatUtility.ComputeMipmapSize(width, height, ColorFormatToGraphics(m_FormatColor));
-            long sizeSHs = GaussianSplatAsset.GetSHCount(m_FormatSH, m_PrevVertexCount) * UnsafeUtility.SizeOf<SHTableItem>();
-            long sizeChunk = chunkCount * UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>();
-            long totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
-            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double)m_PrevFileSize / totalSize:F1}x smaller");
+            sizePos = GaussianSplatAsset.CalcPosDataSize(m_PrevVertexCount, m_FormatPos);
+            sizeOther = GaussianSplatAsset.CalcOtherDataSize(m_PrevVertexCount, m_FormatScale);
+            sizeCol = GaussianSplatAsset.CalcColorDataSize(m_PrevVertexCount, ColorFormatToGraphics(m_FormatColor));
+            sizeSHs = GaussianSplatAsset.CalcSHDataSize(m_PrevVertexCount, m_FormatSH);
+            long sizeChunk = GaussianSplatAsset.CalcChunkDataSize(m_PrevVertexCount);
+            totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
         }
+
+        const float kSizeColWidth = 60;
+        EditorGUI.BeginDisabledGroup(m_Quality != DataQuality.Custom);
+        EditorGUI.indentLevel++;
+        GUILayout.BeginHorizontal();
+        m_FormatPos = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Position", m_FormatPos);
+        GUILayout.Label(sizePos > 0 ? EditorUtility.FormatBytes(sizePos) : string.Empty, GUILayout.Width(kSizeColWidth));
+        GUILayout.EndHorizontal();
+        GUILayout.BeginHorizontal();
+        m_FormatScale = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Scale", m_FormatScale);
+        GUILayout.Label(sizeOther > 0 ? EditorUtility.FormatBytes(sizeOther) : string.Empty, GUILayout.Width(kSizeColWidth));
+        GUILayout.EndHorizontal();
+        GUILayout.BeginHorizontal();
+        m_FormatColor = (ColorFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
+        GUILayout.Label(sizeCol > 0 ? EditorUtility.FormatBytes(sizeCol) : string.Empty, GUILayout.Width(kSizeColWidth));
+        GUILayout.EndHorizontal();
+        GUILayout.BeginHorizontal();
+        m_FormatSH = (GaussianSplatAsset.SHFormat) EditorGUILayout.EnumPopup("SH", m_FormatSH);
+        GUILayout.Label(sizeSHs > 0 ? EditorUtility.FormatBytes(sizeSHs) : string.Empty, GUILayout.Width(kSizeColWidth));
+        GUILayout.EndHorizontal();
+        EditorGUI.indentLevel--;
+        EditorGUI.EndDisabledGroup();
+        if (totalSize > 0)
+            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double) m_PrevFileSize / totalSize:F1}x smaller");
+        else
+            GUILayout.Space(EditorGUIUtility.singleLineHeight);
 
 
         EditorGUILayout.Space();
@@ -198,12 +212,6 @@ public class GaussianSplatAssetCreator : EditorWindow
         public Quaternion rot;
     }
 
-    struct SHTableItem
-    {
-        public half3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-        public half3 shPadding; // pad to multiple of 16 bytes
-    }
-
     static T CreateOrReplaceAsset<T>(T asset, string path) where T : UnityEngine.Object
     {
         T result = AssetDatabase.LoadAssetAtPath<T>(path);
@@ -259,10 +267,10 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         // cluster SHs
         NativeArray<int> splatSHIndices = default;
-        NativeArray<SHTableItem> clusteredSHs = default;
+        NativeArray<GaussianSplatAsset.SHTableItem> clusteredSHs = default;
         if (m_FormatSH != GaussianSplatAsset.SHFormat.Full)
         {
-            EditorUtility.DisplayProgressBar(kProgressTitle, "Cluster SHs", 0.4f);
+            EditorUtility.DisplayProgressBar(kProgressTitle, "Cluster SHs", 0.2f);
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
         }
 
@@ -466,11 +474,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     struct ConvertSHClustersJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<float3> m_Input;
-        public NativeArray<SHTableItem> m_Output;
+        public NativeArray<GaussianSplatAsset.SHTableItem> m_Output;
         public void Execute(int index)
         {
             var addr = index * 15;
-            SHTableItem res;
+            GaussianSplatAsset.SHTableItem res;
             res.sh1 = new half3(m_Input[addr+0]);
             res.sh2 = new half3(m_Input[addr+1]);
             res.sh3 = new half3(m_Input[addr+2]);
@@ -492,11 +500,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     }
     static bool ClusterSHProgress(float val)
     {
-        EditorUtility.DisplayProgressBar(kProgressTitle, $"Cluster SHs ({val:P0})", 0.4f + val * 0.3f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, $"Cluster SHs ({val:P0})", 0.2f + val * 0.5f);
         return true;
     }
 
-    static unsafe void ClusterSHs(NativeArray<InputSplatData> splatData, GaussianSplatAsset.SHFormat format, out NativeArray<SHTableItem> shs, out NativeArray<int> shIndices)
+    static unsafe void ClusterSHs(NativeArray<InputSplatData> splatData, GaussianSplatAsset.SHFormat format, out NativeArray<GaussianSplatAsset.SHTableItem> shs, out NativeArray<int> shIndices)
     {
         shs = default;
         shIndices = default;
@@ -524,7 +532,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         KMeansClustering.Calculate(kShDim, clusterNthStep, shData, shMeans, shIndices, clusterIterations, 0.0001f, false, ClusterSHProgress);
         shData.Dispose();
 
-        shs = new NativeArray<SHTableItem>(shCount, Allocator.Persistent);
+        shs = new NativeArray<GaussianSplatAsset.SHTableItem>(shCount, Allocator.Persistent);
 
         ConvertSHClustersJob job = new ConvertSHClustersJob
         {
@@ -635,16 +643,6 @@ public class GaussianSplatAssetCreator : EditorWindow
         GaussianSplatAsset.ChunkInfo[] res = job.chunks.ToArray();
         job.chunks.Dispose();
         return res;
-    }
-
-    static (int,int) CalcTextureSize(int splatCount)
-    {
-        int width = kTextureWidth;
-        int height = math.max(1, (splatCount + width - 1) / width);
-        // our swizzle tiles are 16x16, so make texture multiple of that height
-        int blockHeight = 16;
-        height = (height + blockHeight - 1) / blockHeight * blockHeight;
-        return (width, height);
     }
 
     static GraphicsFormat ColorFormatToGraphics(ColorFormat format)
@@ -873,11 +871,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     static int SplatIndexToTextureIndex(uint idx)
     {
         uint2 xy = GaussianUtils.DecodeMorton2D_16x16(idx);
-        uint width = kTextureWidth / 16;
+        uint width = GaussianSplatAsset.kTextureWidth / 16;
         idx >>= 8;
         uint x = (idx % width) * 16 + xy.x;
         uint y = (idx / width) * 16 + xy.y;
-        return (int)(y * kTextureWidth + x);
+        return (int)(y * GaussianSplatAsset.kTextureWidth + x);
     }
 
     [BurstCompile]
@@ -896,7 +894,7 @@ public class GaussianSplatAssetCreator : EditorWindow
 
     void CreateColorData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
     {
-        var (width, height) = CalcTextureSize(inputSplats.Length);
+        var (width, height) = GaussianSplatAsset.CalcTextureSize(inputSplats.Length);
         NativeArray<float4> data = new(width * height, Allocator.TempJob);
 
         CreateColorDataJob job = new CreateColorDataJob();
@@ -916,11 +914,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     struct CreateSHDataJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<InputSplatData> m_Input;
-        public NativeArray<SHTableItem> m_Output;
+        public NativeArray<GaussianSplatAsset.SHTableItem> m_Output;
         public void Execute(int index)
         {
             var splat = m_Input[index];
-            SHTableItem res;
+            GaussianSplatAsset.SHTableItem res;
             res.sh1 = new half3(splat.sh1);
             res.sh2 = new half3(splat.sh2);
             res.sh3 = new half3(splat.sh3);
@@ -948,7 +946,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         fs.Write(data.Reinterpret<byte>(UnsafeUtility.SizeOf<T>()));
     }
 
-    void CreateSHData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<SHTableItem> clusteredSHs)
+    void CreateSHData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<GaussianSplatAsset.SHTableItem> clusteredSHs)
     {
         if (clusteredSHs.IsCreated)
         {
@@ -957,7 +955,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         else
         {
             int dataLen = inputSplats.Length;
-            NativeArray<SHTableItem> data = new(dataLen, Allocator.TempJob);
+            NativeArray<GaussianSplatAsset.SHTableItem> data = new(dataLen, Allocator.TempJob);
             CreateSHDataJob job = new CreateSHDataJob
             {
                 m_Input = inputSplats,
