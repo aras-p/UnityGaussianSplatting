@@ -16,7 +16,10 @@ public class GaussianSplatRendererEditor : Editor
             return;
         if (!gs.HasValidAsset)
         {
-            EditorGUILayout.HelpBox("Gaussian Splat asset is null or empty", MessageType.Error);
+            var msg = gs.asset != null && gs.asset.m_FormatVersion != GaussianSplatAsset.kCurrentVersion
+                ? "Gaussian Splat asset version is not compatible, please recreate the asset"
+                : "Gaussian Splat asset is not assigned or is empty";
+            EditorGUILayout.HelpBox(msg, MessageType.Error);
             return;
         }
         if (!gs.enabled || !gs.gameObject.activeInHierarchy)

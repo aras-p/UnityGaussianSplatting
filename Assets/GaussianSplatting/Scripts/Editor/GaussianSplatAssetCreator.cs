@@ -275,7 +275,6 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_Cameras = cameras;
         asset.m_BoundsMin = boundsMin;
         asset.m_BoundsMax = boundsMax;
-        asset.m_DataHash = new Hash128(0, 0);
 
         EditorUtility.DisplayProgressBar(kProgressTitle, "Calc chunks", 0.7f);
         LinearizeData(inputSplats);
@@ -283,9 +282,11 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         EditorUtility.DisplayProgressBar(kProgressTitle, "Creating data objects", 0.75f);
         asset.m_SplatCount = inputSplats.Length;
+        asset.m_FormatVersion = GaussianSplatAsset.kCurrentVersion;
         asset.m_PosFormat = m_FormatPos;
         asset.m_ScaleFormat = m_FormatScale;
         asset.m_SHFormat = m_FormatSH;
+        asset.m_DataHash = new Hash128((uint)asset.m_SplatCount, (uint)asset.m_FormatVersion, 0, 0);
         string pathPos = $"{m_OutputFolder}/{baseName}_pos.bytes";
         string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
         string pathCol = $"{m_OutputFolder}/{baseName}_col.gstex";

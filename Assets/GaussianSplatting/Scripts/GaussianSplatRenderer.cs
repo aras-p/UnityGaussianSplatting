@@ -87,7 +87,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public GaussianSplatAsset asset => m_Asset;
 
-    public bool HasValidAsset => m_Asset != null && m_Asset.m_SplatCount > 0;
+    public bool HasValidAsset => m_Asset != null && m_Asset.m_SplatCount > 0 && m_Asset.m_FormatVersion == GaussianSplatAsset.kCurrentVersion;
     public bool HasValidRenderSetup => m_RenderCommandBuffer != null && m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
     void CreateResourcesForAsset()

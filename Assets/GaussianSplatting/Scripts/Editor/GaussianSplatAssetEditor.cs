@@ -1,5 +1,6 @@
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
 [CustomEditor(typeof(GaussianSplatAsset))]
@@ -19,6 +20,11 @@ public class GaussianSplatAssetEditor : Editor
         {
             using var _ = new EditorGUI.DisabledScope(true);
             EditorGUILayout.IntField("Splats", splatCount);
+            var prevBackColor = GUI.backgroundColor;
+            if (gs.m_FormatVersion != GaussianSplatAsset.kChunkSize)
+                GUI.backgroundColor *= Color.red;
+            EditorGUILayout.IntField("Version", gs.m_FormatVersion);
+            GUI.backgroundColor = prevBackColor;
 
             long sizePos = GaussianSplatAsset.CalcPosDataSize(gs.m_SplatCount, gs.m_PosFormat);
             long sizeOther = GaussianSplatAsset.CalcOtherDataSize(gs.m_SplatCount, gs.m_ScaleFormat);

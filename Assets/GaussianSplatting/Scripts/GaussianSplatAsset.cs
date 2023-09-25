@@ -6,9 +6,11 @@ using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
+    public const int kCurrentVersion = 20230925;
     public const int kChunkSize = 256;
     public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
+    [HideInInspector] public int m_FormatVersion;
     [HideInInspector] public int m_SplatCount;
     [HideInInspector] public Vector3 m_BoundsMin;
     [HideInInspector] public Vector3 m_BoundsMax;
