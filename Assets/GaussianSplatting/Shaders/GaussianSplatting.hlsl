@@ -390,12 +390,10 @@ SplatData LoadSplatData(uint idx)
 
     uint shIndex = idx;
     if (shFormat > VECTOR_FMT_6)
-    {
         shIndex = LoadUShort(_SplatOther, otherAddr + otherStride - 2);
-    }
 
     uint shStride = 0;
-    if (shFormat == VECTOR_FMT_16)
+    if (shFormat == VECTOR_FMT_16 || shFormat > VECTOR_FMT_6)
         shStride = 96; // 15*3 fp16, rounded up to multiple of 16
     else if (shFormat == VECTOR_FMT_11)
         shStride = 60; // 15x uint
