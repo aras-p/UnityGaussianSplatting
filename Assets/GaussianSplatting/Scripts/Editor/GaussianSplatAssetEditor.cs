@@ -30,13 +30,14 @@ public class GaussianSplatAssetEditor : Editor
 
             long sizePos = gs.m_PosData != null ? gs.m_PosData.dataSize : 0;
             long sizeOther = gs.m_OtherData != null ? gs.m_OtherData.dataSize : 0;
+
             long sizeSH = gs.m_SHData != null ? gs.m_SHData.dataSize : 0;
             long sizeCol = GetTextureSize(gs.m_ColorData);
             long sizeChk = gs.m_Chunks.Length * UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>();
             EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeOther + sizeSH + sizeCol + sizeChk));
             EditorGUI.indentLevel++;
             EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {gs.m_PosFormat}");
-            EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  {gs.m_OtherFormat}");
+            EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  {gs.m_ScaleFormat}");
             EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {(gs.m_ColorData != null ? gs.m_ColorData.graphicsFormat : "")}");
             EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.m_SHFormat})");
             EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");

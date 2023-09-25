@@ -266,28 +266,29 @@ ByteAddressBuffer _SplatSH;
 Texture2D _SplatColor;
 uint _SplatFormat;
 
-#define POS_FMT_16 0
-#define POS_FMT_11 1
-#define POS_FMT_6 2
+#define VECTOR_FMT_16 0
+#define VECTOR_FMT_11 1
+#define VECTOR_FMT_6 2
 
-float3 LoadSplatPos(uint index)
+uint LoadUShort(ByteAddressBuffer dataBuffer, uint addrU)
 {
-    uint fmt = _SplatFormat & 0xFF;
-    uint addrU = 0;
-    if (fmt == POS_FMT_16)
-        addrU = index * 6;
-    else if (fmt == POS_FMT_11)
-        addrU = index * 4;
-    else if (fmt == POS_FMT_6)
-        addrU = index * 2;
+    uint addrA = addrU & ~0x3;
+    uint val = dataBuffer.Load(addrA);
+    if (addrU != addrA)
+        val >>= 16;
+    return val;
+}
+
+float3 LoadAndDecodeVector(ByteAddressBuffer dataBuffer, uint addrU, uint fmt)
+{
     uint addrA = addrU & ~0x3;
 
-    uint val0 = _SplatPos.Load(addrA);
+    uint val0 = dataBuffer.Load(addrA);
 
     float3 res = 0;
-    if (fmt == POS_FMT_16)
+    if (fmt == VECTOR_FMT_16)
     {
-        uint val1 = _SplatPos.Load(addrA + 4);
+        uint val1 = dataBuffer.Load(addrA + 4);
         if (addrU != addrA)
         {
             val0 = (val0 >> 16) | ((val1 & 0xFFFF) << 16);
@@ -295,18 +296,35 @@ float3 LoadSplatPos(uint index)
         }
         res = DecodePacked_16_16_16(uint2(val0, val1));
     }
-    else if (fmt == POS_FMT_11)
+    else if (fmt == VECTOR_FMT_11)
     {
+        uint val1 = dataBuffer.Load(addrA + 4);
+        if (addrU != addrA)
+        {
+            val0 = (val0 >> 16) | ((val1 & 0xFFFF) << 16);
+        }
         res = DecodePacked_11_10_11(val0);
     }
-    else if (fmt == POS_FMT_6)
+    else if (fmt == VECTOR_FMT_6)
     {
         if (addrU != addrA)
             val0 >>= 16;
         res = DecodePacked_6_5_5(val0);
     }
-
     return res;
+}
+
+float3 LoadSplatPos(uint index)
+{
+    uint fmt = _SplatFormat & 0xFF;
+    uint stride = 0;
+    if (fmt == VECTOR_FMT_16)
+        stride = 6;
+    else if (fmt == VECTOR_FMT_11)
+        stride = 4;
+    else if (fmt == VECTOR_FMT_6)
+        stride = 2;
+    return LoadAndDecodeVector(_SplatPos, index * stride, fmt);
 }
 
 half4 LoadSplatColTex(uint3 coord)
@@ -329,10 +347,18 @@ SplatData LoadSplatData(uint idx)
 
     s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPos(idx));
 
-    uint3 otherData = _SplatOther.Load3(idx * 12);
-    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(otherData.x));
-    float3 scl = DecodePacked_16_16_16(otherData.yz);
-    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, scl);
+    uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
+    uint otherStride = 0;
+    if (scaleFmt == VECTOR_FMT_16)
+        otherStride = 12;
+    else if (scaleFmt == VECTOR_FMT_11)
+        otherStride = 10;
+    else if (scaleFmt == VECTOR_FMT_6)
+        otherStride = 8;
+    uint otherAddr = idx * otherStride;
+
+    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(_SplatOther.Load(otherAddr)));
+    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
     s.scale *= s.scale;
     s.scale *= s.scale;
     s.scale *= s.scale;
@@ -344,7 +370,7 @@ SplatData LoadSplatData(uint idx)
     uint shIndex = idx;
     uint shFormat = (_SplatFormat >> 16) & 0xFF;
     if (shFormat != 0)
-        shIndex = otherData.z >> 16;
+        shIndex = LoadUShort(_SplatOther, otherAddr + otherStride - 2);
 
     uint shOffset = shIndex * shItemSize;
     uint4 shRaw0 = _SplatSH.Load4(shOffset);
