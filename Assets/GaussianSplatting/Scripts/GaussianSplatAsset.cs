@@ -36,9 +36,11 @@ public class GaussianSplatAsset : ScriptableObject
     {
         Full,
         Cluster64k,
+        Cluster32k,
         Cluster16k,
+        Cluster8k,
         Cluster4k,
-        Cluster1k
+        Cluster2k,
     }
 
     public struct SHTableItem
@@ -61,9 +63,11 @@ public class GaussianSplatAsset : ScriptableObject
         {
             SHFormat.Full => splatCount,
             SHFormat.Cluster64k => 64 * 1024,
+            SHFormat.Cluster32k => 32 * 1024,
             SHFormat.Cluster16k => 16 * 1024,
+            SHFormat.Cluster8k => 8 * 1024,
             SHFormat.Cluster4k => 4 * 1024,
-            SHFormat.Cluster1k => 1 * 1024,
+            SHFormat.Cluster2k => 4 * 1024,
             _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
         };
     }

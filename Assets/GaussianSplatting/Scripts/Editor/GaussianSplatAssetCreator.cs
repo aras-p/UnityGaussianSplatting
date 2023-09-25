@@ -165,31 +165,31 @@ public class GaussianSplatAssetCreator : EditorWindow
             //case DataQuality.High: // 2.9x smaller, 54.87 PSNR
             //case DataQuality.VeryHigh: // 0.8x smaller (larger!),
 
-            case DataQuality.VeryLow:
+            case DataQuality.VeryLow: // 21.8x smaller
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm6;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
-                m_FormatColor = ColorFormat.BC7;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster1k;
-                break;
-            case DataQuality.Low:
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatColor = ColorFormat.BC7;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster4k;
                 break;
-            case DataQuality.Medium:
+            case DataQuality.Low: // 15.1x smaller
+                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
+                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
+                m_FormatColor = ColorFormat.Norm8x4;
+                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster8k;
+                break;
+            case DataQuality.Medium: // 13.3x smaller
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatColor = ColorFormat.Norm8x4;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster16k;
                 break;
-            case DataQuality.High:
+            case DataQuality.High: // 2.0x smaller
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatColor = ColorFormat.Float16x4;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Full;
                 break;
-            case DataQuality.VeryHigh:
+            case DataQuality.VeryHigh: // 2.0x smaller
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatColor = ColorFormat.Float16x4;
@@ -516,11 +516,16 @@ public class GaussianSplatAssetCreator : EditorWindow
         int clusterNthStep = math.min(splatData.Length / 1000, 97);
 
         const int kShDim = 15 * 3;
-        int clusterIterations = 2;
-        if (shCount < 5000)
-            clusterIterations = 3;
-        if (shCount < 1500)
-            clusterIterations = 4;
+        int clusterIterations = format switch
+        {
+            GaussianSplatAsset.SHFormat.Full => 1,
+            GaussianSplatAsset.SHFormat.Cluster64k => 1,
+            GaussianSplatAsset.SHFormat.Cluster32k => 1,
+            GaussianSplatAsset.SHFormat.Cluster16k => 2,
+            GaussianSplatAsset.SHFormat.Cluster8k => 2,
+            GaussianSplatAsset.SHFormat.Cluster4k => 3,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+        };
 
         float t0 = Time.realtimeSinceStartup;
         NativeArray<float> shData = new(splatData.Length * kShDim, Allocator.Persistent);
