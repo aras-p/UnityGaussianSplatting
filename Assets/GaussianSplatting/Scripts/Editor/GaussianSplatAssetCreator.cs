@@ -159,41 +159,35 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             case DataQuality.Custom:
                 break;
-            //case DataQuality.VeryLow: // 20.7x smaller, 24.07 PSNR
-            //case DataQuality.Low: // 13.1x smaller, 34.76 PSNR
-            //case DataQuality.Medium: // 5.3x smaller, 47.51 PSNR
-            //case DataQuality.High: // 2.9x smaller, 54.87 PSNR
-            //case DataQuality.VeryHigh: // 0.8x smaller (larger!),
-
-            case DataQuality.VeryLow: // 21.8x smaller
+            case DataQuality.VeryLow: // 21.6x smaller (was: 20.7x smaller, 24.07 PSNR)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatColor = ColorFormat.BC7;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster4k;
                 break;
-            case DataQuality.Low: // 15.1x smaller
+            case DataQuality.Low: // 14.9x smaller (was: 13.1x smaller, 34.76 PSNR)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatColor = ColorFormat.Norm8x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster8k;
+                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster16k;
                 break;
-            case DataQuality.Medium: // 13.3x smaller
+            case DataQuality.Medium: // 5.1x smaller, 47.46 PSNR (was: 5.3x smaller, 47.51 PSNR)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatColor = ColorFormat.Norm8x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster16k;
+                m_FormatSH = GaussianSplatAsset.SHFormat.Norm6;
                 break;
-            case DataQuality.High: // 2.0x smaller
+            case DataQuality.High: // 2.9x smaller, 57.77 PSNR (was: 2.9x smaller, 54.87 PSNR)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatColor = ColorFormat.Float16x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Full;
+                m_FormatSH = GaussianSplatAsset.SHFormat.Norm11;
                 break;
-            case DataQuality.VeryHigh: // 2.0x smaller
+            case DataQuality.VeryHigh: // 2.1x smaller (was: 0.8x smaller)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
                 m_FormatColor = ColorFormat.Float16x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Full;
+                m_FormatSH = GaussianSplatAsset.SHFormat.Float16;
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
@@ -267,8 +261,8 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         // cluster SHs
         NativeArray<int> splatSHIndices = default;
-        NativeArray<GaussianSplatAsset.SHTableItem> clusteredSHs = default;
-        if (m_FormatSH != GaussianSplatAsset.SHFormat.Full)
+        NativeArray<GaussianSplatAsset.SHTableItemFloat16> clusteredSHs = default;
+        if (m_FormatSH >= GaussianSplatAsset.SHFormat.Cluster64k)
         {
             EditorUtility.DisplayProgressBar(kProgressTitle, "Cluster SHs", 0.2f);
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
@@ -348,8 +342,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             return data;
         }
 
-        int splatCount = 0;
-        PLYFileReader.ReadFile(plyPath, out splatCount, out int vertexStride, out var plyAttrNames, out var verticesRawData);
+        PLYFileReader.ReadFile(plyPath, out var splatCount, out int vertexStride, out _, out var verticesRawData);
         if (UnsafeUtility.SizeOf<InputSplatData>() != vertexStride)
         {
             m_ErrorMessage = $"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplatData>()} but file has {vertexStride}";
@@ -474,11 +467,11 @@ public class GaussianSplatAssetCreator : EditorWindow
     struct ConvertSHClustersJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<float3> m_Input;
-        public NativeArray<GaussianSplatAsset.SHTableItem> m_Output;
+        public NativeArray<GaussianSplatAsset.SHTableItemFloat16> m_Output;
         public void Execute(int index)
         {
             var addr = index * 15;
-            GaussianSplatAsset.SHTableItem res;
+            GaussianSplatAsset.SHTableItemFloat16 res;
             res.sh1 = new half3(m_Input[addr+0]);
             res.sh2 = new half3(m_Input[addr+1]);
             res.sh3 = new half3(m_Input[addr+2]);
@@ -504,7 +497,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         return true;
     }
 
-    static unsafe void ClusterSHs(NativeArray<InputSplatData> splatData, GaussianSplatAsset.SHFormat format, out NativeArray<GaussianSplatAsset.SHTableItem> shs, out NativeArray<int> shIndices)
+    static unsafe void ClusterSHs(NativeArray<InputSplatData> splatData, GaussianSplatAsset.SHFormat format, out NativeArray<GaussianSplatAsset.SHTableItemFloat16> shs, out NativeArray<int> shIndices)
     {
         shs = default;
         shIndices = default;
@@ -518,7 +511,6 @@ public class GaussianSplatAssetCreator : EditorWindow
         const int kShDim = 15 * 3;
         int clusterIterations = format switch
         {
-            GaussianSplatAsset.SHFormat.Full => 1,
             GaussianSplatAsset.SHFormat.Cluster64k => 1,
             GaussianSplatAsset.SHFormat.Cluster32k => 1,
             GaussianSplatAsset.SHFormat.Cluster16k => 2,
@@ -537,7 +529,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         KMeansClustering.Calculate(kShDim, clusterNthStep, shData, shMeans, shIndices, clusterIterations, 0.0001f, false, ClusterSHProgress);
         shData.Dispose();
 
-        shs = new NativeArray<GaussianSplatAsset.SHTableItem>(shCount, Allocator.Persistent);
+        shs = new NativeArray<GaussianSplatAsset.SHTableItemFloat16>(shCount, Allocator.Persistent);
 
         ConvertSHClustersJob job = new ConvertSHClustersJob
         {
@@ -596,10 +588,12 @@ public class GaussianSplatAssetCreator : EditorWindow
             chunkMin.pos = (float3) float.PositiveInfinity;
             chunkMin.scl = (float3) float.PositiveInfinity;
             chunkMin.col = (float4) float.PositiveInfinity;
+            chunkMin.shs = (float3) float.PositiveInfinity;
             GaussianSplatAsset.BoundsInfo chunkMax;
             chunkMax.pos = (float3) float.NegativeInfinity;
             chunkMax.scl = (float3) float.NegativeInfinity;
             chunkMax.col = (float4) float.NegativeInfinity;
+            chunkMax.shs = (float3) float.NegativeInfinity;
 
             int splatBegin = math.min(chunkIdx * GaussianSplatAsset.kChunkSize, splatData.Length);
             int splatEnd = math.min((chunkIdx + 1) * GaussianSplatAsset.kChunkSize, splatData.Length);
@@ -611,10 +605,40 @@ public class GaussianSplatAssetCreator : EditorWindow
                 chunkMin.pos = math.min(chunkMin.pos, s.pos);
                 chunkMin.scl = math.min(chunkMin.scl, s.scale);
                 chunkMin.col = math.min(chunkMin.col, new float4(s.dc0, s.opacity));
+                chunkMin.shs = math.min(chunkMin.shs, s.sh1);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh2);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh3);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh4);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh5);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh6);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh7);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh8);
+                chunkMin.shs = math.min(chunkMin.shs, s.sh9);
+                chunkMin.shs = math.min(chunkMin.shs, s.shA);
+                chunkMin.shs = math.min(chunkMin.shs, s.shB);
+                chunkMin.shs = math.min(chunkMin.shs, s.shC);
+                chunkMin.shs = math.min(chunkMin.shs, s.shD);
+                chunkMin.shs = math.min(chunkMin.shs, s.shE);
+                chunkMin.shs = math.min(chunkMin.shs, s.shF);
 
                 chunkMax.pos = math.max(chunkMax.pos, s.pos);
                 chunkMax.scl = math.max(chunkMax.scl, s.scale);
                 chunkMax.col = math.max(chunkMax.col, new float4(s.dc0, s.opacity));
+                chunkMax.shs = math.max(chunkMax.shs, s.sh1);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh2);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh3);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh4);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh5);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh6);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh7);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh8);
+                chunkMax.shs = math.max(chunkMax.shs, s.sh9);
+                chunkMax.shs = math.max(chunkMax.shs, s.shA);
+                chunkMax.shs = math.max(chunkMax.shs, s.shB);
+                chunkMax.shs = math.max(chunkMax.shs, s.shC);
+                chunkMax.shs = math.max(chunkMax.shs, s.shD);
+                chunkMax.shs = math.max(chunkMax.shs, s.shE);
+                chunkMax.shs = math.max(chunkMax.shs, s.shF);
             }
 
             // store chunk info
@@ -631,6 +655,21 @@ public class GaussianSplatAssetCreator : EditorWindow
                 s.scale = (s.scale - chunkMin.scl) / (float3)(chunkMax.scl - chunkMin.scl);
                 s.dc0 = ((float3)s.dc0 - ((float4)chunkMin.col).xyz) / (((float4)chunkMax.col).xyz - ((float4)chunkMin.col).xyz);
                 s.opacity = (s.opacity - chunkMin.col.w) / (chunkMax.col.w - chunkMin.col.w);
+                s.sh1 = (s.sh1 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh2 = (s.sh2 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh3 = (s.sh3 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh4 = (s.sh4 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh5 = (s.sh5 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh6 = (s.sh6 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh7 = (s.sh7 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh8 = (s.sh8 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.sh9 = (s.sh9 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shA = (s.shA - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shB = (s.shB - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shC = (s.shC - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shD = (s.shD - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shE = (s.shE - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.shF = (s.shF - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
                 splatData[i] = s;
             }
         }
@@ -742,9 +781,13 @@ public class GaussianSplatAssetCreator : EditorWindow
     {
         return (uint) (v.x * 2047.5f) | ((uint) (v.y * 1023.5f) << 11) | ((uint) (v.z * 2047.5f) << 21);
     }
-    static ushort EncodeFloat3ToNorm6(float3 v) // 16 bits: 6.5.5
+    static ushort EncodeFloat3ToNorm655(float3 v) // 16 bits: 6.5.5
     {
         return (ushort) ((uint) (v.x * 63.5f) | ((uint) (v.y * 31.5f) << 6) | ((uint) (v.z * 31.5f) << 11));
+    }
+    static ushort EncodeFloat3ToNorm565(float3 v) // 16 bits: 5.6.5
+    {
+        return (ushort) ((uint) (v.x * 31.5f) | ((uint) (v.y * 63.5f) << 5) | ((uint) (v.z * 31.5f) << 11));
     }
 
     static uint EncodeQuatToNorm10(float4 v) // 32 bits: 10.10.10.2
@@ -772,7 +815,7 @@ public class GaussianSplatAssetCreator : EditorWindow
                 break;
             case GaussianSplatAsset.VectorFormat.Norm6:
                 {
-                    ushort enc = EncodeFloat3ToNorm6(v);
+                    ushort enc = EncodeFloat3ToNorm655(v);
                     *(ushort*) outputPtr = enc;
                 }
                 break;
@@ -821,8 +864,8 @@ public class GaussianSplatAssetCreator : EditorWindow
             outputPtr += GaussianSplatAsset.GetVectorSize(m_ScaleFormat);
 
             // SH index
-            *(ushort*) outputPtr = (ushort)(m_SplatSHIndices.IsCreated ? m_SplatSHIndices[index] : 0);
-            outputPtr += 2;
+            if (m_SplatSHIndices.IsCreated)
+                *(ushort*) outputPtr = (ushort)m_SplatSHIndices[index];
         }
     }
 
@@ -851,7 +894,11 @@ public class GaussianSplatAssetCreator : EditorWindow
 
     void CreateOtherData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<int> splatSHIndices)
     {
-        int dataLen = inputSplats.Length * GaussianSplatAsset.GetOtherSize(m_FormatScale);
+        int formatSize = GaussianSplatAsset.GetOtherSizeNoSHIndex(m_FormatScale);
+        if (splatSHIndices.IsCreated)
+            formatSize += 2;
+        int dataLen = inputSplats.Length * formatSize;
+
         dataLen = (dataLen + 3) / 4 * 4; // multiple of 4
         NativeArray<byte> data = new(dataLen, Allocator.TempJob);
 
@@ -860,7 +907,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             m_Input = inputSplats,
             m_SplatSHIndices = splatSHIndices,
             m_ScaleFormat = m_FormatScale,
-            m_FormatSize = GaussianSplatAsset.GetOtherSize(m_FormatScale),
+            m_FormatSize = formatSize,
             m_Output = data
         };
         job.Schedule(inputSplats.Length, 8192).Complete();
@@ -919,28 +966,84 @@ public class GaussianSplatAssetCreator : EditorWindow
     struct CreateSHDataJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<InputSplatData> m_Input;
-        public NativeArray<GaussianSplatAsset.SHTableItem> m_Output;
+        public GaussianSplatAsset.SHFormat m_Format;
+        public NativeArray<byte> m_Output;
         public void Execute(int index)
         {
             var splat = m_Input[index];
-            GaussianSplatAsset.SHTableItem res;
-            res.sh1 = new half3(splat.sh1);
-            res.sh2 = new half3(splat.sh2);
-            res.sh3 = new half3(splat.sh3);
-            res.sh4 = new half3(splat.sh4);
-            res.sh5 = new half3(splat.sh5);
-            res.sh6 = new half3(splat.sh6);
-            res.sh7 = new half3(splat.sh7);
-            res.sh8 = new half3(splat.sh8);
-            res.sh9 = new half3(splat.sh9);
-            res.shA = new half3(splat.shA);
-            res.shB = new half3(splat.shB);
-            res.shC = new half3(splat.shC);
-            res.shD = new half3(splat.shD);
-            res.shE = new half3(splat.shE);
-            res.shF = new half3(splat.shF);
-            res.shPadding = default;
-            m_Output[index] = res;
+            switch (m_Format)
+            {
+                case GaussianSplatAsset.SHFormat.Float16:
+                    {
+                        GaussianSplatAsset.SHTableItemFloat16 res;
+                        res.sh1 = new half3(splat.sh1);
+                        res.sh2 = new half3(splat.sh2);
+                        res.sh3 = new half3(splat.sh3);
+                        res.sh4 = new half3(splat.sh4);
+                        res.sh5 = new half3(splat.sh5);
+                        res.sh6 = new half3(splat.sh6);
+                        res.sh7 = new half3(splat.sh7);
+                        res.sh8 = new half3(splat.sh8);
+                        res.sh9 = new half3(splat.sh9);
+                        res.shA = new half3(splat.shA);
+                        res.shB = new half3(splat.shB);
+                        res.shC = new half3(splat.shC);
+                        res.shD = new half3(splat.shD);
+                        res.shE = new half3(splat.shE);
+                        res.shF = new half3(splat.shF);
+                        res.shPadding = default;
+                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemFloat16>(1);
+                        arr[index] = res;
+                    }
+                    break;
+                case GaussianSplatAsset.SHFormat.Norm11:
+                    {
+                        GaussianSplatAsset.SHTableItemNorm11 res;
+                        res.sh1 = EncodeFloat3ToNorm11(splat.sh1);
+                        res.sh2 = EncodeFloat3ToNorm11(splat.sh2);
+                        res.sh3 = EncodeFloat3ToNorm11(splat.sh3);
+                        res.sh4 = EncodeFloat3ToNorm11(splat.sh4);
+                        res.sh5 = EncodeFloat3ToNorm11(splat.sh5);
+                        res.sh6 = EncodeFloat3ToNorm11(splat.sh6);
+                        res.sh7 = EncodeFloat3ToNorm11(splat.sh7);
+                        res.sh8 = EncodeFloat3ToNorm11(splat.sh8);
+                        res.sh9 = EncodeFloat3ToNorm11(splat.sh9);
+                        res.shA = EncodeFloat3ToNorm11(splat.shA);
+                        res.shB = EncodeFloat3ToNorm11(splat.shB);
+                        res.shC = EncodeFloat3ToNorm11(splat.shC);
+                        res.shD = EncodeFloat3ToNorm11(splat.shD);
+                        res.shE = EncodeFloat3ToNorm11(splat.shE);
+                        res.shF = EncodeFloat3ToNorm11(splat.shF);
+                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemNorm11>(1);
+                        arr[index] = res;
+                    }
+                    break;
+                case GaussianSplatAsset.SHFormat.Norm6:
+                    {
+                        GaussianSplatAsset.SHTableItemNorm6 res;
+                        res.sh1 = EncodeFloat3ToNorm565(splat.sh1);
+                        res.sh2 = EncodeFloat3ToNorm565(splat.sh2);
+                        res.sh3 = EncodeFloat3ToNorm565(splat.sh3);
+                        res.sh4 = EncodeFloat3ToNorm565(splat.sh4);
+                        res.sh5 = EncodeFloat3ToNorm565(splat.sh5);
+                        res.sh6 = EncodeFloat3ToNorm565(splat.sh6);
+                        res.sh7 = EncodeFloat3ToNorm565(splat.sh7);
+                        res.sh8 = EncodeFloat3ToNorm565(splat.sh8);
+                        res.sh9 = EncodeFloat3ToNorm565(splat.sh9);
+                        res.shA = EncodeFloat3ToNorm565(splat.shA);
+                        res.shB = EncodeFloat3ToNorm565(splat.shB);
+                        res.shC = EncodeFloat3ToNorm565(splat.shC);
+                        res.shD = EncodeFloat3ToNorm565(splat.shD);
+                        res.shE = EncodeFloat3ToNorm565(splat.shE);
+                        res.shF = EncodeFloat3ToNorm565(splat.shF);
+                        res.shPadding = default;
+                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemNorm6>(1);
+                        arr[index] = res;
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
@@ -951,7 +1054,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         fs.Write(data.Reinterpret<byte>(UnsafeUtility.SizeOf<T>()));
     }
 
-    void CreateSHData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<GaussianSplatAsset.SHTableItem> clusteredSHs)
+    void CreateSHData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<GaussianSplatAsset.SHTableItemFloat16> clusteredSHs)
     {
         if (clusteredSHs.IsCreated)
         {
@@ -959,11 +1062,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
         else
         {
-            int dataLen = inputSplats.Length;
-            NativeArray<GaussianSplatAsset.SHTableItem> data = new(dataLen, Allocator.TempJob);
+            int dataLen = (int)GaussianSplatAsset.CalcSHDataSize(inputSplats.Length, m_FormatSH);
+            NativeArray<byte> data = new(dataLen, Allocator.TempJob);
             CreateSHDataJob job = new CreateSHDataJob
             {
                 m_Input = inputSplats,
+                m_Format = m_FormatSH,
                 m_Output = data
             };
             job.Schedule(inputSplats.Length, 8192).Complete();
