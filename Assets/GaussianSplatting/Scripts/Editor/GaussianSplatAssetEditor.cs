@@ -21,7 +21,7 @@ public class GaussianSplatAssetEditor : Editor
             using var _ = new EditorGUI.DisabledScope(true);
             EditorGUILayout.IntField("Splats", splatCount);
             var prevBackColor = GUI.backgroundColor;
-            if (gs.m_FormatVersion != GaussianSplatAsset.kChunkSize)
+            if (gs.m_FormatVersion != GaussianSplatAsset.kCurrentVersion)
                 GUI.backgroundColor *= Color.red;
             EditorGUILayout.IntField("Version", gs.m_FormatVersion);
             GUI.backgroundColor = prevBackColor;
