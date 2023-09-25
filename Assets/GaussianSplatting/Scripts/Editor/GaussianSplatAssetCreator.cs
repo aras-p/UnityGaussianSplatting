@@ -110,7 +110,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
         }
 
-        const float kSizeColWidth = 60;
+        const float kSizeColWidth = 70;
         EditorGUI.BeginDisabledGroup(m_Quality != DataQuality.Custom);
         EditorGUI.indentLevel++;
         GUILayout.BeginHorizontal();
@@ -127,7 +127,14 @@ public class GaussianSplatAssetCreator : EditorWindow
         GUILayout.EndHorizontal();
         GUILayout.BeginHorizontal();
         m_FormatSH = (GaussianSplatAsset.SHFormat) EditorGUILayout.EnumPopup("SH", m_FormatSH);
-        GUILayout.Label(sizeSHs > 0 ? EditorUtility.FormatBytes(sizeSHs) : string.Empty, GUILayout.Width(kSizeColWidth));
+        GUIContent shGC = new GUIContent();
+        shGC.text = sizeSHs > 0 ? EditorUtility.FormatBytes(sizeSHs) : string.Empty;
+        if (m_FormatSH >= GaussianSplatAsset.SHFormat.Cluster64k)
+        {
+            shGC.tooltip = "Note that SH clustering is not fast! (3-10 minutes for 6M splats)";
+            shGC.image = EditorGUIUtility.IconContent("console.warnicon.sml").image;
+        }
+        GUILayout.Label(shGC, GUILayout.Width(kSizeColWidth));
         GUILayout.EndHorizontal();
         EditorGUI.indentLevel--;
         EditorGUI.EndDisabledGroup();
@@ -512,11 +519,11 @@ public class GaussianSplatAssetCreator : EditorWindow
         const int kShDim = 15 * 3;
         int clusterIterations = format switch
         {
-            GaussianSplatAsset.SHFormat.Cluster64k => 1,
-            GaussianSplatAsset.SHFormat.Cluster32k => 1,
-            GaussianSplatAsset.SHFormat.Cluster16k => 2,
-            GaussianSplatAsset.SHFormat.Cluster8k => 2,
-            GaussianSplatAsset.SHFormat.Cluster4k => 3,
+            GaussianSplatAsset.SHFormat.Cluster64k => 2,
+            GaussianSplatAsset.SHFormat.Cluster32k => 2,
+            GaussianSplatAsset.SHFormat.Cluster16k => 3,
+            GaussianSplatAsset.SHFormat.Cluster8k => 4,
+            GaussianSplatAsset.SHFormat.Cluster4k => 5,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
 
@@ -540,7 +547,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(shCount, 256).Complete();
         shMeans.Dispose();
         float t1 = Time.realtimeSinceStartup;
-        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount} in {t1-t0:F1}s");
+        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({clusterIterations} iters) in {t1-t0:F1}s");
     }
 
     [BurstCompile]
