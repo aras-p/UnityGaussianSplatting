@@ -169,8 +169,9 @@ public struct KMeansClustering
         aIndex *= dim;
         bIndex *= dim;
         float d = 0;
-        if (IsAvxSupported && dim >= 8)
+        if (IsAvxSupported)
         {
+            // 8x wide with AVX
             int i = 0;
             float* aptr = (float*) a.GetUnsafeReadOnlyPtr() + aIndex;
             float* bptr = (float*) b.GetUnsafeReadOnlyPtr() + bIndex;
@@ -187,6 +188,7 @@ public struct KMeansClustering
                 aptr += 8;
                 bptr += 8;
             }
+            // remainder
             for (; i < dim; ++i)
             {
                 float delta = *aptr - *bptr;
@@ -194,6 +196,34 @@ public struct KMeansClustering
                 aptr++;
                 bptr++;
             }
+        }
+        else if (Arm.Neon.IsNeonSupported)
+        {
+            // 4x wide with NEON
+            int i = 0;
+            float* aptr = (float*) a.GetUnsafeReadOnlyPtr() + aIndex;
+            float* bptr = (float*) b.GetUnsafeReadOnlyPtr() + bIndex;
+            for (; i + 3 < dim; i += 4)
+            {
+                v128 va = Arm.Neon.vld1q_f32(aptr);
+                v128 vb = Arm.Neon.vld1q_f32(bptr);
+                v128 vd = Arm.Neon.vsubq_f32(va, vb);
+                vd = Arm.Neon.vmulq_f32(vd, vd);
+
+                d += Arm.Neon.vaddvq_f32(vd);
+
+                aptr += 4;
+                bptr += 4;
+            }
+            // remainder
+            for (; i < dim; ++i)
+            {
+                float delta = *aptr - *bptr;
+                d += delta * delta;
+                aptr++;
+                bptr++;
+            }
+            
         }
         else
         {
