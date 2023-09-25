@@ -276,7 +276,7 @@ uint LoadUShort(ByteAddressBuffer dataBuffer, uint addrU)
     uint val = dataBuffer.Load(addrA);
     if (addrU != addrA)
         val >>= 16;
-    return val;
+    return val & 0xFFFF;
 }
 
 uint LoadUInt(ByteAddressBuffer dataBuffer, uint addrU)
