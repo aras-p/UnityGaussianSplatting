@@ -279,6 +279,18 @@ uint LoadUShort(ByteAddressBuffer dataBuffer, uint addrU)
     return val;
 }
 
+uint LoadUInt(ByteAddressBuffer dataBuffer, uint addrU)
+{
+    uint addrA = addrU & ~0x3;
+    uint val = dataBuffer.Load(addrA);
+    if (addrU != addrA)
+    {
+        uint val1 = dataBuffer.Load(addrA + 4);
+        val = (val >> 16) | ((val1 & 0xFFFF) << 16);
+    }
+    return val;
+}
+
 float3 LoadAndDecodeVector(ByteAddressBuffer dataBuffer, uint addrU, uint fmt)
 {
     uint addrA = addrU & ~0x3;
@@ -357,7 +369,7 @@ SplatData LoadSplatData(uint idx)
         otherStride = 8;
     uint otherAddr = idx * otherStride;
 
-    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(_SplatOther.Load(otherAddr)));
+    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
     s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
     s.scale *= s.scale;
     s.scale *= s.scale;
