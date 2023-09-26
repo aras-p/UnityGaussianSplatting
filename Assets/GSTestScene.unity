@@ -340,6 +340,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Asset: {fileID: 11400000, guid: 255fa8f1f99da9d42ad4594ccf03333a, type: 2}
   m_SplatScale: 1
+  m_OpacityScale: 1
   m_SHOrder: 3
   m_SortNthFrame: 1
   m_RenderMode: 0

@@ -27,6 +27,9 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     [Range(0.1f, 2.0f)] [Tooltip("Additional scaling factor for the splats")]
     public float m_SplatScale = 1.0f;
+    [Range(0.05f, 20.0f)]
+    [Tooltip("Additional scaling factor for opacity")]
+    public float m_OpacityScale = 1.0f;
     [Range(0, 3)] [Tooltip("Spherical Harmonics order to use")]
     public int m_SHOrder = 3;
     [Range(1,30)] [Tooltip("Sort splats only every N frames")]
@@ -194,6 +197,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         
         displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
         displayMat.SetFloat("_SplatScale", m_SplatScale);
+        displayMat.SetFloat("_SplatOpacityScale", m_OpacityScale);
         displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
         displayMat.SetInteger("_SplatCount", m_Asset.m_SplatCount);
         displayMat.SetInteger("_SHOrder", m_SHOrder);
@@ -338,6 +342,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_CSSplatUtilities.SetVector("_VecScreenParams", screenPar);
         m_CSSplatUtilities.SetVector("_VecWorldSpaceCameraPos", camPos);
         m_CSSplatUtilities.SetFloat("_SplatScale", m_SplatScale);
+        m_CSSplatUtilities.SetFloat("_SplatOpacityScale", m_OpacityScale);
         m_CSSplatUtilities.SetInt("_SHOrder", m_SHOrder);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out uint gsY, out uint gsZ);

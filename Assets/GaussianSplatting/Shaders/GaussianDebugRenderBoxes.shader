@@ -31,6 +31,7 @@ struct v2f
 };
 
 float _SplatScale;
+float _SplatOpacityScale;
 
 // based on https://iquilezles.org/articles/palettes/
 // cosine based palette, 4 vec3 params
@@ -65,7 +66,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         centerWorldPos = mul(unity_ObjectToWorld, float4(centerWorldPos,1)).xyz;
 
         o.col.rgb = saturate(splat.sh.col);
-        o.col.a = saturate(splat.opacity);
+        o.col.a = saturate(splat.opacity * _SplatOpacityScale);
 
         localPos = mul(splatRotScaleMat, localPos) * 2;
     }
