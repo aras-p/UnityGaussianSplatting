@@ -1,5 +1,4 @@
 using System;
-using System.Text;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
@@ -8,160 +7,127 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel;
-using UnityEngine;
-using static Unity.Burst.Intrinsics.X86.Avx;
 
-// Implementation of k-means clustering using k-means++ initial values
+// Implementation of "Mini Batch" k-means clustering ("Web-Scale K-Means Clustering", Sculley 2010)
+// using k-means++ for cluster initialization.
 [BurstCompile]
 public struct KMeansClustering
 {
     static ProfilerMarker s_ProfCalculate = new(ProfilerCategory.Render, "KMeans.Calculate", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfInitial = new(ProfilerCategory.Render, "KMeans.Initialize", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfPlusPlus = new(ProfilerCategory.Render, "KMeans.InitialPlusPlus", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfInitialDistanceSum = new(ProfilerCategory.Render, "KMeans.Initialize.DistanceSum", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfInitialPickPoint = new(ProfilerCategory.Render, "KMeans.Initialize.PickPoint", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfInitialDistanceUpdate = new(ProfilerCategory.Render, "KMeans.Initialize.DistanceUpdate", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfAssignClusters = new(ProfilerCategory.Render, "KMeans.AssignClusters", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfUpdateMeans = new(ProfilerCategory.Render, "KMeans.UpdateMeans", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfCheckDelta = new(ProfilerCategory.Render, "KMeans.CheckDelta", MarkerFlags.SampleGPU);
 
-    public static int Calculate(int dim, int nth, NativeArray<float> inputData, NativeArray<float> means,
-        NativeArray<int> clusters, int maxIterations = 1024, float minDelta = 0.0f, bool debug = false,
-        Func<float,bool> progress = null)
+    public static bool Calculate(int dim, NativeArray<float> inputData, int batchSize, float passesOverData, Func<float,bool> progress, NativeArray<float> outClusterMeans, NativeArray<int> outDataLabels)
     {
+        // Parameter checks
         if (dim < 1)
-            throw new InvalidOperationException($"{nameof(KMeansClustering)} dimensionality has to be >= 1, was {dim}");
+            throw new InvalidOperationException($"KMeans: dimensionality has to be >= 1, was {dim}");
+        if (batchSize < 1)
+            throw new InvalidOperationException($"KMeans: batch size has to be >= 1, was {batchSize}");
+        if (passesOverData < 0.0001f)
+            throw new InvalidOperationException($"KMeans: passes over data must be positive, was {passesOverData}");
         if (inputData.Length % dim != 0)
-            throw new InvalidOperationException(
-                $"{nameof(KMeansClustering)} {nameof(inputData)} length must be multiple of {dim}, was {inputData.Length}");
-        if (means.Length % dim != 0)
-            throw new InvalidOperationException(
-                $"{nameof(KMeansClustering)} {nameof(means)} length must be multiple of {dim}, was {means.Length}");
+            throw new InvalidOperationException($"KMeans: input length must be multiple of dim={dim}, was {inputData.Length}");
+        if (outClusterMeans.Length % dim != 0)
+            throw new InvalidOperationException($"KMeans: output means length must be multiple of dim={dim}, was {outClusterMeans.Length}");
         int dataSize = inputData.Length / dim;
-        int k = means.Length / dim;
+        int k = outClusterMeans.Length / dim;
         if (k < 1)
-            throw new InvalidOperationException(
-                $"{nameof(KMeansClustering)} {nameof(clusters)} length must be at least 1, was {clusters.Length}");
+            throw new InvalidOperationException($"KMeans: cluster count length must be at least 1, was {k}");
         if (dataSize < k)
-            throw new InvalidOperationException(
-                $"{nameof(KMeansClustering)} {nameof(inputData)} length ({inputData.Length}) must at least as long as {nameof(means)} ({means.Length})");
-
-        if (dataSize != clusters.Length)
-            throw new InvalidOperationException(
-                $"{nameof(KMeansClustering)} {nameof(clusters)} length must be {dataSize}, was {clusters.Length}");
+            throw new InvalidOperationException($"KMeans: input length ({inputData.Length}) must at least as long as clusters ({outClusterMeans.Length})");
+        if (dataSize != outDataLabels.Length)
+            throw new InvalidOperationException($"KMeans: output labels length must be {dataSize}, was {outDataLabels.Length}");
 
         using var prof = s_ProfCalculate.Auto();
+        batchSize = math.min(dataSize, batchSize);
+        uint rngState = 1;
 
-        // Initial means assignment using k-means++
-        if (!InitialMeansPP(dim, nth, k, inputData, means, debug, progress))
-            return 0;
+        // Do initial cluster placement
+        int initBatchSize = 10 * k;
+        const int kInitAttempts = 3;
+        if (!InitializeCentroids(dim, inputData, initBatchSize, ref rngState, kInitAttempts, outClusterMeans, progress))
+            return false;
 
-        NativeArray<float> prevMeans = new(k * dim, Allocator.Persistent);
-        NativeArray<float> prevPrevMeans = new(k * dim, Allocator.Persistent);
-        AssignClustersJob jobAssignClusters = new AssignClustersJob
-        {
-            dim = dim,
-            data = inputData,
-            means = means,
-            clusters = clusters
-        };
-        UpdateMeansJob jobUpdateMeans = new UpdateMeansJob
-        {
-            dim = dim,
-            means = means,
-            data = inputData,
-            prevMeans = prevMeans,
-            clusters = clusters
-        };
+        NativeArray<float> counts = new(k, Allocator.TempJob);
 
-        int iterCount = 0;
-        bool canceled = false;
-        do
+        NativeArray<float> batchPoints = new(batchSize * dim, Allocator.TempJob);
+        NativeArray<int> batchClusters = new(batchSize, Allocator.TempJob);
+
+        bool cancelled = false;
+        for (float calcDone = 0.0f, calcLimit = dataSize * passesOverData; calcDone < calcLimit; calcDone += batchSize)
         {
+            if (progress != null && !progress(0.3f + calcDone / calcLimit * 0.4f))
+            {
+                cancelled = true;
+                break;
+            }
+
+            // generate a batch of random input points
+            MakeRandomBatch(dim, inputData, ref rngState, batchPoints);
+
+            // find which of the current centroids each batch point is closest to
+            {
+                using var profPart = s_ProfAssignClusters.Auto();
+                AssignClustersJob job = new AssignClustersJob
+                {
+                    dim = dim,
+                    data = batchPoints,
+                    means = outClusterMeans,
+                    indexOffset = 0,
+                    clusters = batchClusters,
+                };
+                job.Schedule(batchSize, 1).Complete();
+            }
+
+            // update the centroids
+            {
+                using var profPart = s_ProfUpdateMeans.Auto();
+                UpdateCentroidsJob job = new UpdateCentroidsJob
+                {
+                    m_Clusters = outClusterMeans,
+                    m_Dim = dim,
+                    m_Counts = counts,
+                    m_BatchSize = batchSize,
+                    m_BatchClusters = batchClusters,
+                    m_BatchPoints = batchPoints
+                };
+                job.Schedule().Complete();
+            }
+        }
+
+        // finally find out closest clusters for all input points
+        {
+            using var profPart = s_ProfAssignClusters.Auto();
             const int kAssignBatchCount = 256 * 1024;
+            AssignClustersJob job = new AssignClustersJob
+            {
+                dim = dim,
+                data = inputData,
+                means = outClusterMeans,
+                indexOffset = 0,
+                clusters = outDataLabels,
+            };
             for (int i = 0; i < dataSize; i += kAssignBatchCount)
             {
-                if (progress != null && !progress(0.5f + (iterCount + (float)i/dataSize) / maxIterations * 0.5f))
+                if (progress != null && !progress(0.7f + (float) i / dataSize * 0.3f))
                 {
-                    canceled = true;
+                    cancelled = true;
                     break;
                 }
-                using var profJob = s_ProfAssignClusters.Auto();
-                jobAssignClusters.indexOffset = i;
-                jobAssignClusters.Schedule(math.min(kAssignBatchCount, dataSize - i), 256).Complete();
+                job.indexOffset = i;
+                job.Schedule(math.min(kAssignBatchCount, dataSize - i), 512).Complete();
             }
-            if (canceled)
-                break;
-
-            prevPrevMeans.CopyFrom(prevMeans);
-            prevMeans.CopyFrom(means);
-
-            {
-                using var profJob = s_ProfUpdateMeans.Auto();
-                jobUpdateMeans.Schedule().Complete();
-            }
-
-            ++iterCount;
-        } while (
-            iterCount < maxIterations
-            && !means.ArraysEqual(prevMeans)
-            && !means.ArraysEqual(prevPrevMeans)
-            && !DeltaBelowLimit(dim, prevMeans, means, minDelta)
-        );
-
-        prevMeans.Dispose();
-        prevPrevMeans.Dispose();
-        if (canceled)
-            iterCount = 0;
-        return iterCount;
-    }
-
-    static void PrintDebugData(string kind, int dim, NativeArray<float> means, int resultCount, int pointIndex)
-    {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < resultCount; ++i)
-        {
-            sb.Append("(");
-            for (int j = 0; j < dim; ++j)
-            {
-                if (j != 0)
-                    sb.Append(", ");
-                sb.Append($"{means[i*dim+j]:F3}");
-            }
-            sb.Append(") ");
-        }
-        Debug.Log($"Means x{dim} {kind}: point {pointIndex} {sb}");
-    }
-
-    static unsafe bool DeltaBelowLimit(int dim, NativeArray<float> a, NativeArray<float> b, float minDelta)
-    {
-        using var prof = s_ProfCheckDelta.Auto();
-        return DeltaBelowLimitImpl(dim, a.Length, (float*) a.GetUnsafeReadOnlyPtr(), (float*) b.GetUnsafeReadOnlyPtr(),
-            minDelta);
-    }
-
-    [BurstCompile]
-    static unsafe bool DeltaBelowLimitImpl(int dim, int length, float* a, float* b, float minDelta)
-    {
-        if (minDelta <= 0)
-            return false;
-        float minDeltaSq = minDelta * minDelta;
-        for (int i = 0; i < length; i += dim)
-        {
-            float deltaSq = 0;
-            for (var j = 0; j < dim; ++j)
-            {
-                float ab = a[j] - b[j];
-                deltaSq += ab * ab;
-            }
-
-            if (deltaSq > minDeltaSq)
-                return false;
-
-            a += dim;
-            b += dim;
         }
 
-        return true;
+        counts.Dispose();
+        batchPoints.Dispose();
+        batchClusters.Dispose();
+        return !cancelled;
     }
 
     static unsafe float DistanceSquared(int dim, NativeArray<float> a, int aIndex, NativeArray<float> b, int bIndex)
@@ -169,7 +135,7 @@ public struct KMeansClustering
         aIndex *= dim;
         bIndex *= dim;
         float d = 0;
-        if (IsAvxSupported)
+        if (X86.Avx.IsAvxSupported)
         {
             // 8x wide with AVX
             int i = 0;
@@ -177,12 +143,12 @@ public struct KMeansClustering
             float* bptr = (float*) b.GetUnsafeReadOnlyPtr() + bIndex;
             for (; i + 7 < dim; i += 8)
             {
-                v256 va = mm256_loadu_ps(aptr);
-                v256 vb = mm256_loadu_ps(bptr);
-                v256 vd = mm256_sub_ps(va, vb);
-                vd = mm256_mul_ps(vd, vd);
+                v256 va = X86.Avx.mm256_loadu_ps(aptr);
+                v256 vb = X86.Avx.mm256_loadu_ps(bptr);
+                v256 vd = X86.Avx.mm256_sub_ps(va, vb);
+                vd = X86.Avx.mm256_mul_ps(vd, vd);
 
-                vd = mm256_hadd_ps(vd, vd);
+                vd = X86.Avx.mm256_hadd_ps(vd, vd);
                 d += vd.Float0 + vd.Float1 + vd.Float4 + vd.Float5;
 
                 aptr += 8;
@@ -303,11 +269,28 @@ public struct KMeansClustering
     }
 
     [BurstCompile]
-    static int PickPointIndex(int dataSize, ref NativeBitArray taken, ref NativeArray<float> minDistSq, float rval)
+    static int PickPointIndex(int dataSize, ref NativeArray<float> partialSums, ref NativeBitArray taken, ref NativeArray<float> minDistSq, float rval)
     {
-        int pointIndex = -1;
+        // Skip batches until we hit the ones that might have value to pick from: binary search for the batch
+        int indexL = 0;
+        int indexR = partialSums.Length;
+        while (indexL < indexR)
+        {
+            int indexM = (indexL + indexR) / 2;
+            if (partialSums[indexM] < rval)
+                indexL = indexM + 1;
+            else
+                indexR = indexM;
+        }
         float acc = 0.0f;
-        for (int i = 0; i < dataSize; ++i)
+        if (indexL > 0)
+        {
+            acc = partialSums[indexL-1];
+        }
+
+        // Now search for the needed point
+        int pointIndex = -1;
+        for (int i = indexL * CalcDistSqJob.kBatchSize; i < dataSize; ++i)
         {
             if (taken.IsSet(i))
                 continue;
@@ -319,36 +302,38 @@ public struct KMeansClustering
             }
         }
 
+        // If we have not found a point, pick the last available one
+        if (pointIndex < 0)
+        {
+            for (int i = dataSize - 1; i >= 0; --i)
+            {
+                if (taken.IsSet(i))
+                    continue;
+                pointIndex = i;
+                break;
+            }
+        }
+
+        if (pointIndex < 0)
+            pointIndex = 0;
+
         return pointIndex;
     }
 
-    static bool InitialMeansPP(int dim, int nth, int k, NativeArray<float> inputData, NativeArray<float> means, bool debug, Func<float,bool> progress)
+    static void KMeansPlusPlus(int dim, int k, NativeArray<float> data, NativeArray<float> means, NativeArray<float> minDistSq, ref uint rngState)
     {
-        using var prof = s_ProfInitial.Auto();
+        using var prof = s_ProfPlusPlus.Auto();
 
-        int dataSize = inputData.Length / dim;
-        NativeArray<float> nthData = default;
-        NativeArray<float> data = inputData;
-        if (nth > 1)
-        {
-            nthData = new NativeArray<float>((dataSize + nth - 1) / nth * dim, Allocator.Persistent);
-            dataSize = nthData.Length / dim;
-            for (int i = 0; i < dataSize; ++i)
-            {
-                CopyElem(dim, inputData, i * nth, nthData, i);
-            }
-            data = nthData;
-        }
+        int dataSize = data.Length / dim;
 
         NativeBitArray taken = new NativeBitArray(dataSize, Allocator.TempJob);
 
         // Select first mean randomly
-        int pointIndex = (int)(pcg_hash(0) % dataSize);
+        int pointIndex = (int)(pcg_random(ref rngState) % dataSize);
         taken.Set(pointIndex, true);
         CopyElem(dim, data, pointIndex, means, 0);
 
         // For each point: closest squared distance to the picked point
-        NativeArray<float> minDistSq = new(dataSize, Allocator.TempJob);
         {
             ClosestDistanceInitialJob job = new ClosestDistanceInitialJob
             {
@@ -358,22 +343,14 @@ public struct KMeansClustering
                 minDistSq = minDistSq,
                 pointIndex = pointIndex
             };
-            job.Schedule(dataSize, 8 * 1024).Complete();
+            job.Schedule(dataSize, 1024).Complete();
         }
 
         int sumBatches = (dataSize + CalcDistSqJob.kBatchSize - 1) / CalcDistSqJob.kBatchSize;
         NativeArray<float> partialSums = new(sumBatches, Allocator.TempJob);
         int resultCount = 1;
-        if (debug) PrintDebugData("CPU", dim, means, resultCount, pointIndex);
-        bool ok = true;
         while (resultCount < k)
         {
-            if (progress != null && !progress((float) resultCount / k * 0.5f))
-            {
-                ok = false;
-                break;
-            }
-
             // Find total sum of distances of not yet taken points
             float distSqTotal = 0;
             {
@@ -387,41 +364,24 @@ public struct KMeansClustering
                 };
                 job.Schedule(sumBatches, 1).Complete();
                 for (int i = 0; i < sumBatches; ++i)
+                {
                     distSqTotal += partialSums[i];
+                    partialSums[i] = distSqTotal;
+                }
             }
 
             // Pick a non-taken point, with a probability proportional
             // to distance: points furthest from any cluster are picked more.
             {
                 using var profPart = s_ProfInitialPickPoint.Auto();
-                float rval = pcg_hash_float((uint)resultCount, distSqTotal);
-                pointIndex = PickPointIndex(dataSize, ref taken, ref minDistSq, rval);
-            }
-
-            // If we have not found a point, pick the last available one
-            if (pointIndex < 0)
-            {
-                for (int i = dataSize - 1; i >= 0; --i)
-                {
-                    if (taken.IsSet(i))
-                        continue;
-                    pointIndex = i;
-                    break;
-                }
-            }
-
-            if (pointIndex < 0)
-            {
-                //@TODO: not sure how this could happen?
-                break;
+                float rval = pcg_hash_float(rngState + (uint)resultCount, distSqTotal);
+                pointIndex = PickPointIndex(dataSize, ref partialSums, ref taken, ref minDistSq, rval);
             }
 
             // Take this point as a new cluster mean
             taken.Set(pointIndex, true);
             CopyElem(dim, data, pointIndex, means, resultCount);
             ++resultCount;
-
-            if (debug) PrintDebugData("CPU", dim, means, resultCount, pointIndex);
 
             if (resultCount < k)
             {
@@ -437,15 +397,12 @@ public struct KMeansClustering
                     taken = taken,
                     meanIndex = resultCount - 1
                 };
-                job.Schedule(dataSize, 8 * 1024).Complete();
+                job.Schedule(dataSize, 256).Complete();
             }
         }
 
-        minDistSq.Dispose();
         taken.Dispose();
         partialSums.Dispose();
-        nthData.Dispose();
-        return ok;
     }
 
     // For each data point, find cluster index that is closest to it
@@ -457,6 +414,7 @@ public struct KMeansClustering
         [ReadOnly] public NativeArray<float> data;
         [ReadOnly] public NativeArray<float> means;
         [NativeDisableParallelForRestriction] public NativeArray<int> clusters;
+        [NativeDisableContainerSafetyRestriction] [NativeDisableParallelForRestriction] public NativeArray<float> distances;
 
         public void Execute(int index)
         {
@@ -474,59 +432,137 @@ public struct KMeansClustering
                 }
             }
             clusters[index] = minIndex;
+            if (distances.IsCreated)
+                distances[index] = minDist;
         }
     }
-    
-    // For each means, update them to centroid of points that are assigned to it
-    [BurstCompile]
-    struct UpdateMeansJob : IJob
+
+    static void MakeRandomBatch(int dim, NativeArray<float> inputData, ref uint rngState, NativeArray<float> outBatch)
     {
-        public int dim;
-        [ReadOnly] public NativeArray<float> data;
-        [ReadOnly] public NativeArray<float> prevMeans;
-        [ReadOnly] public NativeArray<int> clusters;
-        public NativeArray<float> means;
-
-        public unsafe void Execute()
+        var job = new MakeBatchJob
         {
-            int dataSize = data.Length / dim;
-            int k = prevMeans.Length / dim;
-            // clear cluster sums and counts to zero
-            NativeArray<int> counts = new(k, Allocator.Temp);
-            UnsafeUtility.MemClear(means.GetUnsafePtr(), means.Length * sizeof(float));
+            m_Dim = dim,
+            m_InputData = inputData,
+            m_Seed = pcg_random(ref rngState),
+            m_OutBatch = outBatch
+        };
+        job.Schedule().Complete();
+    }
 
-            // sum up cluster values
-            int dataOffset = 0;
-            for (int i = 0; i < dataSize; ++i)
+    [BurstCompile]
+    struct MakeBatchJob : IJob
+    {
+        public int m_Dim;
+        public NativeArray<float> m_InputData;
+        public NativeArray<float> m_OutBatch;
+        public uint m_Seed;
+        public void Execute()
+        {
+            uint dataSize = (uint)(m_InputData.Length / m_Dim);
+            int batchSize = m_OutBatch.Length / m_Dim;
+            NativeHashSet<int> picked = new(batchSize, Allocator.Temp);
+            while (picked.Count < batchSize)
             {
-                int cluster = clusters[i];
-                int meanOffset = cluster * dim;
-                counts[cluster]++;
-                for (int j = 0; j < dim; ++j)
-                    means[meanOffset + j] += data[dataOffset + j];
-                dataOffset += dim;
-            }
-            
-            // compute means for clusters
-            for (int i = 0; i < k; ++i)
-            {
-                int count = counts[i];
-                if (count == 0)
+                int index = (int)(pcg_hash(m_Seed++) % dataSize);
+                if (!picked.Contains(index))
                 {
-                    // keep from old means
-                    CopyElem(dim, prevMeans, i, means, i);
+                    CopyElem(m_Dim, m_InputData, index, m_OutBatch, picked.Count);
+                    picked.Add(index);
                 }
-                else
+            }
+            picked.Dispose();
+        }
+    }
+
+    [BurstCompile]
+    struct UpdateCentroidsJob : IJob
+    {
+        public int m_Dim;
+        public int m_BatchSize;
+        [ReadOnly] public NativeArray<int> m_BatchClusters;
+        public NativeArray<float> m_Counts;
+        [ReadOnly] public NativeArray<float> m_BatchPoints;
+        public NativeArray<float> m_Clusters;
+
+        public void Execute()
+        {
+            for (int i = 0; i < m_BatchSize; ++i)
+            {
+                int clusterIndex = m_BatchClusters[i];
+                m_Counts[clusterIndex]++;
+                float alpha = 1.0f / m_Counts[clusterIndex];
+
+                for (int j = 0; j < m_Dim; ++j)
                 {
-                    // average
-                    float invCount = 1.0f / count;
-                    for (int j = 0; j < dim; ++j)
-                    {
-                        means[i * dim + j] *= invCount;
-                    }
+                    m_Clusters[clusterIndex * m_Dim + j] = math.lerp(m_Clusters[clusterIndex * m_Dim + j],
+                        m_BatchPoints[i * m_Dim + j], alpha);
                 }
             }
         }
+    }
+
+    static bool InitializeCentroids(int dim, NativeArray<float> inputData, int initBatchSize, ref uint rngState, int initAttempts, NativeArray<float> outClusters, Func<float,bool> progress)
+    {
+        using var prof = s_ProfPlusPlus.Auto();
+
+        int k = outClusters.Length / dim;
+        int dataSize = inputData.Length / dim;
+        initBatchSize = math.min(initBatchSize, dataSize);
+
+        NativeArray<float> centroidBatch = new(initBatchSize * dim, Allocator.TempJob);
+        NativeArray<float> validationBatch = new(initBatchSize * dim, Allocator.TempJob);
+        MakeRandomBatch(dim, inputData, ref rngState, centroidBatch);
+        MakeRandomBatch(dim, inputData, ref rngState, validationBatch);
+
+        NativeArray<int> tmpIndices = new(initBatchSize, Allocator.TempJob);
+        NativeArray<float> tmpDistances = new(initBatchSize, Allocator.TempJob);
+        NativeArray<float> curCentroids = new(k * dim, Allocator.TempJob);
+
+        float minDistSum = float.MaxValue;
+
+        bool cancelled = false;
+        for (int ia = 0; ia < initAttempts; ++ia)
+        {
+            if (progress != null && !progress((float) ia / initAttempts * 0.3f))
+            {
+                cancelled = true;
+                break;
+            }
+
+            KMeansPlusPlus(dim, k, centroidBatch, curCentroids, tmpDistances, ref rngState);
+
+            {
+                using var profPart = s_ProfAssignClusters.Auto();
+                AssignClustersJob job = new AssignClustersJob
+                {
+                    dim = dim,
+                    data = validationBatch,
+                    means = curCentroids,
+                    indexOffset = 0,
+                    clusters = tmpIndices,
+                    distances = tmpDistances
+                };
+                job.Schedule(initBatchSize, 1).Complete();
+            }
+
+            float distSum = 0;
+            foreach (var d in tmpDistances)
+                distSum += d;
+
+            // is this centroid better?
+            if (distSum < minDistSum)
+            {
+                minDistSum = distSum;
+                outClusters.CopyFrom(curCentroids);
+            }
+        }
+
+        centroidBatch.Dispose();
+        validationBatch.Dispose();
+        tmpDistances.Dispose();
+        tmpIndices.Dispose();
+        curCentroids.Dispose();
+        return !cancelled;
     }
 
     // https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
@@ -542,5 +578,13 @@ public struct KMeansClustering
         uint val = pcg_hash(input);
         float f = math.asfloat(0x3f800000 | (val >> 9)) - 1.0f;
         return f * upTo;
+    }
+
+    static uint pcg_random(ref uint rng_state)
+    {
+        uint state = rng_state;
+        rng_state = rng_state * 747796405u + 2891336453u;
+        uint word = ((state >> (int)((state >> 28) + 4u)) ^ state) * 277803737u;
+        return (word >> 22) ^ word;
     }
 }

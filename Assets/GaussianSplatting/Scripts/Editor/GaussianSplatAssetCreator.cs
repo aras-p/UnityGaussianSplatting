@@ -514,16 +514,15 @@ public class GaussianSplatAssetCreator : EditorWindow
         if (shCount >= splatData.Length) // no need to cluster, just use raw data
             return;
 
-        int clusterNthStep = math.min(splatData.Length / 1000, 97);
-
         const int kShDim = 15 * 3;
-        int clusterIterations = format switch
+        const int kBatchSize = 2048;
+        float passesOverData = format switch
         {
-            GaussianSplatAsset.SHFormat.Cluster64k => 2,
-            GaussianSplatAsset.SHFormat.Cluster32k => 2,
-            GaussianSplatAsset.SHFormat.Cluster16k => 3,
-            GaussianSplatAsset.SHFormat.Cluster8k => 4,
-            GaussianSplatAsset.SHFormat.Cluster4k => 5,
+            GaussianSplatAsset.SHFormat.Cluster64k => 0.3f,
+            GaussianSplatAsset.SHFormat.Cluster32k => 0.4f,
+            GaussianSplatAsset.SHFormat.Cluster16k => 0.5f,
+            GaussianSplatAsset.SHFormat.Cluster8k => 0.8f,
+            GaussianSplatAsset.SHFormat.Cluster4k => 1.2f,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
 
@@ -534,7 +533,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         NativeArray<float> shMeans = new(shCount * kShDim, Allocator.Persistent);
         shIndices = new(splatData.Length, Allocator.Persistent);
 
-        KMeansClustering.Calculate(kShDim, clusterNthStep, shData, shMeans, shIndices, clusterIterations, 0.0001f, false, ClusterSHProgress);
+        KMeansClustering.Calculate(kShDim, shData, kBatchSize, passesOverData, ClusterSHProgress, shMeans, shIndices);
         shData.Dispose();
 
         shs = new NativeArray<GaussianSplatAsset.SHTableItemFloat16>(shCount, Allocator.Persistent);
@@ -547,7 +546,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(shCount, 256).Complete();
         shMeans.Dispose();
         float t1 = Time.realtimeSinceStartup;
-        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({clusterIterations} iters) in {t1-t0:F1}s");
+        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({passesOverData:F1}pass/{kBatchSize}batch) in {t1-t0:F0}s");
     }
 
     [BurstCompile]
