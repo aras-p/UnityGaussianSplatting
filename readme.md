@@ -19,7 +19,7 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 
 :warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
-First download or clone this repository and open as a Unity (2022.3) project. Note that the project defaults to DX12 on Windows,
+First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project defaults to DX12 on Windows,
 since then it can use a faster sorting routine (DX11 should also work, but sorting will be slower).
 
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
@@ -51,23 +51,25 @@ child object.
 _That's it!_
 
 Wishlist that I may or might not do at some point:
-- [x] Make it respect the game object transform
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
-- [x] Look at ways to make the data sets smaller (both on-disk and in-memory) ([blog post](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/))
-- [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
 - [ ] Maybe look at making it work in URP/HDRP? Not sure yet
+- [ ] Look into making on-disk data size smaller
+- [x] Make it respect the game object transform
+- [x] Look at ways to make the data sets smaller (in memory) ([blog post 1](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/), [blog post 2](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/))
+- [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
 - [x] Make sorting faster (bitonic -> FidelityFX radix sort)
 
 ## Write-ups
 
-My own blog posts about all this _(so far... not that many!)_:
-* [Gaussian Splatting is pretty cool!](https://aras-p.info/blog/2023/09/05/Gaussian-Splatting-is-pretty-cool/) (2023 Sep)
-* [Making Gaussian Splats smaller](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/) (2023 Sep)
+My own blog posts about all this:
+* [Gaussian Splatting is pretty cool!](https://aras-p.info/blog/2023/09/05/Gaussian-Splatting-is-pretty-cool/) (2023 Sep 5)
+* [Making Gaussian Splats smaller](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/) (2023 Sep 13)
+* [Making Gaussian Splats more smaller](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/) (2023 Sep 27)
 
 ## Performance numbers:
 
 "bicycle" scene from the paper, with 6.1M splats and first camera in there, rendering at 1200x797 resolution,
-at "Medium" asset quality level (273MB asset file):
+at "Medium" asset quality level (283MB asset file):
 
 * Windows (NVIDIA RTX 3080 Ti):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
