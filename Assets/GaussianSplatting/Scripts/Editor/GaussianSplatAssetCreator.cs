@@ -21,12 +21,12 @@ public class GaussianSplatAssetCreator : EditorWindow
 
     enum DataQuality
     {
-        Custom,
-        VeryLow,
-        Low,
-        Medium,
-        High,
         VeryHigh,
+        High,
+        Medium,
+        Low,
+        VeryLow,
+        Custom,
     }
 
     enum ColorFormat
@@ -166,13 +166,13 @@ public class GaussianSplatAssetCreator : EditorWindow
         {
             case DataQuality.Custom:
                 break;
-            case DataQuality.VeryLow: // 21.6x smaller (was: 20.7x smaller, 24.07 PSNR)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm6;
+            case DataQuality.VeryLow: // 18.4x smaller, 32.27 PSNR (was: 20.7x smaller, 24.07 PSNR)
+                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatColor = ColorFormat.BC7;
                 m_FormatSH = GaussianSplatAsset.SHFormat.Cluster4k;
                 break;
-            case DataQuality.Low: // 14.9x smaller (was: 13.1x smaller, 34.76 PSNR)
+            case DataQuality.Low: // 14.9x smaller, 35.17 PSNR (was: 13.1x smaller, 34.76 PSNR)
                 m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
                 m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
                 m_FormatColor = ColorFormat.Norm8x4;
