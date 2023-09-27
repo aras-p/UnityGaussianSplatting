@@ -40,15 +40,15 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     }
 
     uint origIdx = _SplatSortKeys[idx];
-    uint3 coord = SplatIndexToPixelIndex(origIdx);
 
     uint chunkIdx = origIdx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
 
-    float3 pos = LoadSplatPosTex(coord);
+    float3 pos = LoadSplatPos(origIdx);
     pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, pos);
     pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
+
     // make distance radix sort friendly from http://stereopsis.com/radix.html
     uint fu = asuint(pos.z);
     uint mask = -((int)(fu >> 31)) | 0x80000000;
@@ -66,6 +66,7 @@ float4 _VecScreenParams;
 float4 _VecWorldSpaceCameraPos;
 
 float _SplatScale;
+float _SplatOpacityScale;
 uint _SHOrder;
 
 [numthreads(GROUP_SIZE,1,1)]
@@ -113,7 +114,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
         half4 col;
         col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder);
-        col.a = splat.opacity;
+        col.a = min(splat.opacity * _SplatOpacityScale, 65000);
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }

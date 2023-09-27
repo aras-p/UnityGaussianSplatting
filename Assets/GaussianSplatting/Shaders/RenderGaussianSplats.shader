@@ -67,11 +67,12 @@ half4 frag (v2f i) : SV_Target
 {
     float2 d = CalcScreenSpaceDelta(i.vertex.xy, i.centerScreenPos, _ProjectionParams);
     float power = CalcPowerFromConic(i.conic, d);
-    i.col.a *= saturate(exp(power));
-    if (i.col.a < 1.0/255.0)
+	half alpha = exp(power);
+	alpha = saturate(alpha * i.col.a);
+    if (alpha < 1.0/255.0)
         discard;
 
-    half4 res = half4(i.col.rgb * i.col.a, i.col.a);
+    half4 res = half4(i.col.rgb * alpha, alpha);
     return res;
 }
 ENDCG

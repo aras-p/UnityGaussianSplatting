@@ -173,27 +173,6 @@ half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder)
     return max(res, 0);
 }
 
-Texture2D _TexPos;
-Texture2D _TexRot;
-Texture2D _TexScl;
-Texture2D _TexCol;
-Texture2D _TexSH1;
-Texture2D _TexSH2;
-Texture2D _TexSH3;
-Texture2D _TexSH4;
-Texture2D _TexSH5;
-Texture2D _TexSH6;
-Texture2D _TexSH7;
-Texture2D _TexSH8;
-Texture2D _TexSH9;
-Texture2D _TexSHA;
-Texture2D _TexSHB;
-Texture2D _TexSHC;
-Texture2D _TexSHD;
-Texture2D _TexSHE;
-Texture2D _TexSHF;
-uint _TexFlagBits;
-
 static const uint kTexWidth = 2048;
 
 uint3 SplatIndexToPixelIndex(uint idx)
@@ -249,18 +228,40 @@ float4 DecodeRotation(float4 pq)
     return q;
 }
 
-float3 DecodePacked_11_10_11(float val)
+half3 DecodePacked_6_5_5(uint enc)
 {
-    uint enc = asuint(val);
-    return float3(
+    return half3(
+        (enc & 63) / 63.0,
+        ((enc >> 6) & 31) / 31.0,
+        ((enc >> 11) & 31) / 31.0);
+}
+
+half3 DecodePacked_5_6_5(uint enc)
+{
+    return half3(
+        (enc & 31) / 31.0,
+        ((enc >> 5) & 63) / 63.0,
+        ((enc >> 11) & 31) / 31.0);
+}
+
+half3 DecodePacked_11_10_11(uint enc)
+{
+    return half3(
         (enc & 2047) / 2047.0,
         ((enc >> 11) & 1023) / 1023.0,
         ((enc >> 21) & 2047) / 2047.0);
 }
 
-float4 DecodePacked_10_10_10_2(float val)
+float3 DecodePacked_16_16_16(uint2 enc)
 {
-    uint enc = asuint(val);
+    return float3(
+        (enc.x & 65535) / 65535.0,
+        ((enc.x >> 16) & 65535) / 65535.0,
+        (enc.y & 65535) / 65535.0);
+}
+
+float4 DecodePacked_10_10_10_2(uint enc)
+{
     return float4(
         (enc & 1023) / 1023.0,
         ((enc >> 10) & 1023) / 1023.0,
@@ -268,100 +269,219 @@ float4 DecodePacked_10_10_10_2(float val)
         ((enc >> 30) & 3) / 3.0);
 }
 
-float3 LoadSplatPosTex(uint3 coord)
+ByteAddressBuffer _SplatPos;
+ByteAddressBuffer _SplatOther;
+ByteAddressBuffer _SplatSH;
+Texture2D _SplatColor;
+uint _SplatFormat;
+
+#define VECTOR_FMT_16 0
+#define VECTOR_FMT_11 1
+#define VECTOR_FMT_6 2
+
+uint LoadUShort(ByteAddressBuffer dataBuffer, uint addrU)
 {
-    float3 val = _TexPos.Load(coord).rgb;
-    if (_TexFlagBits & 1) val = DecodePacked_11_10_11(val.r);
+    uint addrA = addrU & ~0x3;
+    uint val = dataBuffer.Load(addrA);
+    if (addrU != addrA)
+        val >>= 16;
+    return val & 0xFFFF;
+}
+
+uint LoadUInt(ByteAddressBuffer dataBuffer, uint addrU)
+{
+    uint addrA = addrU & ~0x3;
+    uint val = dataBuffer.Load(addrA);
+    if (addrU != addrA)
+    {
+        uint val1 = dataBuffer.Load(addrA + 4);
+        val = (val >> 16) | ((val1 & 0xFFFF) << 16);
+    }
     return val;
 }
-float4 LoadSplatRotTex(uint3 coord)
+
+float3 LoadAndDecodeVector(ByteAddressBuffer dataBuffer, uint addrU, uint fmt)
 {
-    float4 val = _TexRot.Load(coord);
-    if (_TexFlagBits & 2) val = DecodePacked_10_10_10_2(val.r);
-    return val;
+    uint addrA = addrU & ~0x3;
+
+    uint val0 = dataBuffer.Load(addrA);
+
+    float3 res = 0;
+    if (fmt == VECTOR_FMT_16)
+    {
+        uint val1 = dataBuffer.Load(addrA + 4);
+        if (addrU != addrA)
+        {
+            val0 = (val0 >> 16) | ((val1 & 0xFFFF) << 16);
+            val1 >>= 16;
+        }
+        res = DecodePacked_16_16_16(uint2(val0, val1));
+    }
+    else if (fmt == VECTOR_FMT_11)
+    {
+        uint val1 = dataBuffer.Load(addrA + 4);
+        if (addrU != addrA)
+        {
+            val0 = (val0 >> 16) | ((val1 & 0xFFFF) << 16);
+        }
+        res = DecodePacked_11_10_11(val0);
+    }
+    else if (fmt == VECTOR_FMT_6)
+    {
+        if (addrU != addrA)
+            val0 >>= 16;
+        res = DecodePacked_6_5_5(val0);
+    }
+    return res;
 }
-float3 LoadSplatSclTex(uint3 coord)
+
+float3 LoadSplatPos(uint index)
 {
-    float3 val = _TexScl.Load(coord).rgb;
-    if (_TexFlagBits & 4) val = DecodePacked_11_10_11(val.r);
-    return val;
+    uint fmt = _SplatFormat & 0xFF;
+    uint stride = 0;
+    if (fmt == VECTOR_FMT_16)
+        stride = 6;
+    else if (fmt == VECTOR_FMT_11)
+        stride = 4;
+    else if (fmt == VECTOR_FMT_6)
+        stride = 2;
+    return LoadAndDecodeVector(_SplatPos, index * stride, fmt);
 }
-float4 LoadSplatColTex(uint3 coord)
+
+half4 LoadSplatColTex(uint3 coord)
 {
-    float4 val = _TexCol.Load(coord);
-    if (_TexFlagBits & 8) val = DecodePacked_10_10_10_2(val.r);
-    return val;
-}
-float3 LoadSplatShTex(uint3 coord, Texture2D tex)
-{
-    float3 val = tex.Load(coord).rgb;
-    if (_TexFlagBits & 16) val = DecodePacked_11_10_11(val.r);
-    return val;
+    return _SplatColor.Load(coord);
 }
 
 SplatData LoadSplatData(uint idx)
 {
-    SplatData s;
+    SplatData s = (SplatData)0;
     uint3 coord = SplatIndexToPixelIndex(idx);
 
     uint chunkIdx = idx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
     float3 shMin = chunk.boundsMin.shs;
-    float3 shMax = chunk.boundsMax.shs; 
+    float3 shMax = chunk.boundsMax.shs;
 
-    s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPosTex(coord));
-    s.rot       = DecodeRotation(LoadSplatRotTex(coord));
-    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadSplatSclTex(coord));
+    s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPos(idx));
+
+    uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
+    uint shFormat = (_SplatFormat >> 16) & 0xFF;
+
+    uint otherStride = 0;
+    if (scaleFmt == VECTOR_FMT_16)
+        otherStride = 10;
+    else if (scaleFmt == VECTOR_FMT_11)
+        otherStride = 8;
+    else if (scaleFmt == VECTOR_FMT_6)
+        otherStride = 6;
+    if (shFormat > VECTOR_FMT_6)
+        otherStride += 2;
+    uint otherAddr = idx * otherStride;
+
+    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
+    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
     s.scale *= s.scale;
     s.scale *= s.scale;
     s.scale *= s.scale;
     half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, LoadSplatColTex(coord));
     s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;
-    s.sh.sh1    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH1));
-    s.sh.sh2    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH2));
-    s.sh.sh3    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH3));
-    s.sh.sh4    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH4));
-    s.sh.sh5    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH5));
-    s.sh.sh6    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH6));
-    s.sh.sh7    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH7));
-    s.sh.sh8    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH8));
-    s.sh.sh9    = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSH9));
-    s.sh.sh10   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHA));
-    s.sh.sh11   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHB));
-    s.sh.sh12   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHC));
-    s.sh.sh13   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHD));
-    s.sh.sh14   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHE));
-    s.sh.sh15   = lerp(shMin, shMax, LoadSplatShTex(coord, _TexSHF));
-    return s;
-}
 
-SplatData LoadSplatDataRaw(uint2 coord2)
-{
-    SplatData s;
-    uint3 coord = uint3(coord2, 0);
+    uint shIndex = idx;
+    if (shFormat > VECTOR_FMT_6)
+        shIndex = LoadUShort(_SplatOther, otherAddr + otherStride - 2);
 
-    s.pos       = LoadSplatPosTex(coord);
-    s.rot       = float4(LoadSplatRotTex(coord).rgb, 1);
-    s.scale     = LoadSplatSclTex(coord);
-    half4 col   = LoadSplatColTex(coord);
-    s.opacity   = col.a;
-    s.sh.col    = col.rgb;
-    s.sh.sh1    = LoadSplatShTex(coord, _TexSH1);
-    s.sh.sh2    = LoadSplatShTex(coord, _TexSH2);
-    s.sh.sh3    = LoadSplatShTex(coord, _TexSH3);
-    s.sh.sh4    = LoadSplatShTex(coord, _TexSH4);
-    s.sh.sh5    = LoadSplatShTex(coord, _TexSH5);
-    s.sh.sh6    = LoadSplatShTex(coord, _TexSH6);
-    s.sh.sh7    = LoadSplatShTex(coord, _TexSH7);
-    s.sh.sh8    = LoadSplatShTex(coord, _TexSH8);
-    s.sh.sh9    = LoadSplatShTex(coord, _TexSH9);
-    s.sh.sh10   = LoadSplatShTex(coord, _TexSHA);
-    s.sh.sh11   = LoadSplatShTex(coord, _TexSHB);
-    s.sh.sh12   = LoadSplatShTex(coord, _TexSHC);
-    s.sh.sh13   = LoadSplatShTex(coord, _TexSHD);
-    s.sh.sh14   = LoadSplatShTex(coord, _TexSHE);
-    s.sh.sh15   = LoadSplatShTex(coord, _TexSHF);
+    uint shStride = 0;
+    if (shFormat == VECTOR_FMT_16 || shFormat > VECTOR_FMT_6)
+        shStride = 96; // 15*3 fp16, rounded up to multiple of 16
+    else if (shFormat == VECTOR_FMT_11)
+        shStride = 60; // 15x uint
+    else if (shFormat == VECTOR_FMT_6)
+        shStride = 32; // 15x ushort, rounded up to multiple of 4
+
+    uint shOffset = shIndex * shStride;
+    uint4 shRaw0 = _SplatSH.Load4(shOffset);
+    uint4 shRaw1 = _SplatSH.Load4(shOffset + 16);
+    if (shFormat == VECTOR_FMT_16 || shFormat > VECTOR_FMT_6)
+    {
+        uint4 shRaw2 = _SplatSH.Load4(shOffset + 32);
+        uint4 shRaw3 = _SplatSH.Load4(shOffset + 48);
+        uint4 shRaw4 = _SplatSH.Load4(shOffset + 64);
+        uint3 shRaw5 = _SplatSH.Load3(shOffset + 80);
+        s.sh.sh1.r  = f16tof32(shRaw0.x      ); s.sh.sh1.g =  f16tof32(shRaw0.x >> 16); s.sh.sh1.b =  f16tof32(shRaw0.y      );
+        s.sh.sh2.r  = f16tof32(shRaw0.y >> 16); s.sh.sh2.g =  f16tof32(shRaw0.z      ); s.sh.sh2.b =  f16tof32(shRaw0.z >> 16);
+        s.sh.sh3.r  = f16tof32(shRaw0.w      ); s.sh.sh3.g =  f16tof32(shRaw0.w >> 16); s.sh.sh3.b =  f16tof32(shRaw1.x      );
+        s.sh.sh4.r  = f16tof32(shRaw1.x >> 16); s.sh.sh4.g =  f16tof32(shRaw1.y      ); s.sh.sh4.b =  f16tof32(shRaw1.y >> 16);
+        s.sh.sh5.r  = f16tof32(shRaw1.z      ); s.sh.sh5.g =  f16tof32(shRaw1.z >> 16); s.sh.sh5.b =  f16tof32(shRaw1.w      );
+        s.sh.sh6.r  = f16tof32(shRaw1.w >> 16); s.sh.sh6.g =  f16tof32(shRaw2.x      ); s.sh.sh6.b =  f16tof32(shRaw2.x >> 16);
+        s.sh.sh7.r  = f16tof32(shRaw2.y      ); s.sh.sh7.g =  f16tof32(shRaw2.y >> 16); s.sh.sh7.b =  f16tof32(shRaw2.z      );
+        s.sh.sh8.r  = f16tof32(shRaw2.z >> 16); s.sh.sh8.g =  f16tof32(shRaw2.w      ); s.sh.sh8.b =  f16tof32(shRaw2.w >> 16);
+        s.sh.sh9.r  = f16tof32(shRaw3.x      ); s.sh.sh9.g =  f16tof32(shRaw3.x >> 16); s.sh.sh9.b =  f16tof32(shRaw3.y      );
+        s.sh.sh10.r = f16tof32(shRaw3.y >> 16); s.sh.sh10.g = f16tof32(shRaw3.z      ); s.sh.sh10.b = f16tof32(shRaw3.z >> 16);
+        s.sh.sh11.r = f16tof32(shRaw3.w      ); s.sh.sh11.g = f16tof32(shRaw3.w >> 16); s.sh.sh11.b = f16tof32(shRaw4.x      );
+        s.sh.sh12.r = f16tof32(shRaw4.x >> 16); s.sh.sh12.g = f16tof32(shRaw4.y      ); s.sh.sh12.b = f16tof32(shRaw4.y >> 16);
+        s.sh.sh13.r = f16tof32(shRaw4.z      ); s.sh.sh13.g = f16tof32(shRaw4.z >> 16); s.sh.sh13.b = f16tof32(shRaw4.w      );
+        s.sh.sh14.r = f16tof32(shRaw4.w >> 16); s.sh.sh14.g = f16tof32(shRaw5.x      ); s.sh.sh14.b = f16tof32(shRaw5.x >> 16);
+        s.sh.sh15.r = f16tof32(shRaw5.y      ); s.sh.sh15.g = f16tof32(shRaw5.y >> 16); s.sh.sh15.b = f16tof32(shRaw5.z      );
+    }
+    else if (shFormat == VECTOR_FMT_11)
+    {
+        uint4 shRaw2 = _SplatSH.Load4(shOffset + 32);
+        uint3 shRaw3 = _SplatSH.Load3(shOffset + 48);
+        s.sh.sh1 =  DecodePacked_11_10_11(shRaw0.x);
+        s.sh.sh2 =  DecodePacked_11_10_11(shRaw0.y);
+        s.sh.sh3 =  DecodePacked_11_10_11(shRaw0.z);
+        s.sh.sh4 =  DecodePacked_11_10_11(shRaw0.w);
+        s.sh.sh5 =  DecodePacked_11_10_11(shRaw1.x);
+        s.sh.sh6 =  DecodePacked_11_10_11(shRaw1.y);
+        s.sh.sh7 =  DecodePacked_11_10_11(shRaw1.z);
+        s.sh.sh8 =  DecodePacked_11_10_11(shRaw1.w);
+        s.sh.sh9 =  DecodePacked_11_10_11(shRaw2.x);
+        s.sh.sh10 = DecodePacked_11_10_11(shRaw2.y);
+        s.sh.sh11 = DecodePacked_11_10_11(shRaw2.z);
+        s.sh.sh12 = DecodePacked_11_10_11(shRaw2.w);
+        s.sh.sh13 = DecodePacked_11_10_11(shRaw3.x);
+        s.sh.sh14 = DecodePacked_11_10_11(shRaw3.y);
+        s.sh.sh15 = DecodePacked_11_10_11(shRaw3.z);
+    }
+    else if (shFormat == VECTOR_FMT_6)
+    {
+        s.sh.sh1 =  DecodePacked_5_6_5(shRaw0.x);
+        s.sh.sh2 =  DecodePacked_5_6_5(shRaw0.x >> 16);
+        s.sh.sh3 =  DecodePacked_5_6_5(shRaw0.y);
+        s.sh.sh4 =  DecodePacked_5_6_5(shRaw0.y >> 16);
+        s.sh.sh5 =  DecodePacked_5_6_5(shRaw0.z);
+        s.sh.sh6 =  DecodePacked_5_6_5(shRaw0.z >> 16);
+        s.sh.sh7 =  DecodePacked_5_6_5(shRaw0.w);
+        s.sh.sh8 =  DecodePacked_5_6_5(shRaw0.w >> 16);
+        s.sh.sh9 =  DecodePacked_5_6_5(shRaw1.x);
+        s.sh.sh10 = DecodePacked_5_6_5(shRaw1.x >> 16);
+        s.sh.sh11 = DecodePacked_5_6_5(shRaw1.y);
+        s.sh.sh12 = DecodePacked_5_6_5(shRaw1.y >> 16);
+        s.sh.sh13 = DecodePacked_5_6_5(shRaw1.z);
+        s.sh.sh14 = DecodePacked_5_6_5(shRaw1.z >> 16);
+        s.sh.sh15 = DecodePacked_5_6_5(shRaw1.w);
+    }
+
+    if (shFormat <= VECTOR_FMT_6)
+    {
+        s.sh.sh1    = lerp(shMin, shMax, asfloat(s.sh.sh1 ));
+        s.sh.sh2    = lerp(shMin, shMax, asfloat(s.sh.sh2 ));
+        s.sh.sh3    = lerp(shMin, shMax, asfloat(s.sh.sh3 ));
+        s.sh.sh4    = lerp(shMin, shMax, asfloat(s.sh.sh4 ));
+        s.sh.sh5    = lerp(shMin, shMax, asfloat(s.sh.sh5 ));
+        s.sh.sh6    = lerp(shMin, shMax, asfloat(s.sh.sh6 ));
+        s.sh.sh7    = lerp(shMin, shMax, asfloat(s.sh.sh7 ));
+        s.sh.sh8    = lerp(shMin, shMax, asfloat(s.sh.sh8 ));
+        s.sh.sh9    = lerp(shMin, shMax, asfloat(s.sh.sh9 ));
+        s.sh.sh10   = lerp(shMin, shMax, asfloat(s.sh.sh10));
+        s.sh.sh11   = lerp(shMin, shMax, asfloat(s.sh.sh11));
+        s.sh.sh12   = lerp(shMin, shMax, asfloat(s.sh.sh12));
+        s.sh.sh13   = lerp(shMin, shMax, asfloat(s.sh.sh13));
+        s.sh.sh14   = lerp(shMin, shMax, asfloat(s.sh.sh14));
+        s.sh.sh15   = lerp(shMin, shMax, asfloat(s.sh.sh15));
+    }
     return s;
 }
 
