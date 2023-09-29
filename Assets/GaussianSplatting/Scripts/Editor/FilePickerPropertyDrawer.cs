@@ -6,16 +6,28 @@ using UnityEditor.Experimental;
 using System.IO;
 using System.Linq;
 
-[CustomPropertyDrawer(typeof(FolderPickerAttribute))]
-public class FolderPickerPropertyDrawer : PropertyDrawer
+[CustomPropertyDrawer(typeof(FilePickerAttribute))]
+public class FilePickerPropertyDrawer : PropertyDrawer
 {
-    const string kLastPathPref = "nesnausk.utils.FolderPickerLastPath";
-    static Texture2D s_FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
+    const string kLastPathPref = "nesnausk.utils.FilePickerLastPath";
+    static Texture2D s_Icon => EditorGUIUtility.FindTexture(EditorResources.folderIconName);
     static GUIStyle s_StyleTextFieldText;
     static GUIStyle s_StyleTextFieldDropdown;
-    static readonly int kPathFieldControlID = "FolderPickerPathField".GetHashCode();
+    static readonly int kPathFieldControlID = "FilePickerPathField".GetHashCode();
     const int kIconSize = 15;
     const int kRecentPathsCount = 10;
+
+    public static string PathToDisplayString(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return "<none>";
+        path = path.Replace('\\', '/');
+        string[] parts = path.Split('/');
+        if (parts.Length >= 4)
+            path = string.Join('/', parts.TakeLast(4));
+        path = path.Replace('/', '-');
+        return path;
+    }
 
     class PreviousPaths
     {
@@ -26,7 +38,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         }
         public void UpdateContent()
         {
-            this.content = paths.Select(p => new UnityEngine.GUIContent(Path.GetFileName(p))).ToArray();
+            this.content = paths.Select(p => new GUIContent(PathToDisplayString(p))).ToArray();
         }
         public List<string> paths;
         public GUIContent[] content;
@@ -67,24 +79,12 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         }
     }
 
-    static bool CheckPath(string path, string hasToContainFile)
+    static bool CheckPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return false;
-        if (!Directory.Exists(path))
-        {
-            Debug.LogWarning($"{nameof(FolderPickerAttribute)}: folder {path} does not exist");
+        if (!File.Exists(path))
             return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(hasToContainFile))
-        {
-            if (!File.Exists($"{path}/{hasToContainFile}"))
-            {
-                Debug.LogWarning($"{nameof(FolderPickerAttribute)}: folder {path} does not contain required file {hasToContainFile}");
-                return false;
-            }
-        }
         return true;
     }
 
@@ -100,12 +100,12 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         return path;
     }
 
-    bool CheckAndSetNewPath(ref string path, string nameKey, string hasToContainFile)
+    bool CheckAndSetNewPath(ref string path, string nameKey)
     {
         path = PathAbsToStorage(path);
-        if (CheckPath(path, hasToContainFile))
+        if (CheckPath(path))
         {
-            EditorPrefs.SetString(kLastPathPref, path);
+            EditorPrefs.SetString($"{kLastPathPref}-{nameKey}", path);
             UpdatePreviousPaths(nameKey, path);
             GUI.changed = true;
             Event.current.Use();
@@ -114,9 +114,12 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         return false;
     }
 
-    string PreviousPathsDropdown(Rect position, string value, string nameKey, string hasToContainFile)
+    string PreviousPathsDropdown(Rect position, string value, string nameKey)
     {
         PopulatePreviousPaths(nameKey);
+        
+        if (string.IsNullOrWhiteSpace(value))
+            value = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}");
 
         m_PreviousPaths.TryGetValue(nameKey, out var prevPaths);
 
@@ -128,7 +131,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         if (EditorGUI.EndChangeCheck() && parameterIndex < prevPaths.paths.Count)
         {
             string newValue = prevPaths.paths[parameterIndex];
-            if (CheckAndSetNewPath(ref newValue, nameKey, hasToContainFile))
+            if (CheckAndSetNewPath(ref newValue, nameKey))
                 value = newValue;
         }
         EditorGUI.indentLevel = oldIndent;
@@ -136,7 +139,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         return value;
     }
 
-    public string PathFieldGUI(Rect position, GUIContent label, string value, string hasToContainFile, string nameKey)
+    public string PathFieldGUI(Rect position, GUIContent label, string value, string extension, string nameKey)
     {
         if (s_StyleTextFieldText == null) s_StyleTextFieldText = new GUIStyle("TextFieldDropDownText");
         if (s_StyleTextFieldDropdown == null) s_StyleTextFieldDropdown = new GUIStyle("TextFieldDropdown");
@@ -147,9 +150,9 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
         Rect dropdownRect = new Rect(textRect.xMax, fullRect.y, s_StyleTextFieldDropdown.fixedWidth, fullRect.height);
         Rect iconRect = new Rect(textRect.xMax - kIconSize, textRect.y, kIconSize, textRect.height);
 
-        value = PreviousPathsDropdown(dropdownRect, value, nameKey, hasToContainFile);
+        value = PreviousPathsDropdown(dropdownRect, value, nameKey);
 
-        string displayText = string.IsNullOrWhiteSpace(value) ? "None" : Path.GetFileName(value);
+        string displayText = PathToDisplayString(value);
 
         Event evt = Event.current;
         switch (evt.type)
@@ -160,6 +163,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
                     if (evt.keyCode is KeyCode.Backspace or KeyCode.Delete)
                     {
                         value = null;
+                        EditorPrefs.SetString($"{kLastPathPref}-{nameKey}", "");
                         GUI.changed = true;
                         evt.Use();
                     }
@@ -168,7 +172,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
             case EventType.Repaint:
                 s_StyleTextFieldText.Draw(textRect, new GUIContent(displayText), controlId, DragAndDrop.activeControlID == controlId);
                 //s_StyleTextFieldDropdown.Draw(dropdownRect, GUIContent.none, controlId, DragAndDrop.activeControlID == controlId);
-                GUI.DrawTexture(iconRect, s_FolderIcon, ScaleMode.ScaleToFit);
+                GUI.DrawTexture(iconRect, s_Icon, ScaleMode.ScaleToFit);
                 break;
             case EventType.MouseDown:
                 if (evt.button != 0 || !GUI.enabled)
@@ -179,19 +183,19 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
                     if (iconRect.Contains(evt.mousePosition))
                     {
                         if (string.IsNullOrWhiteSpace(value))
-                            value = EditorPrefs.GetString(kLastPathPref);
+                            value = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}");
                         string openToPath = string.Empty;
-                        if (Directory.Exists(value))
-                            openToPath = value;
-                        string newPath = EditorUtility.OpenFolderPanel("Select path", openToPath, "");
-                        if (CheckAndSetNewPath(ref newPath, nameKey, hasToContainFile))
+                        if (File.Exists(value))
+                            openToPath = Path.GetDirectoryName(value);
+                        string newPath = EditorUtility.OpenFilePanel("Select path", openToPath, extension);
+                        if (CheckAndSetNewPath(ref newPath, nameKey))
                         {
                             value = newPath;
                             GUI.changed = true;
                             evt.Use();
                         }
                     }
-                    else if (Directory.Exists(value))
+                    else if (File.Exists(value))
                     {
                         EditorUtility.RevealInFinder(value);
                     }
@@ -207,7 +211,7 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
                         DragAndDrop.visualMode = DragAndDropVisualMode.Generic;
                         string path = DragAndDrop.paths[0];
                         path = PathAbsToStorage(path);
-                        if (CheckPath(path, hasToContainFile))
+                        if (CheckPath(path))
                         {
                             if (evt.type == EventType.DragPerform)
                             {
@@ -238,8 +242,8 @@ public class FolderPickerPropertyDrawer : PropertyDrawer
 
     public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
     {
-        var attr = (FolderPickerAttribute) attribute;
-        string newAsset = PathFieldGUI(position, label, property.stringValue, attr.hasToContainFile, attr.nameKey);
+        var attr = (FilePickerAttribute) attribute;
+        string newAsset = PathFieldGUI(position, label, property.stringValue, attr.extension, attr.nameKey);
         if (GUI.changed)
         {
             property.stringValue = newAsset;

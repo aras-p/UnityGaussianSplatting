@@ -24,13 +24,12 @@ since then it can use a faster sorting routine (DX11 should also work, but sorti
 
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
-Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity. In the dialog point it to
-your gaussian splat "model" directory (it is expected to contain `cameras.json` and `point_cloud/iteration_7000/point_cloud.ply` inside of it,
-and be an actual Gaussian Splat model, not something else).
+Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
+In the dialog, point `Input PLY File` to your Gaussian Splat file. Optionally point `Cameras Json` to the cameras.json file.
 
 Pick desired compression options and output folder, and press "Create Asset" button.
 
-If everything was fine, there should be a GaussianSplat asset that has a bunch of data images next to it:
+If everything was fine, there should be a GaussianSplat asset that has several data files next to it:
 
 <img src="Doc/shotAsset.png" width="600px">
 

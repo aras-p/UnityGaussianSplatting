@@ -15,9 +15,6 @@ using UnityEngine.Experimental.Rendering;
 public class GaussianSplatAssetCreator : EditorWindow
 {
     const string kProgressTitle = "Creating Gaussian Splat Asset";
-    const string kPointCloudPly = "point_cloud/iteration_7000/point_cloud.ply";
-    const string kPointCloud30kPly = "point_cloud/iteration_30000/point_cloud.ply";
-    const string kCamerasJson = "cameras.json";
 
     enum DataQuality
     {
@@ -36,10 +33,10 @@ public class GaussianSplatAssetCreator : EditorWindow
         BC7,
     }
 
-    readonly FolderPickerPropertyDrawer m_FolderPicker = new();
+    readonly FilePickerPropertyDrawer m_FilePicker = new();
 
-    [SerializeField] string m_InputFolder;
-    [SerializeField] bool m_Use30k = true;
+    [SerializeField] string m_InputFile;
+    [SerializeField] private string m_InputCamerasFile;
 
     [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
     [SerializeField] DataQuality m_Quality = DataQuality.Medium;
@@ -72,15 +69,15 @@ public class GaussianSplatAssetCreator : EditorWindow
         EditorGUILayout.Space();
         GUILayout.Label("Input data", EditorStyles.boldLabel);
         var rect = EditorGUILayout.GetControlRect(true);
-        m_InputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Input Folder"), m_InputFolder, kPointCloudPly, "PointCloudFolder");
-        m_Use30k = EditorGUILayout.Toggle(new GUIContent("Use 30k Version", "Use iteration_30000 point cloud if available. Otherwise uses iteration_7000."), m_Use30k);
+        m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY File"), m_InputFile, "ply", "PointCloudFile");
+        rect = EditorGUILayout.GetControlRect(true);
+        m_InputCamerasFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Cameras Json"), m_InputCamerasFile, "json", "PointCloudCamerasJson");
 
-        string plyPath = GetPLYFileName(m_InputFolder, m_Use30k);
-        if (plyPath != m_PrevPlyPath && !string.IsNullOrWhiteSpace(plyPath))
+        if (m_InputFile != m_PrevPlyPath && !string.IsNullOrWhiteSpace(m_InputFile))
         {
-            PLYFileReader.ReadFileHeader(plyPath, out m_PrevVertexCount, out var _, out var _);
-            m_PrevFileSize = new FileInfo(plyPath).Length;
-            m_PrevPlyPath = plyPath;
+            PLYFileReader.ReadFileHeader(m_InputFile, out m_PrevVertexCount, out var _, out var _);
+            m_PrevFileSize = new FileInfo(m_InputFile).Length;
+            m_PrevPlyPath = m_InputFile;
         }
 
         if (m_PrevVertexCount > 0)
@@ -91,7 +88,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         EditorGUILayout.Space();
         GUILayout.Label("Output", EditorStyles.boldLabel);
         rect = EditorGUILayout.GetControlRect(true);
-        m_OutputFolder = m_FolderPicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
+        m_OutputFolder = m_FilePicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
         var newQuality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
         if (newQuality != m_Quality)
         {
@@ -232,9 +229,9 @@ public class GaussianSplatAssetCreator : EditorWindow
     unsafe void CreateAsset()
     {
         m_ErrorMessage = null;
-        if (string.IsNullOrWhiteSpace(m_InputFolder))
+        if (string.IsNullOrWhiteSpace(m_InputFile))
         {
-            m_ErrorMessage = $"Select input folder";
+            m_ErrorMessage = $"Select input PLY file";
             return;
         }
 
@@ -246,8 +243,8 @@ public class GaussianSplatAssetCreator : EditorWindow
         Directory.CreateDirectory(m_OutputFolder);
 
         EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
-        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFolder);
-        using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFolder, m_Use30k);
+        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputCamerasFile);
+        using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFile);
         if (inputSplats.Length == 0)
         {
             EditorUtility.ClearProgressBar();
@@ -275,7 +272,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
         }
 
-        string baseName = Path.GetFileNameWithoutExtension(m_InputFolder) + (m_Use30k ? "_30k" : "_7k");
+        string baseName = Path.GetFileNameWithoutExtension(FilePickerPropertyDrawer.PathToDisplayString(m_InputFile));
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
@@ -325,26 +322,11 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         Selection.activeObject = savedAsset;
     }
-
-    static string GetPLYFileName(string folder, bool use30k)
-    {
-        string plyPath = $"{folder}/{(use30k ? kPointCloud30kPly : kPointCloudPly)}";
-        if (!File.Exists(plyPath))
-        {
-            plyPath = $"{folder}/{kPointCloudPly}";
-            if (!File.Exists(plyPath))
-            {
-                return null;
-            }
-        }
-        return plyPath;
-    }
-
-    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string folder, bool use30k)
+    
+    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string plyPath)
     {
         NativeArray<InputSplatData> data = default;
-        string plyPath = GetPLYFileName(folder, use30k);
-        if (string.IsNullOrWhiteSpace(plyPath))
+        if (!File.Exists(plyPath))
         {
             m_ErrorMessage = $"Did not find {plyPath} file";
             return data;
@@ -1083,9 +1065,8 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string folder)
+    static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string path)
     {
-        string path = $"{folder}/{kCamerasJson}";
         if (!File.Exists(path))
             return null;
 

@@ -16,7 +16,7 @@ public class GaussianSplatGenSynthetic : ScriptableWizard
         RandomInsideBox,
         OrderedInsideBox
     }
-    [FolderPicker(nameKey:"SyntheticDataFolder")]
+    [FilePicker(nameKey:"SyntheticDataFolder")]
     public string m_Folder = "Assets/Models~/synthetic";
 
     public int m_SplatCount = 10000;
