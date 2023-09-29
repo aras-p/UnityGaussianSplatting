@@ -13,14 +13,14 @@ people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
 - The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as a screenspace aligned rectangle that covers the extents of it.
 - Splat color accumulation is done by rendering front-to-back, with a blending mode that results in the same accumulated color as their tile-based renderer.
-- Splat sorting is done with a AMD FidelityFX derived radix sort, or (on DX11) with a GPU bitonic sort that is lifted from Unity HDRP codebase.
+- Splat sorting is done with a AMD FidelityFX derived radix sort.
 
 ## Usage
 
 :warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
-First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project defaults to DX12 on Windows,
-since then it can use a faster sorting routine (DX11 should also work, but sorting will be slower).
+First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
+requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
@@ -73,7 +73,6 @@ at "Medium" asset quality level (283MB asset file):
 * Windows (NVIDIA RTX 3080 Ti):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
   * Unity, DX12 or Vulkan: 12.6ms (79FPS) - 9.4ms rendering, 2.4ms sorting, 0.7ms splat view calc. 1.2GB VRAM usage.
-  * Unity, DX11: 20.8ms (48FPS) - 9.6ms rendering, 10.4ms sorting, 0.6ms splat view calc.
 * Mac (Apple M1 Max):
   * Unity, Metal: 31.8ms (31FPS).
 
@@ -84,5 +83,4 @@ per splat (for sorting, caching view dependent data etc.).
 ## External Code Used
 
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
-- "Island" GPU sorting code adapted from [Tim Gfrerer blog post](https://poniesandlight.co.uk/reflect/bitonic_merge_sort/).
 - "Ffx" GPU sorting code is [AMD FidelityFX ParallelSort](https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort), ported to Unity by me.

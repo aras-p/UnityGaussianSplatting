@@ -40,8 +40,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
     public bool m_RenderInSceneView = true;
-    [Tooltip("Use AMD FidelityFX sorting when available, instead of the slower bitonic sort")]
-    public bool m_PreferFfxSort = true; // use AMD FidelityFX sort if available (currently: DX12, Vulkan, Metal, but *not* DX11)
 
     [Header("Resources")]
 
@@ -51,9 +49,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     public Shader m_ShaderDebugBoxes;
     [Tooltip("Gaussian splatting utilities compute shader")]
     public ComputeShader m_CSSplatUtilities;
-    [Tooltip("'Island' bitonic sort compute shader")]
-    [FormerlySerializedAs("m_CSGpuSort")]
-    public ComputeShader m_CSIslandSort;
     [Tooltip("AMD FidelityFX sort compute shader")]
     public ComputeShader m_CSFfxSort;
 
@@ -66,8 +61,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     GraphicsBuffer m_GpuView;
     GraphicsBuffer m_GpuIndexBuffer;
 
-    IslandGPUSort m_SorterIsland;
-    IslandGPUSort.Args m_SorterIslandArgs;
     FfxParallelSort m_SorterFfx;
     FfxParallelSort.Args m_SorterFfxArgs;
 
@@ -120,19 +113,14 @@ public class GaussianSplatRenderer : MonoBehaviour
             2, 3, 6, 3, 7, 6
         });
 
-        int splatCountNextPot = Mathf.NextPowerOfTwo(m_Asset.m_SplatCount);
-        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortDistances" };
-        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, splatCountNextPot, 4) { name = "GaussianSplatSortIndices" };
+        m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 4) { name = "GaussianSplatSortDistances" };
+        m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 4) { name = "GaussianSplatSortIndices" };
 
         // init keys buffer to splat indices
         m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
-        m_CSSplatUtilities.SetInt("_SplatCountPOT", m_GpuSortDistances.count);
+        m_CSSplatUtilities.SetInt("_SplatCount", m_GpuSortDistances.count);
         m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
         m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
-
-        m_SorterIslandArgs.keys = m_GpuSortDistances;
-        m_SorterIslandArgs.values = m_GpuSortKeys;
-        m_SorterIslandArgs.count = (uint)splatCountNextPot;
 
         m_SorterFfxArgs.inputKeys = m_GpuSortDistances;
         m_SorterFfxArgs.inputValues = m_GpuSortKeys;
@@ -147,7 +135,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         m_FrameCounter = 0;
         m_RenderCommandBuffer = null;
-        if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_CSSplatUtilities == null || m_CSIslandSort == null)
+        if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_CSSplatUtilities == null)
             return;
         if (!SystemInfo.supportsComputeShaders)
             return;
@@ -157,7 +145,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
         m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
 
-        m_SorterIsland = new IslandGPUSort(m_CSIslandSort);
         m_SorterFfx = new FfxParallelSort(m_CSFfxSort);
         m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};        
         
@@ -354,14 +341,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
             return;
 
-        bool useFfx = m_PreferFfxSort && m_SorterFfx.Valid;
         Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
-        if (useFfx)
-        {
-            worldToCamMatrix.m20 *= -1;
-            worldToCamMatrix.m21 *= -1;
-            worldToCamMatrix.m22 *= -1;
-        }
+        worldToCamMatrix.m20 *= -1;
+        worldToCamMatrix.m21 *= -1;
+        worldToCamMatrix.m22 *= -1;
 
         // calculate distance to the camera for each splat
         int kernelIdx = 1;
@@ -374,15 +357,11 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_LocalToWorldMatrix", matrix);
         m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_WorldToCameraMatrix", worldToCamMatrix);
         m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
-        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatCountPOT", m_GpuSortDistances.count);
         m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out _, out _);
         m_RenderCommandBuffer.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
-        if (useFfx)
-            m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
-        else
-            m_SorterIsland.Dispatch(m_RenderCommandBuffer, m_SorterIslandArgs);
+        m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
         m_RenderCommandBuffer.EndSample(s_ProfSort);
     }
 

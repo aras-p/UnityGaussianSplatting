@@ -4,7 +4,7 @@
 #pragma kernel CSCalcDistances
 #pragma kernel CSCalcViewData
 
-#pragma use_dxc metal vulkan
+#pragma use_dxc
 
 #include "GaussianSplatting.hlsl"
 
@@ -13,13 +13,12 @@ float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
-uint _SplatCountPOT;
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSSetIndices (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _SplatCountPOT)
+    if (idx >= _SplatCount)
         return;
 
     _SplatSortKeys[idx] = idx;
@@ -29,15 +28,8 @@ void CSSetIndices (uint3 id : SV_DispatchThreadID)
 void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _SplatCountPOT)
-        return;
-
     if (idx >= _SplatCount)
-    {
-        // fill pad-to-next-POT portion with dummy data that will never get sorted into regular data place
-        _SplatSortDistances[idx] = 0;
         return;
-    }
 
     uint origIdx = _SplatSortKeys[idx];
 
