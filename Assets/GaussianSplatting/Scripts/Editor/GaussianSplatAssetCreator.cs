@@ -15,6 +15,7 @@ using UnityEngine.Experimental.Rendering;
 public class GaussianSplatAssetCreator : EditorWindow
 {
     const string kProgressTitle = "Creating Gaussian Splat Asset";
+    const string kCamerasJson = "cameras.json";
 
     enum DataQuality
     {
@@ -36,7 +37,7 @@ public class GaussianSplatAssetCreator : EditorWindow
     readonly FilePickerPropertyDrawer m_FilePicker = new();
 
     [SerializeField] string m_InputFile;
-    [SerializeField] private string m_InputCamerasFile;
+    [SerializeField] bool m_ImportCameras = true;
 
     [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
     [SerializeField] DataQuality m_Quality = DataQuality.Medium;
@@ -70,8 +71,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         GUILayout.Label("Input data", EditorStyles.boldLabel);
         var rect = EditorGUILayout.GetControlRect(true);
         m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY File"), m_InputFile, "ply", "PointCloudFile");
-        rect = EditorGUILayout.GetControlRect(true);
-        m_InputCamerasFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Cameras Json"), m_InputCamerasFile, "json", "PointCloudCamerasJson");
+        m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
 
         if (m_InputFile != m_PrevPlyPath && !string.IsNullOrWhiteSpace(m_InputFile))
         {
@@ -243,7 +243,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         Directory.CreateDirectory(m_OutputFolder);
 
         EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
-        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputCamerasFile);
+        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFile, m_ImportCameras);
         using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFile);
         if (inputSplats.Length == 0)
         {
@@ -1079,12 +1079,27 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string path)
+    static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string curPath, bool doImport)
     {
-        if (!File.Exists(path))
+        if (!doImport)
             return null;
 
-        string json = File.ReadAllText(path);
+        string camerasPath;
+        while (true)
+        {
+            var dir = Path.GetDirectoryName(curPath);
+            if (!Directory.Exists(dir))
+                return null;
+            camerasPath = $"{dir}/{kCamerasJson}";
+            if (File.Exists(camerasPath))
+                break;
+            curPath = dir;
+        }
+
+        if (!File.Exists(camerasPath))
+            return null;
+
+        string json = File.ReadAllText(camerasPath);
         var jsonCameras = JSONParser.FromJson<List<JsonCamera>>(json);
         if (jsonCameras == null || jsonCameras.Count == 0)
             return null;
