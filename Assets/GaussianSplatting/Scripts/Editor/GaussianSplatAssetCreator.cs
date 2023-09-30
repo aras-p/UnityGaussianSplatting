@@ -280,21 +280,20 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_BoundsMin = boundsMin;
         asset.m_BoundsMax = boundsMax;
 
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Calc chunks", 0.7f);
-        LinearizeData(inputSplats);
-        asset.m_Chunks = CalcChunkData(inputSplats);
-
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Creating data objects", 0.75f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Creating data objects", 0.7f);
         asset.m_SplatCount = inputSplats.Length;
         asset.m_FormatVersion = GaussianSplatAsset.kCurrentVersion;
         asset.m_PosFormat = m_FormatPos;
         asset.m_ScaleFormat = m_FormatScale;
         asset.m_SHFormat = m_FormatSH;
         asset.m_DataHash = new Hash128((uint)asset.m_SplatCount, (uint)asset.m_FormatVersion, 0, 0);
+        string pathChunk = $"{m_OutputFolder}/{baseName}_chk.bytes";
         string pathPos = $"{m_OutputFolder}/{baseName}_pos.bytes";
         string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
         string pathCol = $"{m_OutputFolder}/{baseName}_col.gstex";
         string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
+        LinearizeData(inputSplats);
+        CreateChunkData(inputSplats, pathChunk, ref asset.m_DataHash);
         CreatePositionsData(inputSplats, pathPos, ref asset.m_DataHash);
         CreateOtherData(inputSplats, pathOther, ref asset.m_DataHash, splatSHIndices);
         CreateColorData(inputSplats, pathCol, ref asset.m_DataHash);
@@ -308,6 +307,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
 
         EditorUtility.DisplayProgressBar(kProgressTitle, "Setup data onto asset", 0.95f);
+        asset.m_ChunkData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathChunk);
         asset.m_PosData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos);
         asset.m_OtherData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther);
         asset.m_ColorData = AssetDatabase.LoadAssetAtPath<Texture2D>(pathCol);
@@ -573,16 +573,14 @@ public class GaussianSplatAssetCreator : EditorWindow
 
         public void Execute(int chunkIdx)
         {
-            GaussianSplatAsset.BoundsInfo chunkMin;
-            chunkMin.pos = (float3) float.PositiveInfinity;
-            chunkMin.scl = (float3) float.PositiveInfinity;
-            chunkMin.col = (float4) float.PositiveInfinity;
-            chunkMin.shs = (float3) float.PositiveInfinity;
-            GaussianSplatAsset.BoundsInfo chunkMax;
-            chunkMax.pos = (float3) float.NegativeInfinity;
-            chunkMax.scl = (float3) float.NegativeInfinity;
-            chunkMax.col = (float4) float.NegativeInfinity;
-            chunkMax.shs = (float3) float.NegativeInfinity;
+            float3 chunkMinpos = float.PositiveInfinity;
+            float3 chunkMinscl = float.PositiveInfinity;
+            float4 chunkMincol = float.PositiveInfinity;
+            float3 chunkMinshs = float.PositiveInfinity;
+            float3 chunkMaxpos = float.NegativeInfinity;
+            float3 chunkMaxscl = float.NegativeInfinity;
+            float4 chunkMaxcol = float.NegativeInfinity;
+            float3 chunkMaxshs = float.NegativeInfinity;
 
             int splatBegin = math.min(chunkIdx * GaussianSplatAsset.kChunkSize, splatData.Length);
             int splatEnd = math.min((chunkIdx + 1) * GaussianSplatAsset.kChunkSize, splatData.Length);
@@ -591,91 +589,107 @@ public class GaussianSplatAssetCreator : EditorWindow
             for (int i = splatBegin; i < splatEnd; ++i)
             {
                 InputSplatData s = splatData[i];
-                chunkMin.pos = math.min(chunkMin.pos, s.pos);
-                chunkMin.scl = math.min(chunkMin.scl, s.scale);
-                chunkMin.col = math.min(chunkMin.col, new float4(s.dc0, s.opacity));
-                chunkMin.shs = math.min(chunkMin.shs, s.sh1);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh2);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh3);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh4);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh5);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh6);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh7);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh8);
-                chunkMin.shs = math.min(chunkMin.shs, s.sh9);
-                chunkMin.shs = math.min(chunkMin.shs, s.shA);
-                chunkMin.shs = math.min(chunkMin.shs, s.shB);
-                chunkMin.shs = math.min(chunkMin.shs, s.shC);
-                chunkMin.shs = math.min(chunkMin.shs, s.shD);
-                chunkMin.shs = math.min(chunkMin.shs, s.shE);
-                chunkMin.shs = math.min(chunkMin.shs, s.shF);
+                chunkMinpos = math.min(chunkMinpos, s.pos);
+                chunkMinscl = math.min(chunkMinscl, s.scale);
+                chunkMincol = math.min(chunkMincol, new float4(s.dc0, s.opacity));
+                chunkMinshs = math.min(chunkMinshs, s.sh1);
+                chunkMinshs = math.min(chunkMinshs, s.sh2);
+                chunkMinshs = math.min(chunkMinshs, s.sh3);
+                chunkMinshs = math.min(chunkMinshs, s.sh4);
+                chunkMinshs = math.min(chunkMinshs, s.sh5);
+                chunkMinshs = math.min(chunkMinshs, s.sh6);
+                chunkMinshs = math.min(chunkMinshs, s.sh7);
+                chunkMinshs = math.min(chunkMinshs, s.sh8);
+                chunkMinshs = math.min(chunkMinshs, s.sh9);
+                chunkMinshs = math.min(chunkMinshs, s.shA);
+                chunkMinshs = math.min(chunkMinshs, s.shB);
+                chunkMinshs = math.min(chunkMinshs, s.shC);
+                chunkMinshs = math.min(chunkMinshs, s.shD);
+                chunkMinshs = math.min(chunkMinshs, s.shE);
+                chunkMinshs = math.min(chunkMinshs, s.shF);
 
-                chunkMax.pos = math.max(chunkMax.pos, s.pos);
-                chunkMax.scl = math.max(chunkMax.scl, s.scale);
-                chunkMax.col = math.max(chunkMax.col, new float4(s.dc0, s.opacity));
-                chunkMax.shs = math.max(chunkMax.shs, s.sh1);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh2);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh3);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh4);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh5);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh6);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh7);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh8);
-                chunkMax.shs = math.max(chunkMax.shs, s.sh9);
-                chunkMax.shs = math.max(chunkMax.shs, s.shA);
-                chunkMax.shs = math.max(chunkMax.shs, s.shB);
-                chunkMax.shs = math.max(chunkMax.shs, s.shC);
-                chunkMax.shs = math.max(chunkMax.shs, s.shD);
-                chunkMax.shs = math.max(chunkMax.shs, s.shE);
-                chunkMax.shs = math.max(chunkMax.shs, s.shF);
+                chunkMaxpos = math.max(chunkMaxpos, s.pos);
+                chunkMaxscl = math.max(chunkMaxscl, s.scale);
+                chunkMaxcol = math.max(chunkMaxcol, new float4(s.dc0, s.opacity));
+                chunkMaxshs = math.max(chunkMaxshs, s.sh1);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh2);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh3);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh4);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh5);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh6);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh7);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh8);
+                chunkMaxshs = math.max(chunkMaxshs, s.sh9);
+                chunkMaxshs = math.max(chunkMaxshs, s.shA);
+                chunkMaxshs = math.max(chunkMaxshs, s.shB);
+                chunkMaxshs = math.max(chunkMaxshs, s.shC);
+                chunkMaxshs = math.max(chunkMaxshs, s.shD);
+                chunkMaxshs = math.max(chunkMaxshs, s.shE);
+                chunkMaxshs = math.max(chunkMaxshs, s.shF);
             }
 
             // store chunk info
-            GaussianSplatAsset.ChunkInfo info;
-            info.boundsMin = chunkMin;
-            info.boundsMax = chunkMax;
+            GaussianSplatAsset.ChunkInfo info = default;
+            info.posX = new float2(chunkMinpos.x, chunkMaxpos.x);
+            info.posY = new float2(chunkMinpos.y, chunkMaxpos.y);
+            info.posZ = new float2(chunkMinpos.z, chunkMaxpos.z);
+            info.sclX = math.f32tof16(chunkMinscl.x) | (math.f32tof16(chunkMaxscl.x) << 16);
+            info.sclY = math.f32tof16(chunkMinscl.y) | (math.f32tof16(chunkMaxscl.y) << 16);
+            info.sclZ = math.f32tof16(chunkMinscl.z) | (math.f32tof16(chunkMaxscl.z) << 16);
+            info.colR = math.f32tof16(chunkMincol.x) | (math.f32tof16(chunkMaxcol.x) << 16);
+            info.colG = math.f32tof16(chunkMincol.y) | (math.f32tof16(chunkMaxcol.y) << 16);
+            info.colB = math.f32tof16(chunkMincol.z) | (math.f32tof16(chunkMaxcol.z) << 16);
+            info.colA = math.f32tof16(chunkMincol.w) | (math.f32tof16(chunkMaxcol.w) << 16);
+            info.shR = math.f32tof16(chunkMinshs.x) | (math.f32tof16(chunkMaxshs.x) << 16);
+            info.shG = math.f32tof16(chunkMinshs.y) | (math.f32tof16(chunkMaxshs.y) << 16);
+            info.shB = math.f32tof16(chunkMinshs.z) | (math.f32tof16(chunkMaxshs.z) << 16);
             chunks[chunkIdx] = info;
 
             // adjust data to be 0..1 within chunk bounds
             for (int i = splatBegin; i < splatEnd; ++i)
             {
                 InputSplatData s = splatData[i];
-                s.pos = (s.pos - chunkMin.pos) / (float3)(chunkMax.pos - chunkMin.pos);
-                s.scale = (s.scale - chunkMin.scl) / (float3)(chunkMax.scl - chunkMin.scl);
-                s.dc0 = ((float3)s.dc0 - ((float4)chunkMin.col).xyz) / (((float4)chunkMax.col).xyz - ((float4)chunkMin.col).xyz);
-                s.opacity = (s.opacity - chunkMin.col.w) / (chunkMax.col.w - chunkMin.col.w);
-                s.sh1 = (s.sh1 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh2 = (s.sh2 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh3 = (s.sh3 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh4 = (s.sh4 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh5 = (s.sh5 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh6 = (s.sh6 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh7 = (s.sh7 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh8 = (s.sh8 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.sh9 = (s.sh9 - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shA = (s.shA - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shB = (s.shB - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shC = (s.shC - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shD = (s.shD - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shE = (s.shE - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
-                s.shF = (s.shF - chunkMin.shs) / (float3)(chunkMax.shs - chunkMin.shs);
+                s.pos = ((float3)s.pos - chunkMinpos) / (chunkMaxpos - chunkMinpos);
+                s.scale = ((float3)s.scale - chunkMinscl) / (chunkMaxscl - chunkMinscl);
+                s.dc0 = ((float3)s.dc0 - chunkMincol.xyz) / (chunkMaxcol.xyz - chunkMincol.xyz);
+                s.opacity = (s.opacity - chunkMincol.w) / (chunkMaxcol.w - chunkMincol.w);
+                s.sh1 = ((float3)s.sh1 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh2 = ((float3)s.sh2 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh3 = ((float3)s.sh3 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh4 = ((float3)s.sh4 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh5 = ((float3)s.sh5 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh6 = ((float3)s.sh6 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh7 = ((float3)s.sh7 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh8 = ((float3)s.sh8 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.sh9 = ((float3)s.sh9 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shA = ((float3)s.shA - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shB = ((float3)s.shB - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shC = ((float3)s.shC - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shD = ((float3)s.shD - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shE = ((float3)s.shE - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                s.shF = ((float3)s.shF - chunkMinshs) / (chunkMaxshs - chunkMinshs);
                 splatData[i] = s;
             }
         }
     }
 
-    static GaussianSplatAsset.ChunkInfo[] CalcChunkData(NativeArray<InputSplatData> splatData)
+    static void CreateChunkData(NativeArray<InputSplatData> splatData, string filePath, ref Hash128 dataHash)
     {
         int chunkCount = (splatData.Length + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
-        CalcChunkDataJob job = new CalcChunkDataJob();
-        job.splatData = splatData;
-        job.chunks = new(chunkCount, Allocator.TempJob);
+        CalcChunkDataJob job = new CalcChunkDataJob
+        {
+            splatData = splatData,
+            chunks = new(chunkCount, Allocator.TempJob)
+        };
 
         job.Schedule(chunkCount, 8).Complete();
+        
+        dataHash.Append(ref job.chunks);
 
-        GaussianSplatAsset.ChunkInfo[] res = job.chunks.ToArray();
+        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+        fs.Write(job.chunks.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()));
+
         job.chunks.Dispose();
-        return res;
     }
 
     static GraphicsFormat ColorFormatToGraphics(ColorFormat format)

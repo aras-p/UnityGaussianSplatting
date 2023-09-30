@@ -35,9 +35,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 
     uint chunkIdx = origIdx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
+    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
 
     float3 pos = LoadSplatPos(origIdx);
-    pos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, pos);
+    pos = lerp(posMin, posMax, pos);
     pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
 

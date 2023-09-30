@@ -188,18 +188,12 @@ uint3 SplatIndexToPixelIndex(uint idx)
     return res;
 }
 
-struct SplatBoundsInfo
-{
-    float4 col;
-    float3 pos;
-    float3 scl;
-    float3 shs;
-};
-
 struct SplatChunkInfo
 {
-    SplatBoundsInfo boundsMin;
-    SplatBoundsInfo boundsMax;
+    uint colR, colG, colB, colA;
+    float2 posX, posY, posZ;
+    uint sclX, sclY, sclZ;
+    uint shR, shG, shB;
 };
 
 StructuredBuffer<SplatChunkInfo> _SplatChunks;
@@ -360,10 +354,16 @@ SplatData LoadSplatData(uint idx)
 
     uint chunkIdx = idx / kChunkSize;
     SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 shMin = chunk.boundsMin.shs;
-    float3 shMax = chunk.boundsMax.shs;
+    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+    half3 sclMin = half3(f16tof32(chunk.sclX    ), f16tof32(chunk.sclY    ), f16tof32(chunk.sclZ    ));
+    half3 sclMax = half3(f16tof32(chunk.sclX>>16), f16tof32(chunk.sclY>>16), f16tof32(chunk.sclZ>>16));
+    half4 colMin = half4(f16tof32(chunk.colR    ), f16tof32(chunk.colG    ), f16tof32(chunk.colB    ), f16tof32(chunk.colA    ));
+    half4 colMax = half4(f16tof32(chunk.colR>>16), f16tof32(chunk.colG>>16), f16tof32(chunk.colB>>16), f16tof32(chunk.colA>>16));
+    half3 shMin = half3(f16tof32(chunk.shR    ), f16tof32(chunk.shG    ), f16tof32(chunk.shB    ));
+    half3 shMax = half3(f16tof32(chunk.shR>>16), f16tof32(chunk.shG>>16), f16tof32(chunk.shB>>16));
 
-    s.pos       = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, LoadSplatPos(idx));
+    s.pos       = lerp(posMin, posMax, LoadSplatPos(idx));
 
     uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
     uint shFormat = (_SplatFormat >> 16) & 0xFF;
@@ -380,11 +380,11 @@ SplatData LoadSplatData(uint idx)
     uint otherAddr = idx * otherStride;
 
     s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
-    s.scale     = lerp(chunk.boundsMin.scl, chunk.boundsMax.scl, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
+    s.scale     = lerp(sclMin, sclMax, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
     s.scale *= s.scale;
     s.scale *= s.scale;
     s.scale *= s.scale;
-    half4 col   = lerp(chunk.boundsMin.col, chunk.boundsMax.col, LoadSplatColTex(coord));
+    half4 col   = lerp(colMin, colMax, LoadSplatColTex(coord));
     s.opacity   = InvSquareCentered01(col.a);
     s.sh.col    = col.rgb;
 

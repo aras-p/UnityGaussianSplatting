@@ -75,7 +75,10 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         // display chunk boxes
         localPos = localPos * 0.5 + 0.5;
         SplatChunkInfo chunk = _SplatChunks[instID];
-        localPos = lerp(chunk.boundsMin.pos, chunk.boundsMax.pos, localPos);
+        float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+        float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+
+        localPos = lerp(posMin, posMax, localPos);
         localPos = mul(unity_ObjectToWorld, float4(localPos,1)).xyz;
 
         o.col.rgb = palette((float)instID / (float)_SplatChunkCount, half3(0.5,0.5,0.5), half3(0.5,0.5,0.5), half3(1,1,1), half3(0.0, 0.33, 0.67));

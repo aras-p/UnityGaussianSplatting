@@ -6,7 +6,7 @@ using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
-    public const int kCurrentVersion = 20230925;
+    public const int kCurrentVersion = 20230930;
     public const int kChunkSize = 256;
     public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
@@ -130,24 +130,16 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public Texture2D m_ColorData;
     [HideInInspector] public TextAsset m_OtherData;
     [HideInInspector] public TextAsset m_SHData;
+    [HideInInspector] public TextAsset m_ChunkData;
 
-    [HideInInspector] public ChunkInfo[] m_Chunks;
     [HideInInspector] public CameraInfo[] m_Cameras;
 
-    [Serializable]
-    public struct BoundsInfo
-    {
-        public Vector4 col;
-        public Vector3 pos;
-        public Vector3 scl;
-        public Vector3 shs;
-    }
-
-    [Serializable]
     public struct ChunkInfo
     {
-        public BoundsInfo boundsMin;
-        public BoundsInfo boundsMax;
+        public uint colR, colG, colB, colA;
+        public float2 posX, posY, posZ;
+        public uint sclX, sclY, sclZ;
+        public uint shR, shG, shB;
     }
 
     [Serializable]

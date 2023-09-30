@@ -83,7 +83,15 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public GaussianSplatAsset asset => m_Asset;
 
-    public bool HasValidAsset => m_Asset != null && m_Asset.m_SplatCount > 0 && m_Asset.m_FormatVersion == GaussianSplatAsset.kCurrentVersion;
+    public bool HasValidAsset =>
+        m_Asset != null &&
+        m_Asset.m_SplatCount > 0 &&
+        m_Asset.m_FormatVersion == GaussianSplatAsset.kCurrentVersion &&
+        m_Asset.m_PosData != null &&
+        m_Asset.m_OtherData != null &&
+        m_Asset.m_SHData != null &&
+        m_Asset.m_ChunkData != null && 
+        m_Asset.m_ColorData != null;
     public bool HasValidRenderSetup => m_RenderCommandBuffer != null && m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
     void CreateResourcesForAsset()
@@ -97,8 +105,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuOtherData.SetData(asset.m_OtherData.GetData<uint>());
         m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_SHData.dataSize / 4), 4) { name = "GaussianSHData" };
         m_GpuSHData.SetData(asset.m_SHData.GetData<uint>());
-        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_Chunks.Length, UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
-        m_GpuChunks.SetData(asset.m_Chunks);
+        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, (int)(asset.m_ChunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) , UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
+        m_GpuChunks.SetData(asset.m_ChunkData.GetData<GaussianSplatAsset.ChunkInfo>());
 
         m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
         m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
