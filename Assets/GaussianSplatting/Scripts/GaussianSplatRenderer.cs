@@ -388,14 +388,19 @@ public class GaussianSplatRenderer : MonoBehaviour
     public void ActivateCamera(int index)
     {
         Camera mainCam = Camera.main;
-        if (mainCam != null)
-        {
-            var cam = m_Asset.m_Cameras[index];
-            mainCam.transform.localPosition = cam.pos;
-            mainCam.transform.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
-            #if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(mainCam.transform);
-            #endif
-        }
+        if (!mainCam)
+            return;
+
+        var selfTr = transform;
+        var camTr = mainCam.transform;
+        var prevParent = camTr.parent; 
+        var cam = m_Asset.m_Cameras[index];
+        camTr.parent = selfTr;
+        camTr.localPosition = cam.pos;
+        camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
+        camTr.parent = prevParent;
+#if UNITY_EDITOR
+        UnityEditor.EditorUtility.SetDirty(camTr);
+#endif
     }
 }
