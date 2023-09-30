@@ -27,7 +27,9 @@ requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
 In the dialog, point `Input PLY File` to your Gaussian Splat file. Optionally point `Cameras Json` to the cameras.json file.
 
-Pick desired compression options and output folder, and press "Create Asset" button.
+Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
+this capture at Very Low preset is under 8MB of total size (click to see the video): \
+[![Watch the video](https://img.youtube.com/vi/iccfV0YlWVI/0.jpg)](https://youtu.be/iccfV0YlWVI)
 
 If everything was fine, there should be a GaussianSplat asset that has several data files next to it:
 
@@ -57,6 +59,7 @@ Wishlist that I may or might not do at some point:
 - [x] Look at ways to make the data sets smaller (in memory) ([blog post 1](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/), [blog post 2](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/))
 - [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
 - [x] Make sorting faster (bitonic -> FidelityFX radix sort)
+
 
 ## Write-ups
 
