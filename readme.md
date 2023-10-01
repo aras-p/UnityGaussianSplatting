@@ -24,7 +24,8 @@ requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 
 <img align="right" src="Doc/shotAssetImport.png" width="250px">
 
-Next up, **create some GaussianSplat assets**: just drop your Gaussian Splat `.ply` file into Unity. Optionally, drop
+Next up, **create some GaussianSplat assets**: just drop your Gaussian Splat `.ply` file into Unity (e.g. from under
+`point/cloud/iteration_30000/point_cloud.ply` when using models from official paper). Optionally, drop
 the `cameras.json` file next to it. The project contains a custom PLY importer that allows you to choose asset size vs.
 fidelity options. The compression even at "very low" quality setting is decently usable, e.g. 
 this capture at Very Low preset is under 8MB of total size (click to see the video): \
