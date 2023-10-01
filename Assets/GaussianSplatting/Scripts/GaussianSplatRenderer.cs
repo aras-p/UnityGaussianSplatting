@@ -90,7 +90,7 @@ class GaussianSplatRenderSystem
         return true;
     }
 
-    public Material SortAndRenderSplats(Camera cam)
+    public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
     {
         Material matComposite = null;
         foreach (var kvp in m_ActiveSplats)
@@ -102,7 +102,7 @@ class GaussianSplatRenderSystem
             // sort
             var matrix = gs.transform.localToWorldMatrix;
             if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
-                gs.SortPoints(m_CommandBuffer, cam, matrix);
+                gs.SortPoints(cmb, cam, matrix);
             ++gs.m_FrameCounter;
 
             // cache view
@@ -133,7 +133,7 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
-            gs.CalcViewData(m_CommandBuffer, cam, matrix);
+            gs.CalcViewData(cmb, cam, matrix);
 
             // draw
             int indexCount = 6;
@@ -144,9 +144,9 @@ class GaussianSplatRenderSystem
             if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                 instanceCount = gs.m_GpuChunks.count;
 
-            m_CommandBuffer.BeginSample(s_ProfDraw);
-            m_CommandBuffer.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
-            m_CommandBuffer.EndSample(s_ProfDraw);
+            cmb.BeginSample(s_ProfDraw);
+            cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+            cmb.EndSample(s_ProfDraw);
         }
         return matComposite;
     }
@@ -178,7 +178,7 @@ class GaussianSplatRenderSystem
         m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
 
         // add sorting, view calc and drawing commands for each splat object
-        Material matComposite = SortAndRenderSplats(cam);
+        Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
         // compose
         m_CommandBuffer.BeginSample(s_ProfCompose);

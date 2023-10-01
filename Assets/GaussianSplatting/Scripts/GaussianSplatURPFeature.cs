@@ -40,7 +40,7 @@ class GaussianSplatURPFeature : ScriptableRendererFeature
                 return;
 
             // add sorting, view calc and drawing commands for each splat object
-            Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(renderingData.cameraData.camera);
+            Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(renderingData.cameraData.camera, m_Cmb);
 
             // compose
             m_Cmb.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
