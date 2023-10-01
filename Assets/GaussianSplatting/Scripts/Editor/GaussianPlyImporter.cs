@@ -8,16 +8,17 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEditor;
+using UnityEditor.AssetImporters;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-[BurstCompile]
-public class GaussianSplatAssetCreator : EditorWindow
+[ScriptedImporter(1, "ply", AllowCaching = true)]
+public class GaussianPlyImporter : ScriptedImporter
 {
-    const string kProgressTitle = "Creating Gaussian Splat Asset";
+    const string kProgressTitle = "Importing Gaussian Splat asset";
     const string kCamerasJson = "cameras.json";
 
-    enum DataQuality
+    public enum DataQuality
     {
         VeryHigh,
         High,
@@ -27,228 +28,60 @@ public class GaussianSplatAssetCreator : EditorWindow
         Custom,
     }
 
-    enum ColorFormat
+    public enum ColorFormat
     {
         Float16x4,
         Norm8x4,
         BC7,
     }
 
-    readonly FilePickerPropertyDrawer m_FilePicker = new();
+    public bool m_ImportCameras = true;
+    // ReSharper disable once NotAccessedField.Global - used by inspector UI
+    public DataQuality m_Quality = DataQuality.Medium;
+    public GaussianSplatAsset.VectorFormat m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
+    public GaussianSplatAsset.VectorFormat m_FormatScale = GaussianSplatAsset.VectorFormat.Norm11;
+    public GaussianSplatAsset.SHFormat m_FormatSH = GaussianSplatAsset.SHFormat.Norm6;
+    public ColorFormat m_FormatColor = ColorFormat.Norm8x4;
 
-    [SerializeField] string m_InputFile;
-    [SerializeField] bool m_ImportCameras = true;
-
-    [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
-    [SerializeField] DataQuality m_Quality = DataQuality.Medium;
-    [SerializeField] GaussianSplatAsset.VectorFormat m_FormatPos;
-    [SerializeField] GaussianSplatAsset.VectorFormat m_FormatScale;
-    [SerializeField] GaussianSplatAsset.SHFormat m_FormatSH;
-    [SerializeField] ColorFormat m_FormatColor;
-
-    string m_ErrorMessage;
-    string m_PrevPlyPath;
-    int m_PrevVertexCount;
-    long m_PrevFileSize;
-
-    [MenuItem("Tools/Gaussian Splats/Create GaussianSplatAsset")]
-    public static void Init()
+    public override void OnImportAsset(AssetImportContext ctx)
     {
-        var window = GetWindowWithRect<GaussianSplatAssetCreator>(new Rect(50, 50, 360, 340), false, "Gaussian Splat Creator", true);
-        window.minSize = new Vector2(320, 320);
-        window.maxSize = new Vector2(1500, 1500);
-        window.Show();
-    }
-
-    void OnEnable()
-    {
-        ApplyQualityLevel();
-    }
-
-    void OnGUI()
-    {
-        EditorGUILayout.Space();
-        GUILayout.Label("Input data", EditorStyles.boldLabel);
-        var rect = EditorGUILayout.GetControlRect(true);
-        m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY File"), m_InputFile, "ply", "PointCloudFile");
-        m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
-
-        if (m_InputFile != m_PrevPlyPath && !string.IsNullOrWhiteSpace(m_InputFile))
+        try
         {
-            PLYFileReader.ReadFileHeader(m_InputFile, out m_PrevVertexCount, out var _, out var _);
-            m_PrevFileSize = new FileInfo(m_InputFile).Length;
-            m_PrevPlyPath = m_InputFile;
+            var gs = CreateAsset(ctx);
+            if (gs == null)
+                return;
+            ctx.AddObjectToAsset(Path.GetFileNameWithoutExtension(ctx.assetPath), gs);
+            ctx.SetMainObject(gs);
+            gs.m_PosData.name = gs.name + "_pos";
+            gs.m_OtherData.name = gs.name + "_oth";
+            gs.m_ColorData.name = gs.name + "_col";
+            gs.m_SHData.name = gs.name + "_shs";
+            gs.m_ChunkData.name = gs.name + "_chk";
+            ctx.AddObjectToAsset(gs.m_PosData.name, gs.m_PosData);
+            ctx.AddObjectToAsset(gs.m_OtherData.name, gs.m_OtherData);
+            ctx.AddObjectToAsset(gs.m_ColorData.name, gs.m_ColorData);
+            ctx.AddObjectToAsset(gs.m_SHData.name, gs.m_SHData);
+            ctx.AddObjectToAsset(gs.m_ChunkData.name, gs.m_ChunkData);
         }
-
-        if (m_PrevVertexCount > 0)
-            EditorGUILayout.LabelField("File Size", $"{EditorUtility.FormatBytes(m_PrevFileSize)} - {m_PrevVertexCount:N0} splats");
-        else
-            GUILayout.Space(EditorGUIUtility.singleLineHeight);
-
-        EditorGUILayout.Space();
-        GUILayout.Label("Output", EditorStyles.boldLabel);
-        rect = EditorGUILayout.GetControlRect(true);
-        m_OutputFolder = m_FilePicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
-        var newQuality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
-        if (newQuality != m_Quality)
+        catch (Exception ex)
         {
-            m_Quality = newQuality;
-            ApplyQualityLevel();
+            ctx.LogImportError($"Error importing '{ctx.assetPath}': {ex.Message}");
         }
-
-        long sizePos = 0, sizeOther = 0, sizeCol = 0, sizeSHs = 0, totalSize = 0;
-        if (m_PrevVertexCount > 0)
-        {
-            sizePos = GaussianSplatAsset.CalcPosDataSize(m_PrevVertexCount, m_FormatPos);
-            sizeOther = GaussianSplatAsset.CalcOtherDataSize(m_PrevVertexCount, m_FormatScale);
-            sizeCol = GaussianSplatAsset.CalcColorDataSize(m_PrevVertexCount, ColorFormatToGraphics(m_FormatColor));
-            sizeSHs = GaussianSplatAsset.CalcSHDataSize(m_PrevVertexCount, m_FormatSH);
-            long sizeChunk = GaussianSplatAsset.CalcChunkDataSize(m_PrevVertexCount);
-            totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
-        }
-
-        const float kSizeColWidth = 70;
-        EditorGUI.BeginDisabledGroup(m_Quality != DataQuality.Custom);
-        EditorGUI.indentLevel++;
-        GUILayout.BeginHorizontal();
-        m_FormatPos = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Position", m_FormatPos);
-        GUILayout.Label(sizePos > 0 ? EditorUtility.FormatBytes(sizePos) : string.Empty, GUILayout.Width(kSizeColWidth));
-        GUILayout.EndHorizontal();
-        GUILayout.BeginHorizontal();
-        m_FormatScale = (GaussianSplatAsset.VectorFormat)EditorGUILayout.EnumPopup("Scale", m_FormatScale);
-        GUILayout.Label(sizeOther > 0 ? EditorUtility.FormatBytes(sizeOther) : string.Empty, GUILayout.Width(kSizeColWidth));
-        GUILayout.EndHorizontal();
-        GUILayout.BeginHorizontal();
-        m_FormatColor = (ColorFormat)EditorGUILayout.EnumPopup("Color", m_FormatColor);
-        GUILayout.Label(sizeCol > 0 ? EditorUtility.FormatBytes(sizeCol) : string.Empty, GUILayout.Width(kSizeColWidth));
-        GUILayout.EndHorizontal();
-        GUILayout.BeginHorizontal();
-        m_FormatSH = (GaussianSplatAsset.SHFormat) EditorGUILayout.EnumPopup("SH", m_FormatSH);
-        GUIContent shGC = new GUIContent();
-        shGC.text = sizeSHs > 0 ? EditorUtility.FormatBytes(sizeSHs) : string.Empty;
-        if (m_FormatSH >= GaussianSplatAsset.SHFormat.Cluster64k)
-        {
-            shGC.tooltip = "Note that SH clustering is not fast! (3-10 minutes for 6M splats)";
-            shGC.image = EditorGUIUtility.IconContent("console.warnicon.sml").image;
-        }
-        GUILayout.Label(shGC, GUILayout.Width(kSizeColWidth));
-        GUILayout.EndHorizontal();
-        EditorGUI.indentLevel--;
-        EditorGUI.EndDisabledGroup();
-        if (totalSize > 0)
-            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double) m_PrevFileSize / totalSize:F1}x smaller");
-        else
-            GUILayout.Space(EditorGUIUtility.singleLineHeight);
-
-
-        EditorGUILayout.Space();
-        GUILayout.BeginHorizontal();
-        GUILayout.Space(30);
-        if (GUILayout.Button("Create Asset"))
-        {
-            CreateAsset();
-        }
-        GUILayout.Space(30);
-        GUILayout.EndHorizontal();
-
-        if (!string.IsNullOrWhiteSpace(m_ErrorMessage))
-        {
-            EditorGUILayout.HelpBox(m_ErrorMessage, MessageType.Error);
-        }
-    }
-
-    void ApplyQualityLevel()
-    {
-        switch (m_Quality)
-        {
-            case DataQuality.Custom:
-                break;
-            case DataQuality.VeryLow: // 18.4x smaller, 32.27 PSNR (was: 20.7x smaller, 24.07 PSNR)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
-                m_FormatColor = ColorFormat.BC7;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster4k;
-                break;
-            case DataQuality.Low: // 14.9x smaller, 35.17 PSNR (was: 13.1x smaller, 34.76 PSNR)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm6;
-                m_FormatColor = ColorFormat.Norm8x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Cluster16k;
-                break;
-            case DataQuality.Medium: // 5.1x smaller, 47.46 PSNR (was: 5.3x smaller, 47.51 PSNR)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm11;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm11;
-                m_FormatColor = ColorFormat.Norm8x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Norm6;
-                break;
-            case DataQuality.High: // 2.9x smaller, 57.77 PSNR (was: 2.9x smaller, 54.87 PSNR)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
-                m_FormatColor = ColorFormat.Float16x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Norm11;
-                break;
-            case DataQuality.VeryHigh: // 2.1x smaller (was: 0.8x smaller)
-                m_FormatPos = GaussianSplatAsset.VectorFormat.Norm16;
-                m_FormatScale = GaussianSplatAsset.VectorFormat.Norm16;
-                m_FormatColor = ColorFormat.Float16x4;
-                m_FormatSH = GaussianSplatAsset.SHFormat.Float16;
-                break;
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
-    }
-
-    // input file splat data is expected to be in this format
-    public struct InputSplatData
-    {
-        public Vector3 pos;
-        public Vector3 nor;
-        public Vector3 dc0;
-        public Vector3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-        public float opacity;
-        public Vector3 scale;
-        public Quaternion rot;
-    }
-
-    static T CreateOrReplaceAsset<T>(T asset, string path) where T : UnityEngine.Object
-    {
-        T result = AssetDatabase.LoadAssetAtPath<T>(path);
-        if (result == null)
-        {
-            AssetDatabase.CreateAsset(asset, path);
-            result = asset;
-        }
-        else
-        {
-            if (typeof(Mesh).IsAssignableFrom(typeof(T))) { (result as Mesh)?.Clear(); }
-            EditorUtility.CopySerialized(asset, result);
-        }
-        return result;
-    }
-
-    unsafe void CreateAsset()
-    {
-        m_ErrorMessage = null;
-        if (string.IsNullOrWhiteSpace(m_InputFile))
-        {
-            m_ErrorMessage = $"Select input PLY file";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(m_OutputFolder) || !m_OutputFolder.StartsWith("Assets/"))
-        {
-            m_ErrorMessage = $"Output folder must be within project, was '{m_OutputFolder}'";
-            return;
-        }
-        Directory.CreateDirectory(m_OutputFolder);
-
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
-        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFile, m_ImportCameras);
-        using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFile);
-        if (inputSplats.Length == 0)
+        finally
         {
             EditorUtility.ClearProgressBar();
-            return;
+        }
+    }
+
+    unsafe GaussianSplatAsset CreateAsset(AssetImportContext ctx)
+    {
+        EditorUtility.DisplayProgressBar(kProgressTitle, "Reading input files", 0.0f);
+        GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(ctx.assetPath, m_ImportCameras);
+        using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(ctx);
+        if (inputSplats.Length == 0)
+        {
+            ctx.LogImportError($"PLY file {ctx.assetPath} had no splats");
+            return null;
         }
 
         float3 boundsMin, boundsMax;
@@ -272,7 +105,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
         }
 
-        string baseName = Path.GetFileNameWithoutExtension(FilePickerPropertyDrawer.PathToDisplayString(m_InputFile));
+        string baseName = Path.GetFileNameWithoutExtension(ctx.assetPath);
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
@@ -287,55 +120,44 @@ public class GaussianSplatAssetCreator : EditorWindow
         asset.m_ScaleFormat = m_FormatScale;
         asset.m_SHFormat = m_FormatSH;
         asset.m_DataHash = new Hash128((uint)asset.m_SplatCount, (uint)asset.m_FormatVersion, 0, 0);
-        string pathChunk = $"{m_OutputFolder}/{baseName}_chk.bytes";
-        string pathPos = $"{m_OutputFolder}/{baseName}_pos.bytes";
-        string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
-        string pathCol = $"{m_OutputFolder}/{baseName}_col.gstex";
-        string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
         LinearizeData(inputSplats);
-        CreateChunkData(inputSplats, pathChunk, ref asset.m_DataHash);
-        CreatePositionsData(inputSplats, pathPos, ref asset.m_DataHash);
-        CreateOtherData(inputSplats, pathOther, ref asset.m_DataHash, splatSHIndices);
-        CreateColorData(inputSplats, pathCol, ref asset.m_DataHash);
-        CreateSHData(inputSplats, pathSh, ref asset.m_DataHash, clusteredSHs);
+        asset.m_ChunkData = CreateChunkData(inputSplats, ref asset.m_DataHash);
+        asset.m_PosData = CreatePositionsData(inputSplats, ref asset.m_DataHash);
+        asset.m_OtherData = CreateOtherData(inputSplats, ref asset.m_DataHash, splatSHIndices);
+        asset.m_ColorData = CreateColorData(inputSplats, ref asset.m_DataHash, out asset.m_ColorWidth, out asset.m_ColorHeight, out asset.m_ColorFormat);
+        asset.m_SHData = CreateSHData(inputSplats, ref asset.m_DataHash, clusteredSHs);
 
         splatSHIndices.Dispose();
         clusteredSHs.Dispose();
 
-        // files are created, import them so we can get to the imported objects, ugh
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Initial texture import", 0.85f);
-        AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
-
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Setup data onto asset", 0.95f);
-        asset.m_ChunkData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathChunk);
-        asset.m_PosData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos);
-        asset.m_OtherData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther);
-        asset.m_ColorData = AssetDatabase.LoadAssetAtPath<Texture2D>(pathCol);
-        asset.m_SHData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh);
-
-        var assetPath = $"{m_OutputFolder}/{baseName}.asset";
-        var savedAsset = CreateOrReplaceAsset(asset, assetPath);
-
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Saving assets", 0.99f);
-        AssetDatabase.SaveAssets();
-        EditorUtility.ClearProgressBar();
-
-        Selection.activeObject = savedAsset;
+        return asset;
     }
-    
-    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string plyPath)
+
+    // input file splat data is expected to be in this format
+    public struct InputSplatData
+    {
+        public Vector3 pos;
+        public Vector3 nor;
+        public Vector3 dc0;
+        public Vector3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
+        public float opacity;
+        public Vector3 scale;
+        public Quaternion rot;
+    }
+
+    unsafe NativeArray<InputSplatData> LoadPLYSplatFile(AssetImportContext ctx)
     {
         NativeArray<InputSplatData> data = default;
-        if (!File.Exists(plyPath))
+        if (!File.Exists(ctx.assetPath))
         {
-            m_ErrorMessage = $"Did not find {plyPath} file";
+            ctx.LogImportError($"Did not find {ctx.assetPath} file");
             return data;
         }
 
-        PLYFileReader.ReadFile(plyPath, out var splatCount, out int vertexStride, out _, out var verticesRawData);
+        PLYFileReader.ReadFile(ctx.assetPath, out var splatCount, out int vertexStride, out _, out var verticesRawData);
         if (UnsafeUtility.SizeOf<InputSplatData>() != vertexStride)
         {
-            m_ErrorMessage = $"InputVertex size mismatch, we expect {UnsafeUtility.SizeOf<InputSplatData>()} but file has {vertexStride}";
+            ctx.LogImportError($"PLY vertex size mismatch, expected {UnsafeUtility.SizeOf<InputSplatData>()} but file has {vertexStride}");
             return data;
         }
 
@@ -528,7 +350,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(shCount, 256).Complete();
         shMeans.Dispose();
         float t1 = Time.realtimeSinceStartup;
-        Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({passesOverData:F1}pass/{kBatchSize}batch) in {t1-t0:F0}s");
+        //Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({passesOverData:F1}pass/{kBatchSize}batch) in {t1-t0:F0}s");
     }
 
     [BurstCompile]
@@ -673,7 +495,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static void CreateChunkData(NativeArray<InputSplatData> splatData, string filePath, ref Hash128 dataHash)
+    static GaussianSplatAssetByteBuffer CreateChunkData(NativeArray<InputSplatData> splatData, ref Hash128 dataHash)
     {
         int chunkCount = (splatData.Length + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
         CalcChunkDataJob job = new CalcChunkDataJob
@@ -681,18 +503,16 @@ public class GaussianSplatAssetCreator : EditorWindow
             splatData = splatData,
             chunks = new(chunkCount, Allocator.TempJob)
         };
-
         job.Schedule(chunkCount, 8).Complete();
-        
+
         dataHash.Append(ref job.chunks);
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-        fs.Write(job.chunks.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()));
-
+        byte[] res = job.chunks.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()).ToArray();
         job.chunks.Dispose();
+        return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
 
-    static GraphicsFormat ColorFormatToGraphics(ColorFormat format)
+    public static GraphicsFormat ColorFormatToGraphics(ColorFormat format)
     {
         return format switch
         {
@@ -740,39 +560,6 @@ public class GaussianSplatAssetCreator : EditorWindow
                 srcIdx++;
                 dstPtr += formatBytesPerPixel;
             }
-        }
-    }
-
-    static unsafe void SaveTex(string path, int width, int height, NativeArray<float4> data, ColorFormat format)
-    {
-        GraphicsFormat gfxFormat = ColorFormatToGraphics(format);
-        int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, gfxFormat);
-
-        if (GraphicsFormatUtility.IsCompressedFormat(gfxFormat))
-        {
-            Texture2D tex = new Texture2D(width, height, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
-            tex.SetPixelData(data, 0);
-            EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(gfxFormat), 100);
-            NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
-            uint2 dataHash = xxHash3.Hash64(cmpData.GetUnsafeReadOnlyPtr(), cmpData.Length);
-            GaussianTexImporter.WriteAsset(width, height, gfxFormat, cmpData.AsReadOnlySpan(), (ulong)dataHash.x<<32 | dataHash.y, path);
-            DestroyImmediate(tex);
-        }
-        else
-        {
-            ConvertColorJob job = new ConvertColorJob
-            {
-                width = width,
-                height = height,
-                inputData = data,
-                format = format,
-                outputData = new NativeArray<byte>(dstSize, Allocator.TempJob),
-                formatBytesPerPixel = dstSize / width / height
-            };
-            job.Schedule(height, 1).Complete();
-            uint2 dataHash = xxHash3.Hash64(job.outputData.GetUnsafeReadOnlyPtr(), job.outputData.Length);
-            GaussianTexImporter.WriteAsset(width, height, gfxFormat, job.outputData.AsReadOnlySpan(), (ulong)dataHash.x<<32 | dataHash.y, path);
-            job.outputData.Dispose();
         }
     }
 
@@ -872,7 +659,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    void CreatePositionsData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
+    GaussianSplatAssetByteBuffer CreatePositionsData(NativeArray<InputSplatData> inputSplats, ref Hash128 dataHash)
     {
         int dataLen = inputSplats.Length * GaussianSplatAsset.GetVectorSize(m_FormatPos);
         dataLen = (dataLen + 3) / 4 * 4; // multiple of 4
@@ -888,14 +675,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(inputSplats.Length, 8192).Complete();
 
         dataHash.Append(data);
-
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-        fs.Write(data);
-
+        byte[] res = data.ToArray();
         data.Dispose();
+        return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
 
-    void CreateOtherData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<int> splatSHIndices)
+    GaussianSplatAssetByteBuffer CreateOtherData(NativeArray<InputSplatData> inputSplats, ref Hash128 dataHash, NativeArray<int> splatSHIndices)
     {
         int formatSize = GaussianSplatAsset.GetOtherSizeNoSHIndex(m_FormatScale);
         if (splatSHIndices.IsCreated)
@@ -916,11 +701,9 @@ public class GaussianSplatAssetCreator : EditorWindow
         job.Schedule(inputSplats.Length, 8192).Complete();
 
         dataHash.Append(data);
-
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-        fs.Write(data);
-
+        byte[] res = data.ToArray();
         data.Dispose();
+        return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
 
     static int SplatIndexToTextureIndex(uint idx)
@@ -947,22 +730,53 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    void CreateColorData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
+    GaussianSplatAssetByteBuffer CreateColorData(NativeArray<InputSplatData> inputSplats, ref Hash128 dataHash, out int width, out int height, out GraphicsFormat format)
     {
-        var (width, height) = GaussianSplatAsset.CalcTextureSize(inputSplats.Length);
+        (width, height) = GaussianSplatAsset.CalcTextureSize(inputSplats.Length);
         NativeArray<float4> data = new(width * height, Allocator.TempJob);
 
-        CreateColorDataJob job = new CreateColorDataJob();
-        job.m_Input = inputSplats;
-        job.m_Output = data;
-        job.Schedule(inputSplats.Length, 8192).Complete();
+        CreateColorDataJob jobCreate = new CreateColorDataJob
+        {
+            m_Input = inputSplats,
+            m_Output = data
+        };
+        jobCreate.Schedule(inputSplats.Length, 8192).Complete();
 
         dataHash.Append(data);
         dataHash.Append((int)m_FormatColor);
 
-        SaveTex(filePath, width, height, data, m_FormatColor);
+        format = ColorFormatToGraphics(m_FormatColor);
+        int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, format);
+
+        byte[] res;
+        if (GraphicsFormatUtility.IsCompressedFormat(format))
+        {
+            Texture2D tex = new Texture2D(width, height, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
+            tex.SetPixelData(data, 0);
+            EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(format), 100);
+            NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
+            res = cmpData.ToArray();
+            DestroyImmediate(tex);
+        }
+        else
+        {
+            ConvertColorJob jobConvert = new ConvertColorJob
+            {
+                width = width,
+                height = height,
+                inputData = data,
+                format = m_FormatColor,
+                outputData = new NativeArray<byte>(dstSize, Allocator.TempJob),
+                formatBytesPerPixel = dstSize / width / height
+            };
+            jobConvert.Schedule(height, 1).Complete();
+            res = jobConvert.outputData.ToArray();
+            jobConvert.outputData.Dispose();
+        }
 
         data.Dispose();
+
+        return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
 
     [BurstCompile]
@@ -1050,33 +864,27 @@ public class GaussianSplatAssetCreator : EditorWindow
         }
     }
 
-    static void EmitSimpleDataFile<T>(NativeArray<T> data, string filePath, ref Hash128 dataHash) where T : unmanaged
-    {
-        dataHash.Append(data);
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-        fs.Write(data.Reinterpret<byte>(UnsafeUtility.SizeOf<T>()));
-    }
-
-    void CreateSHData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<GaussianSplatAsset.SHTableItemFloat16> clusteredSHs)
+    GaussianSplatAssetByteBuffer CreateSHData(NativeArray<InputSplatData> inputSplats, ref Hash128 dataHash, NativeArray<GaussianSplatAsset.SHTableItemFloat16> clusteredSHs)
     {
         if (clusteredSHs.IsCreated)
         {
-            EmitSimpleDataFile(clusteredSHs, filePath, ref dataHash);
+            dataHash.Append(clusteredSHs);
+            return GaussianSplatAssetByteBuffer.CreateContainer(clusteredSHs.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.SHTableItemFloat16>()).ToArray());
         }
-        else
+
+        int dataLen = (int)GaussianSplatAsset.CalcSHDataSize(inputSplats.Length, m_FormatSH);
+        NativeArray<byte> data = new(dataLen, Allocator.TempJob);
+        CreateSHDataJob job = new CreateSHDataJob
         {
-            int dataLen = (int)GaussianSplatAsset.CalcSHDataSize(inputSplats.Length, m_FormatSH);
-            NativeArray<byte> data = new(dataLen, Allocator.TempJob);
-            CreateSHDataJob job = new CreateSHDataJob
-            {
-                m_Input = inputSplats,
-                m_Format = m_FormatSH,
-                m_Output = data
-            };
-            job.Schedule(inputSplats.Length, 8192).Complete();
-            EmitSimpleDataFile(data, filePath, ref dataHash);
-            data.Dispose();
-        }
+            m_Input = inputSplats,
+            m_Format = m_FormatSH,
+            m_Output = data
+        };
+        job.Schedule(inputSplats.Length, 8192).Complete();
+        dataHash.Append(data);
+        byte[] res = data.ToArray();
+        data.Dispose();
+        return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
 
     static GaussianSplatAsset.CameraInfo[] LoadJsonCamerasFile(string curPath, bool doImport)

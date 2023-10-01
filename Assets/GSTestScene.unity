@@ -338,7 +338,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Asset: {fileID: 11400000, guid: 255fa8f1f99da9d42ad4594ccf03333a, type: 2}
+  m_Asset: {fileID: -4308533957279737314, guid: 7a933e3f675cbfb4a956ff38f36233ae, type: 3}
   m_SplatScale: 1
   m_OpacityScale: 1
   m_SHOrder: 3

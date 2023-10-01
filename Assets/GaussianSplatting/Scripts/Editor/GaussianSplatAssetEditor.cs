@@ -1,7 +1,6 @@
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
 
 [CustomEditor(typeof(GaussianSplatAsset))]
 public class GaussianSplatAssetEditor : Editor
@@ -28,7 +27,7 @@ public class GaussianSplatAssetEditor : Editor
 
             long sizePos = GaussianSplatAsset.CalcPosDataSize(gs.m_SplatCount, gs.m_PosFormat);
             long sizeOther = GaussianSplatAsset.CalcOtherDataSize(gs.m_SplatCount, gs.m_ScaleFormat);
-            long sizeCol = GaussianSplatAsset.CalcColorDataSize(gs.m_SplatCount, gs.m_ColorData != null ? gs.m_ColorData.graphicsFormat : GraphicsFormat.R8_UNorm);
+            long sizeCol = GaussianSplatAsset.CalcColorDataSize(gs.m_SplatCount, gs.m_ColorFormat);
             long sizeSH = GaussianSplatAsset.CalcSHDataSize(gs.m_SplatCount, gs.m_SHFormat);
             long sizeChunk = GaussianSplatAsset.CalcChunkDataSize(gs.m_SplatCount);
 
@@ -36,7 +35,7 @@ public class GaussianSplatAssetEditor : Editor
             EditorGUI.indentLevel++;
             EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {gs.m_PosFormat}");
             EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  {gs.m_ScaleFormat}");
-            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {(gs.m_ColorData != null ? gs.m_ColorData.graphicsFormat : "")}");
+            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {gs.m_ColorFormat}");
             EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.m_SHFormat})");
             EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChunk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
             EditorGUI.indentLevel--;

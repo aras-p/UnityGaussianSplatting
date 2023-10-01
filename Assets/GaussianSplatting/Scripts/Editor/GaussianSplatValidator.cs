@@ -24,10 +24,9 @@ public class GaussianSplatValidator
         }
         var paths = new[]
         {
-            "Assets/GaussianAssets/bicycle-point_cloud-iteration_30000-point_cloud.asset",
-            "Assets/GaussianAssets/truck-point_cloud-iteration_30000-point_cloud.asset",
-            "Assets/GaussianAssets/garden-point_cloud-iteration_30000-point_cloud.asset",
-            //"Assets/GaussianAssets/playroom_30k.asset",
+            "Assets/GaussianAssets/bicycle_30k/bicycle_30k.ply",
+            "Assets/GaussianAssets/truck_30k/truck_30k.ply",
+            "Assets/GaussianAssets/garden_30k/garden_30k.ply",
         };
 
         int width = 1200;

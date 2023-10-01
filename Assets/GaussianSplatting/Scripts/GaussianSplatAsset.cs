@@ -6,7 +6,7 @@ using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
-    public const int kCurrentVersion = 20230930;
+    public const int kCurrentVersion = 20231001;
     public const int kChunkSize = 256;
     public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
@@ -125,12 +125,14 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public VectorFormat m_PosFormat = VectorFormat.Norm11;
     [HideInInspector] public VectorFormat m_ScaleFormat = VectorFormat.Norm11;
     [HideInInspector] public SHFormat m_SHFormat = SHFormat.Norm11;
+    [HideInInspector] public GraphicsFormat m_ColorFormat;
+    [HideInInspector] public int m_ColorWidth, m_ColorHeight;
 
-    [HideInInspector] public TextAsset m_PosData;
-    [HideInInspector] public Texture2D m_ColorData;
-    [HideInInspector] public TextAsset m_OtherData;
-    [HideInInspector] public TextAsset m_SHData;
-    [HideInInspector] public TextAsset m_ChunkData;
+    [HideInInspector] public GaussianSplatAssetByteBuffer m_PosData;
+    [HideInInspector] public GaussianSplatAssetByteBuffer m_ColorData;
+    [HideInInspector] public GaussianSplatAssetByteBuffer m_OtherData;
+    [HideInInspector] public GaussianSplatAssetByteBuffer m_SHData;
+    [HideInInspector] public GaussianSplatAssetByteBuffer m_ChunkData;
 
     [HideInInspector] public CameraInfo[] m_Cameras;
 
