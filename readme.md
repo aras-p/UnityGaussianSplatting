@@ -22,18 +22,13 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
 requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 
-<img align="right" src="Doc/shotAssetCreator.png" width="250px">
+<img align="right" src="Doc/shotAssetImport.png" width="250px">
 
-Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
-In the dialog, point `Input PLY File` to your Gaussian Splat file. Optionally point `Cameras Json` to the cameras.json file.
-
-Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
+Next up, **create some GaussianSplat assets**: just drop your Gaussian Splat `.ply` file into Unity. Optionally, drop
+the `cameras.json` file next to it. The project contains a custom PLY importer that allows you to choose asset size vs.
+fidelity options. The compression even at "very low" quality setting is decently usable, e.g. 
 this capture at Very Low preset is under 8MB of total size (click to see the video): \
 [![Watch the video](https://img.youtube.com/vi/iccfV0YlWVI/0.jpg)](https://youtu.be/iccfV0YlWVI)
-
-If everything was fine, there should be a GaussianSplat asset that has several data files next to it:
-
-<img src="Doc/shotAsset.png" width="600px">
 
 Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
 [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
@@ -51,9 +46,11 @@ The rendering takes game object transformation matrix into account; the official
 _That's it!_
 
 Wishlist that I may or might not do at some point:
+- [ ] Make multiple Gaussian Splat objects in the scene work better
+- [ ] Make a C/WebAssembly library to do PLY quantization/compression just like in Unity
+- [ ] Make a WebGL/WebGPU example that uses the smaller data files
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
 - [ ] Maybe look at making it work in URP/HDRP? Not sure yet
-- [ ] Look into making on-disk data size smaller
 - [x] Make it respect the game object transform
 - [x] Look at ways to make the data sets smaller (in memory) ([blog post 1](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/), [blog post 2](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/))
 - [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
