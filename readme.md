@@ -43,15 +43,19 @@ locations.
 The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
 -160 degrees around X axis, and mirrored around Z axis, so in the sample scene the object has such a transform set up.
 
+In the built-in render pipeline, the gaussian splatting should work with no extra steps.
+If you are using **URP**, add GaussianSplatURPFeature to the URP renderer settings. If you are using **HDRP**, add
+CustomPass volume object and a GaussianSplatHDRPPass entry to it. Maybe also set injection point to "after postprocess"
+to stop auto-exposure from going wild.
 
 _That's it!_
 
 Wishlist that I may or might not do at some point:
-- [ ] Make multiple Gaussian Splat objects in the scene work better
 - [ ] Make a C/WebAssembly library to do PLY quantization/compression just like in Unity
 - [ ] Make a WebGL/WebGPU example that uses the smaller data files
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
-- [ ] Maybe look at making it work in URP/HDRP? Not sure yet
+- [x] Make it work in URP and HDRP as well
+- [x] Make multiple Gaussian Splat objects in the scene work better
 - [x] Make it respect the game object transform
 - [x] Look at ways to make the data sets smaller (in memory) ([blog post 1](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/), [blog post 2](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/))
 - [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
