@@ -406,6 +406,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         camTr.localPosition = cam.pos;
         camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
         camTr.parent = prevParent;
+        camTr.localScale = Vector3.one;
 #if UNITY_EDITOR
         UnityEditor.EditorUtility.SetDirty(camTr);
 #endif
