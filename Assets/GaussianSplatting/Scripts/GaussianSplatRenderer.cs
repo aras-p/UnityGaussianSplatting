@@ -395,6 +395,8 @@ public class GaussianSplatRenderer : MonoBehaviour
         Camera mainCam = Camera.main;
         if (!mainCam)
             return;
+        if (!m_Asset || m_Asset.m_Cameras == null)
+            return;
 
         var selfTr = transform;
         var camTr = mainCam.transform;
