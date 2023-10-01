@@ -6,6 +6,168 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 
+class GaussianSplatRenderSystem
+{
+    static ProfilerMarker s_ProfDraw = new(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
+    
+    public static GaussianSplatRenderSystem instance => ms_Instance ??= new GaussianSplatRenderSystem();
+    static GaussianSplatRenderSystem ms_Instance;
+    
+    readonly Dictionary<GaussianSplatRenderer, MaterialPropertyBlock> m_Splats = new();
+    readonly HashSet<Camera> m_CameraCommandBuffersDone = new();
+    readonly List<(GaussianSplatRenderer, MaterialPropertyBlock)> m_ActiveSplats = new();
+    
+    CommandBuffer m_CommandBuffer;
+
+    public void RegisterSplat(GaussianSplatRenderer r)
+    {
+        if (m_Splats.Count == 0)
+        {
+            Camera.onPreCull += OnPreCullCamera;
+        }
+
+        m_Splats.Add(r, new MaterialPropertyBlock());
+    }
+
+    public void UnregisterSplat(GaussianSplatRenderer r)
+    {
+        if (!m_Splats.ContainsKey(r))
+            return;
+        m_Splats.Remove(r);
+        if (m_Splats.Count == 0)
+        {
+            if (m_CameraCommandBuffersDone != null)
+            {
+                if (m_CommandBuffer != null)
+                {
+                    foreach (var cam in m_CameraCommandBuffersDone)
+                    {
+                        if (cam)
+                            cam.RemoveCommandBuffer(CameraEvent.BeforeForwardAlpha, m_CommandBuffer);
+                    }
+                }
+                m_CameraCommandBuffersDone.Clear();
+            }
+            
+            m_ActiveSplats.Clear();
+            m_CommandBuffer?.Dispose();
+            m_CommandBuffer = null;
+            Camera.onPreCull -= OnPreCullCamera;
+        }
+    }
+    
+    void OnPreCullCamera(Camera cam)
+    {
+        if (cam.cameraType == CameraType.Preview)
+            return;
+        
+        // gather all active & valid splat objects
+        m_ActiveSplats.Clear();
+        foreach (var kvp in m_Splats)
+        {
+            var gs = kvp.Key;
+            if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
+                continue;
+            if (!gs.m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+                return;
+            m_ActiveSplats.Add((kvp.Key, kvp.Value));
+        }
+        if (m_ActiveSplats.Count == 0)
+            return;
+        
+        // sort them by depth from camera
+        var camTr = cam.transform;
+        m_ActiveSplats.Sort((a, b) =>
+        {
+            var trA = a.Item1.transform;
+            var trB = b.Item1.transform;
+            var posA = camTr.InverseTransformPoint(trA.position);
+            var posB = camTr.InverseTransformPoint(trB.position);
+            return posA.z.CompareTo(posB.z);
+        });
+        
+        m_CommandBuffer ??= new CommandBuffer {name = "RenderGaussianSplats"};
+        if (!m_CameraCommandBuffersDone.Contains(cam))
+        {
+            cam.AddCommandBuffer(CameraEvent.BeforeForwardAlpha, m_CommandBuffer);
+            m_CameraCommandBuffersDone.Add(cam);
+        }
+
+        // get render target for all splats
+        m_CommandBuffer.Clear();
+        int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
+        m_CommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
+        m_CommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
+        m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+
+        // add sorting, view calc and drawing commands for each splat object
+        Material matComposite = null;
+        foreach (var kvp in m_ActiveSplats)
+        {
+            var gs = kvp.Item1;
+            matComposite = gs.m_MatComposite;
+            var mpb = kvp.Item2;
+            
+            // sort
+            var matrix = gs.transform.localToWorldMatrix;
+            if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
+                gs.SortPoints(m_CommandBuffer, cam, matrix);
+            ++gs.m_FrameCounter;
+            
+            // cache view
+            kvp.Item2.Clear();
+            Material displayMat = gs.m_RenderMode switch
+            {
+                GaussianSplatRenderer.RenderMode.DebugPoints => gs.m_MatDebugPoints,
+                GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
+                GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
+                GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
+                _ => gs.m_MatSplats
+            };
+            if (displayMat == null)
+                continue;
+
+            gs.SetAssetDataOnMaterial(mpb);
+            mpb.SetBuffer("_SplatChunks", gs.m_GpuChunks);
+            mpb.SetInteger("_SplatChunkCount", gs.m_GpuChunks.count);
+
+            mpb.SetBuffer("_SplatViewData", gs.m_GpuView);
+        
+            mpb.SetBuffer("_OrderBuffer", gs.m_GpuSortKeys);
+            mpb.SetFloat("_SplatScale", gs.m_SplatScale);
+            mpb.SetFloat("_SplatOpacityScale", gs.m_OpacityScale);
+            mpb.SetFloat("_SplatSize", gs.m_PointDisplaySize);
+            mpb.SetInteger("_SplatCount", gs.asset.m_SplatCount);
+            mpb.SetInteger("_SHOrder", gs.m_SHOrder);
+            mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
+            mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
+            
+            gs.CalcViewData(m_CommandBuffer, cam, matrix);
+            
+            // draw
+            int indexCount = 6;
+            int instanceCount = gs.asset.m_SplatCount;
+            MeshTopology topology = MeshTopology.Triangles;
+            if (gs.m_RenderMode is GaussianSplatRenderer.RenderMode.DebugBoxes or GaussianSplatRenderer.RenderMode.DebugChunkBounds)
+                indexCount = 36;
+            if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
+                instanceCount = gs.m_GpuChunks.count;
+
+            m_CommandBuffer.BeginSample(s_ProfDraw);
+            m_CommandBuffer.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+            m_CommandBuffer.EndSample(s_ProfDraw);
+        }
+
+        // compose
+        m_CommandBuffer.BeginSample(s_ProfCompose);
+        m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+        m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 6, 1);
+        m_CommandBuffer.EndSample(s_ProfCompose);
+        m_CommandBuffer.ReleaseTemporaryRT(rtNameID);
+    }    
+}
+
 [ExecuteInEditMode]
 public class GaussianSplatRenderer : MonoBehaviour
 {
@@ -52,34 +214,29 @@ public class GaussianSplatRenderer : MonoBehaviour
     public ComputeShader m_CSFfxSort;
 
     GraphicsBuffer m_GpuSortDistances;
-    GraphicsBuffer m_GpuSortKeys;
+    internal GraphicsBuffer m_GpuSortKeys;
     GraphicsBuffer m_GpuPosData;
     GraphicsBuffer m_GpuOtherData;
     GraphicsBuffer m_GpuSHData;
     Texture2D m_GpuColorData;
-    GraphicsBuffer m_GpuChunks;
-    GraphicsBuffer m_GpuView;
-    GraphicsBuffer m_GpuIndexBuffer;
+    internal GraphicsBuffer m_GpuChunks;
+    internal GraphicsBuffer m_GpuView;
+    internal GraphicsBuffer m_GpuIndexBuffer;
 
     FfxParallelSort m_SorterFfx;
     FfxParallelSort.Args m_SorterFfxArgs;
 
-    CommandBuffer m_RenderCommandBuffer;
-    readonly HashSet<Camera> m_CameraCommandBuffersDone = new();
+    internal Material m_MatSplats;
+    internal Material m_MatComposite;
+    internal Material m_MatDebugPoints;
+    internal Material m_MatDebugBoxes;
 
-    Material m_MatSplats;
-    Material m_MatComposite;
-    Material m_MatDebugPoints;
-    Material m_MatDebugBoxes;
-
-    int m_FrameCounter;
+    internal int m_FrameCounter;
     GaussianSplatAsset m_PrevAsset;
     Hash128 m_PrevHash;
 
     static ProfilerMarker s_ProfSort = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
     static ProfilerMarker s_ProfView = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfDraw = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfCompose = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
 
     public GaussianSplatAsset asset => m_Asset;
 
@@ -92,7 +249,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_Asset.m_SHData != null &&
         m_Asset.m_ChunkData != null && 
         m_Asset.m_ColorData != null;
-    public bool HasValidRenderSetup => m_RenderCommandBuffer != null && m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
+    public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
     void CreateResourcesForAsset()
     {
@@ -142,10 +299,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void OnEnable()
     {
-        Camera.onPreCull += OnPreCullCamera;
-
         m_FrameCounter = 0;
-        m_RenderCommandBuffer = null;
         if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_CSSplatUtilities == null)
             return;
         if (!SystemInfo.supportsComputeShaders)
@@ -157,95 +311,22 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
 
         m_SorterFfx = new FfxParallelSort(m_CSFfxSort);
-        m_RenderCommandBuffer = new CommandBuffer {name = "GaussianRender"};        
+        GaussianSplatRenderSystem.instance.RegisterSplat(this);
         
         CreateResourcesForAsset();
     }
 
-    void OnPreCullCamera(Camera cam)
+    void SetAssetDataOnCS(CommandBuffer cmb, ComputeShader cs, int kernelIndex)
     {
-        m_RenderCommandBuffer?.Clear();
-
-        if (!HasValidRenderSetup)
-            return;
-
-        Material displayMat = m_RenderMode switch
-        {
-            RenderMode.DebugPoints => m_MatDebugPoints,
-            RenderMode.DebugPointIndices => m_MatDebugPoints,
-            RenderMode.DebugBoxes => m_MatDebugBoxes,
-            RenderMode.DebugChunkBounds => m_MatDebugBoxes,
-            _ => m_MatSplats
-        };
-        if (displayMat == null)
-            return;
-
-        if (!m_CameraCommandBuffersDone.Contains(cam))
-        {
-            cam.AddCommandBuffer(CameraEvent.BeforeForwardAlpha, m_RenderCommandBuffer);
-            m_CameraCommandBuffersDone.Add(cam);
-        }
-
-        SetAssetDataOnMaterial(displayMat);
-
-        displayMat.SetBuffer("_SplatChunks", m_GpuChunks);
-        displayMat.SetInteger("_SplatChunkCount", m_GpuChunks.count);
-
-        displayMat.SetBuffer("_SplatViewData", m_GpuView);
-        
-        displayMat.SetBuffer("_OrderBuffer", m_GpuSortKeys);
-        displayMat.SetFloat("_SplatScale", m_SplatScale);
-        displayMat.SetFloat("_SplatOpacityScale", m_OpacityScale);
-        displayMat.SetFloat("_SplatSize", m_PointDisplaySize);
-        displayMat.SetInteger("_SplatCount", m_Asset.m_SplatCount);
-        displayMat.SetInteger("_SHOrder", m_SHOrder);
-        displayMat.SetInteger("_DisplayIndex", m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
-        displayMat.SetInteger("_DisplayChunks", m_RenderMode == RenderMode.DebugChunkBounds ? 1 : 0);
-
-        var matrix = transform.localToWorldMatrix;
-        if (m_FrameCounter % m_SortNthFrame == 0)
-            SortPoints(cam, matrix);
-        ++m_FrameCounter;
-
-        CalcViewData(cam, matrix);
-
-        int indexCount = 6;
-        int instanceCount = m_Asset.m_SplatCount;
-        MeshTopology topology = MeshTopology.Triangles;
-        if (m_RenderMode is RenderMode.DebugBoxes or RenderMode.DebugChunkBounds)
-            indexCount = 36;
-        if (m_RenderMode == RenderMode.DebugChunkBounds)
-            instanceCount = m_GpuChunks.count;
-
-        int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
-        if (cam.cameraType != CameraType.Preview && (m_RenderInSceneView || cam.cameraType != CameraType.SceneView))
-        {
-            m_RenderCommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point,
-                GraphicsFormat.R16G16B16A16_SFloat);
-            m_RenderCommandBuffer.BeginSample(s_ProfDraw);
-            m_RenderCommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
-            m_RenderCommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
-            m_RenderCommandBuffer.DrawProcedural(m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount);
-            m_RenderCommandBuffer.EndSample(s_ProfDraw);
-            m_RenderCommandBuffer.BeginSample(s_ProfCompose);
-            m_RenderCommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            m_RenderCommandBuffer.DrawProcedural(Matrix4x4.identity, m_MatComposite, 0, MeshTopology.Triangles, 6, 1);
-            m_RenderCommandBuffer.EndSample(s_ProfCompose);
-            m_RenderCommandBuffer.ReleaseTemporaryRT(rtNameID);
-        }
-    }
-
-    void SetAssetDataOnCS(ComputeShader cs, int kernelIndex)
-    {
-        cs.SetBuffer(kernelIndex, "_SplatPos", m_GpuPosData);
-        cs.SetBuffer(kernelIndex, "_SplatOther", m_GpuOtherData);
-        cs.SetBuffer(kernelIndex, "_SplatSH", m_GpuSHData);
-        cs.SetTexture(kernelIndex, "_SplatColor", m_GpuColorData);
+        cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatPos", m_GpuPosData);
+        cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatOther", m_GpuOtherData);
+        cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatSH", m_GpuSHData);
+        cmb.SetComputeTextureParam(cs, kernelIndex, "_SplatColor", m_GpuColorData);
         uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
-        cs.SetInt("_SplatFormat", (int)format);
+        cmb.SetComputeIntParam(cs, "_SplatFormat", (int)format);
     }
 
-    void SetAssetDataOnMaterial(Material mat)
+    internal void SetAssetDataOnMaterial(MaterialPropertyBlock mat)
     {
         mat.SetBuffer("_SplatPos", m_GpuPosData);
         mat.SetBuffer("_SplatOther", m_GpuOtherData);
@@ -257,19 +338,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void DisposeResourcesForAsset()
     {
-        if (m_CameraCommandBuffersDone != null)
-        {
-            if (m_RenderCommandBuffer != null)
-            {
-                foreach (var cam in m_CameraCommandBuffersDone)
-                {
-                    if (cam)
-                        cam.RemoveCommandBuffer(CameraEvent.BeforeForwardAlpha, m_RenderCommandBuffer);
-                }
-            }
-            m_CameraCommandBuffersDone.Clear();
-        }
-
         m_GpuPosData?.Dispose();
         m_GpuOtherData?.Dispose();
         m_GpuSHData?.Dispose();
@@ -295,11 +363,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     public void OnDisable()
     {
         DisposeResourcesForAsset();
-
-        Camera.onPreCull -= OnPreCullCamera;
-
-        m_RenderCommandBuffer?.Clear();
-        m_RenderCommandBuffer = null;
+        GaussianSplatRenderSystem.instance.UnregisterSplat(this);
 
         DestroyImmediate(m_MatSplats);
         DestroyImmediate(m_MatComposite);
@@ -307,7 +371,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         DestroyImmediate(m_MatDebugBoxes);
     }
 
-    void CalcViewData(Camera cam, Matrix4x4 matrix)
+    internal void CalcViewData(CommandBuffer cmb, Camera cam, Matrix4x4 matrix)
     {
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
             return;
@@ -326,30 +390,30 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         // calculate view dependent data for each splat
         const int kernelIdx = 2;
-        SetAssetDataOnCS(m_CSSplatUtilities, kernelIdx);
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, kernelIdx);
 
-        m_CSSplatUtilities.SetInt("_SplatCount", m_GpuView.count);
-        m_CSSplatUtilities.SetBuffer(kernelIdx, "_SplatViewData", m_GpuView);
-        m_CSSplatUtilities.SetBuffer(kernelIdx, "_OrderBuffer", m_GpuSortKeys);
-        m_CSSplatUtilities.SetBuffer(kernelIdx, "_SplatChunks", m_GpuChunks);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_GpuView.count);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatViewData", m_GpuView);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_OrderBuffer", m_GpuSortKeys);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
 
-        m_CSSplatUtilities.SetMatrix("_MatrixVP", matProj * matView);
-        m_CSSplatUtilities.SetMatrix("_MatrixV", matView);
-        m_CSSplatUtilities.SetMatrix("_MatrixP", matProj);
-        m_CSSplatUtilities.SetMatrix("_MatrixObjectToWorld", matO2W);
-        m_CSSplatUtilities.SetMatrix("_MatrixWorldToObject", matW2O);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixVP", matProj * matView);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixV", matView);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixP", matProj);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixObjectToWorld", matO2W);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixWorldToObject", matW2O);
 
-        m_CSSplatUtilities.SetVector("_VecScreenParams", screenPar);
-        m_CSSplatUtilities.SetVector("_VecWorldSpaceCameraPos", camPos);
-        m_CSSplatUtilities.SetFloat("_SplatScale", m_SplatScale);
-        m_CSSplatUtilities.SetFloat("_SplatOpacityScale", m_OpacityScale);
-        m_CSSplatUtilities.SetInt("_SHOrder", m_SHOrder);
+        cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecScreenParams", screenPar);
+        cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecWorldSpaceCameraPos", camPos);
+        cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatScale", m_SplatScale);
+        cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatOpacityScale", m_OpacityScale);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SHOrder", m_SHOrder);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(kernelIdx, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        cmb.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
     }
 
-    void SortPoints(Camera cam, Matrix4x4 matrix)
+    internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
     {
         if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
             return;
@@ -361,21 +425,21 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         // calculate distance to the camera for each splat
         int kernelIdx = 1;
-        m_RenderCommandBuffer.BeginSample(s_ProfSort);
-        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortDistances", m_GpuSortDistances);
-        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortKeys", m_GpuSortKeys);
-        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
-        m_RenderCommandBuffer.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatPos", m_GpuPosData);
-        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatFormat", (int)m_Asset.m_PosFormat);
-        m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_LocalToWorldMatrix", matrix);
-        m_RenderCommandBuffer.SetComputeMatrixParam(m_CSSplatUtilities, "_WorldToCameraMatrix", worldToCamMatrix);
-        m_RenderCommandBuffer.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        cmd.BeginSample(s_ProfSort);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortDistances", m_GpuSortDistances);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortKeys", m_GpuSortKeys);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatPos", m_GpuPosData);
+        cmd.SetComputeIntParam(m_CSSplatUtilities, "_SplatFormat", (int)m_Asset.m_PosFormat);
+        cmd.SetComputeMatrixParam(m_CSSplatUtilities, "_LocalToWorldMatrix", matrix);
+        cmd.SetComputeMatrixParam(m_CSSplatUtilities, "_WorldToCameraMatrix", worldToCamMatrix);
+        cmd.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
         m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out _, out _);
-        m_RenderCommandBuffer.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        cmd.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
-        m_SorterFfx.Dispatch(m_RenderCommandBuffer, m_SorterFfxArgs);
-        m_RenderCommandBuffer.EndSample(s_ProfSort);
+        m_SorterFfx.Dispatch(cmd, m_SorterFfxArgs);
+        cmd.EndSample(s_ProfSort);
     }
 
     public void Update()
