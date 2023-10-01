@@ -9,7 +9,7 @@ using UnityEngine.Rendering;
 class GaussianSplatRenderSystem
 {
     static ProfilerMarker s_ProfDraw = new(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
+    internal static ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
     
     public static GaussianSplatRenderSystem instance => ms_Instance ??= new GaussianSplatRenderSystem();
     static GaussianSplatRenderSystem ms_Instance;
@@ -24,7 +24,8 @@ class GaussianSplatRenderSystem
     {
         if (m_Splats.Count == 0)
         {
-            Camera.onPreCull += OnPreCullCamera;
+            if (GraphicsSettings.currentRenderPipeline == null)
+                Camera.onPreCull += OnPreCullCamera;
         }
 
         m_Splats.Add(r, new MaterialPropertyBlock());
@@ -56,12 +57,11 @@ class GaussianSplatRenderSystem
             Camera.onPreCull -= OnPreCullCamera;
         }
     }
-    
-    void OnPreCullCamera(Camera cam)
+
+    public bool GatherSplatsForCamera(Camera cam)
     {
         if (cam.cameraType == CameraType.Preview)
-            return;
-        
+            return false;
         // gather all active & valid splat objects
         m_ActiveSplats.Clear();
         foreach (var kvp in m_Splats)
@@ -70,12 +70,12 @@ class GaussianSplatRenderSystem
             if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
                 continue;
             if (!gs.m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
-                return;
+                continue;
             m_ActiveSplats.Add((kvp.Key, kvp.Value));
         }
         if (m_ActiveSplats.Count == 0)
-            return;
-        
+            return false;
+
         // sort them by depth from camera
         var camTr = cam.transform;
         m_ActiveSplats.Sort((a, b) =>
@@ -86,35 +86,25 @@ class GaussianSplatRenderSystem
             var posB = camTr.InverseTransformPoint(trB.position);
             return posA.z.CompareTo(posB.z);
         });
-        
-        m_CommandBuffer ??= new CommandBuffer {name = "RenderGaussianSplats"};
-        if (!m_CameraCommandBuffersDone.Contains(cam))
-        {
-            cam.AddCommandBuffer(CameraEvent.BeforeForwardAlpha, m_CommandBuffer);
-            m_CameraCommandBuffersDone.Add(cam);
-        }
 
-        // get render target for all splats
-        m_CommandBuffer.Clear();
-        int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
-        m_CommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
-        m_CommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
-        m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+        return true;
+    }
 
-        // add sorting, view calc and drawing commands for each splat object
+    public Material SortAndRenderSplats(Camera cam)
+    {
         Material matComposite = null;
         foreach (var kvp in m_ActiveSplats)
         {
             var gs = kvp.Item1;
             matComposite = gs.m_MatComposite;
             var mpb = kvp.Item2;
-            
+
             // sort
             var matrix = gs.transform.localToWorldMatrix;
             if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
                 gs.SortPoints(m_CommandBuffer, cam, matrix);
             ++gs.m_FrameCounter;
-            
+
             // cache view
             kvp.Item2.Clear();
             Material displayMat = gs.m_RenderMode switch
@@ -133,7 +123,7 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_SplatChunkCount", gs.m_GpuChunks.count);
 
             mpb.SetBuffer("_SplatViewData", gs.m_GpuView);
-        
+
             mpb.SetBuffer("_OrderBuffer", gs.m_GpuSortKeys);
             mpb.SetFloat("_SplatScale", gs.m_SplatScale);
             mpb.SetFloat("_SplatOpacityScale", gs.m_OpacityScale);
@@ -142,9 +132,9 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_SHOrder", gs.m_SHOrder);
             mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
-            
+
             gs.CalcViewData(m_CommandBuffer, cam, matrix);
-            
+
             // draw
             int indexCount = 6;
             int instanceCount = gs.asset.m_SplatCount;
@@ -158,11 +148,42 @@ class GaussianSplatRenderSystem
             m_CommandBuffer.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
             m_CommandBuffer.EndSample(s_ProfDraw);
         }
+        return matComposite;
+    }
+
+    public CommandBuffer InitialClearCmdBuffer(Camera cam)
+    {
+        m_CommandBuffer ??= new CommandBuffer {name = "RenderGaussianSplats"};
+        if (GraphicsSettings.currentRenderPipeline == null && cam != null && !m_CameraCommandBuffersDone.Contains(cam))
+        {
+            cam.AddCommandBuffer(CameraEvent.BeforeForwardAlpha, m_CommandBuffer);
+            m_CameraCommandBuffersDone.Add(cam);
+        }
+
+        // get render target for all splats
+        m_CommandBuffer.Clear();
+        return m_CommandBuffer;
+    }
+    
+    void OnPreCullCamera(Camera cam)
+    {
+        if (!GatherSplatsForCamera(cam))
+            return;
+
+        InitialClearCmdBuffer(cam);
+
+        int rtNameID = Shader.PropertyToID("_GaussianSplatRT");
+        m_CommandBuffer.GetTemporaryRT(rtNameID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
+        m_CommandBuffer.SetRenderTarget(rtNameID, BuiltinRenderTextureType.CurrentActive);
+        m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+
+        // add sorting, view calc and drawing commands for each splat object
+        Material matComposite = SortAndRenderSplats(cam);
 
         // compose
         m_CommandBuffer.BeginSample(s_ProfCompose);
         m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-        m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 6, 1);
+        m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
         m_CommandBuffer.EndSample(s_ProfCompose);
         m_CommandBuffer.ReleaseTemporaryRT(rtNameID);
     }    

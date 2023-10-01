@@ -24,11 +24,7 @@ struct v2f
 v2f vert (uint vtxID : SV_VertexID)
 {
     v2f o;
-	// two bits per vertex index to result in 0,1,2,1,3,2 from lowest:
-	// 0b1011'0110'0100
-	uint quadIndices = 0xB64;
-	uint idx = quadIndices >> (vtxID * 2);
-    float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
+    float2 quadPos = float2(vtxID&1, (vtxID>>1)&1) * 4.0 - 1.0;
 	o.vertex = float4(quadPos, 1, 1);
     return o;
 }
