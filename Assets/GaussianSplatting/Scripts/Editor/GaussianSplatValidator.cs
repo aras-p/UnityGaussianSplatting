@@ -52,8 +52,12 @@ public class GaussianSplatValidator
             var gs = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(path);
             gaussians.m_Asset = gs;
             gaussians.Update();
-            for (int camIndex = 0; camIndex <= 40; camIndex += 10)
+            for (int camIndex = 0; camIndex <= 40; camIndex += 10, ++imageIndex)
             {
+                // we're only interested in these ones for now
+                if (imageIndex != 1 && imageIndex != 9 && imageIndex != 14)
+                    continue;
+                    
                 EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", path, (float)imageIndex / (float)(paths.Length * 5));
                 gaussians.ActivateCamera(camIndex);
                 cam.Render();
@@ -84,7 +88,7 @@ public class GaussianSplatValidator
                 string pathRef = $"Shot-{imageIndex:0000}-ref.png";
                 string pathGot = $"Shot-{imageIndex:0000}-got.png";
 
-                if ((errorsCount > 50 || psnr < 70.0f) && (imageIndex == 1 || imageIndex == 9 || imageIndex == 14)) // write only some we're interested in
+                if (errorsCount > 50 || psnr < 70.0f)
                 {
                     Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}): RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
@@ -107,8 +111,6 @@ public class GaussianSplatValidator
                     File.Delete(pathRef);
                     File.Delete(pathGot);
                 }
-
-                ++imageIndex;
             }
         }
 
