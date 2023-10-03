@@ -419,7 +419,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
 
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixVP", matProj * matView);
-        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixV", matView);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixMV", matView * matO2W);
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixP", matProj);
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixObjectToWorld", matO2W);
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixWorldToObject", matW2O);
