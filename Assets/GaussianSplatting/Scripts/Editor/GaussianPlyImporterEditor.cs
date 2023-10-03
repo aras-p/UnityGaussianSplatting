@@ -47,35 +47,35 @@ public class GaussianPlyImporterEditor : AssetImporterEditor
         {
             case GaussianPlyImporter.DataQuality.Custom:
                 break;
-            case GaussianPlyImporter.DataQuality.VeryLow: // 18.4x smaller, 32.27 PSNR (was: 20.7x smaller, 24.07 PSNR)
+            case GaussianPlyImporter.DataQuality.VeryLow: // 18.62x smaller, 32.27 PSNR
                 m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Norm11;
                 m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Norm6;
                 m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.BC7;
                 m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Cluster4k;
                 break;
-            case GaussianPlyImporter.DataQuality.Low: // 14.9x smaller, 35.17 PSNR (was: 13.1x smaller, 34.76 PSNR)
+            case GaussianPlyImporter.DataQuality.Low: // 14.01x smaller, 35.17 PSNR
                 m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Norm11;
                 m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Norm6;
                 m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.Norm8x4;
                 m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Cluster16k;
                 break;
-            case GaussianPlyImporter.DataQuality.Medium: // 5.1x smaller, 47.46 PSNR (was: 5.3x smaller, 47.51 PSNR)
+            case GaussianPlyImporter.DataQuality.Medium: // 5.14x smaller, 47.46 PSNR
                 m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Norm11;
                 m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Norm11;
                 m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.Norm8x4;
                 m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Norm6;
                 break;
-            case GaussianPlyImporter.DataQuality.High: // 2.9x smaller, 57.77 PSNR (was: 2.9x smaller, 54.87 PSNR)
+            case GaussianPlyImporter.DataQuality.High: // 2.94x smaller, 57.77 PSNR
                 m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Norm16;
                 m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Norm16;
                 m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.Float16x4;
                 m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Norm11;
                 break;
-            case GaussianPlyImporter.DataQuality.VeryHigh: // 2.1x smaller (was: 0.8x smaller)
-                m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Norm16;
-                m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Norm16;
-                m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.Float16x4;
-                m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Float16;
+            case GaussianPlyImporter.DataQuality.VeryHigh: // 1.05x smaller
+                m_PropFormatPos.intValue = (int)GaussianSplatAsset.VectorFormat.Float32;
+                m_PropFormatScale.intValue = (int)GaussianSplatAsset.VectorFormat.Float32;
+                m_PropFormatColor.intValue = (int)GaussianPlyImporter.ColorFormat.Float32x4;
+                m_PropFormatSH.intValue = (int)GaussianSplatAsset.SHFormat.Float32;
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
@@ -137,7 +137,7 @@ public class GaussianPlyImporterEditor : AssetImporterEditor
         EditorGUI.indentLevel--;
         EditorGUI.EndDisabledGroup();
         if (totalSize > 0)
-            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double) m_FileSize / totalSize:F1}x smaller");
+            EditorGUILayout.LabelField("Asset Size", $"{EditorUtility.FormatBytes(totalSize)} - {(double) m_FileSize / totalSize:F2}x smaller");
 
         serializedObject.ApplyModifiedProperties();
 

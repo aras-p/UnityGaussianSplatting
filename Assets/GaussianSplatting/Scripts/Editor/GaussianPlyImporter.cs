@@ -12,7 +12,7 @@ using UnityEditor.AssetImporters;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-[ScriptedImporter(1, "ply", AllowCaching = true)]
+[ScriptedImporter(GaussianSplatAsset.kCurrentVersion, "ply", AllowCaching = true)]
 public class GaussianPlyImporter : ScriptedImporter
 {
     const string kProgressTitle = "Importing Gaussian Splat asset";
@@ -30,6 +30,7 @@ public class GaussianPlyImporter : ScriptedImporter
 
     public enum ColorFormat
     {
+        Float32x4,
         Float16x4,
         Norm8x4,
         BC7,
@@ -75,7 +76,8 @@ public class GaussianPlyImporter : ScriptedImporter
 
     unsafe GaussianSplatAsset CreateAsset(AssetImportContext ctx)
     {
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Reading input files", 0.0f);
+        string baseName = Path.GetFileNameWithoutExtension(ctx.assetPath);
+        EditorUtility.DisplayProgressBar(kProgressTitle, $"{baseName}: reading input files", 0.0f);
         GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(ctx.assetPath, m_ImportCameras);
         using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(ctx);
         if (inputSplats.Length == 0)
@@ -93,7 +95,7 @@ public class GaussianPlyImporter : ScriptedImporter
         };
         boundsJob.Schedule().Complete();
 
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Morton reordering", 0.05f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, $"{baseName}: Morton reordering", 0.05f);
         ReorderMorton(inputSplats, boundsMin, boundsMax);
 
         // cluster SHs
@@ -101,11 +103,10 @@ public class GaussianPlyImporter : ScriptedImporter
         NativeArray<GaussianSplatAsset.SHTableItemFloat16> clusteredSHs = default;
         if (m_FormatSH >= GaussianSplatAsset.SHFormat.Cluster64k)
         {
-            EditorUtility.DisplayProgressBar(kProgressTitle, "Cluster SHs", 0.2f);
+            EditorUtility.DisplayProgressBar(kProgressTitle, $"{baseName}: Cluster SHs", 0.2f);
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
         }
 
-        string baseName = Path.GetFileNameWithoutExtension(ctx.assetPath);
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
@@ -113,7 +114,7 @@ public class GaussianPlyImporter : ScriptedImporter
         asset.m_BoundsMin = boundsMin;
         asset.m_BoundsMax = boundsMax;
 
-        EditorUtility.DisplayProgressBar(kProgressTitle, "Creating data objects", 0.7f);
+        EditorUtility.DisplayProgressBar(kProgressTitle, $"{baseName}: Creating data objects", 0.7f);
         asset.m_SplatCount = inputSplats.Length;
         asset.m_FormatVersion = GaussianSplatAsset.kCurrentVersion;
         asset.m_PosFormat = m_FormatPos;
@@ -121,7 +122,7 @@ public class GaussianPlyImporter : ScriptedImporter
         asset.m_SHFormat = m_FormatSH;
         asset.m_DataHash = new Hash128((uint)asset.m_SplatCount, (uint)asset.m_FormatVersion, 0, 0);
         LinearizeData(inputSplats);
-        asset.m_ChunkData = CreateChunkData(inputSplats, ref asset.m_DataHash);
+        asset.m_ChunkData = CreateChunkData(inputSplats, ref asset.m_DataHash, m_FormatSH);
         asset.m_PosData = CreatePositionsData(inputSplats, ref asset.m_DataHash);
         asset.m_OtherData = CreateOtherData(inputSplats, ref asset.m_DataHash, splatSHIndices);
         asset.m_ColorData = CreateColorData(inputSplats, ref asset.m_DataHash, out asset.m_ColorWidth, out asset.m_ColorHeight, out asset.m_ColorFormat);
@@ -392,6 +393,7 @@ public class GaussianPlyImporter : ScriptedImporter
     {
         [NativeDisableParallelForRestriction] public NativeArray<InputSplatData> splatData;
         public NativeArray<GaussianSplatAsset.ChunkInfo> chunks;
+        public bool keepRawSHs;
 
         public void Execute(int chunkIdx)
         {
@@ -475,33 +477,37 @@ public class GaussianPlyImporter : ScriptedImporter
                 s.scale = ((float3)s.scale - chunkMinscl) / (chunkMaxscl - chunkMinscl);
                 s.dc0 = ((float3)s.dc0 - chunkMincol.xyz) / (chunkMaxcol.xyz - chunkMincol.xyz);
                 s.opacity = (s.opacity - chunkMincol.w) / (chunkMaxcol.w - chunkMincol.w);
-                s.sh1 = ((float3)s.sh1 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh2 = ((float3)s.sh2 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh3 = ((float3)s.sh3 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh4 = ((float3)s.sh4 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh5 = ((float3)s.sh5 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh6 = ((float3)s.sh6 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh7 = ((float3)s.sh7 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh8 = ((float3)s.sh8 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.sh9 = ((float3)s.sh9 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shA = ((float3)s.shA - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shB = ((float3)s.shB - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shC = ((float3)s.shC - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shD = ((float3)s.shD - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shE = ((float3)s.shE - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                s.shF = ((float3)s.shF - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                if (!keepRawSHs)
+                {
+                    s.sh1 = ((float3) s.sh1 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh2 = ((float3) s.sh2 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh3 = ((float3) s.sh3 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh4 = ((float3) s.sh4 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh5 = ((float3) s.sh5 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh6 = ((float3) s.sh6 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh7 = ((float3) s.sh7 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh8 = ((float3) s.sh8 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh9 = ((float3) s.sh9 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shA = ((float3) s.shA - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shB = ((float3) s.shB - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shC = ((float3) s.shC - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shD = ((float3) s.shD - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shE = ((float3) s.shE - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shF = ((float3) s.shF - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                }
                 splatData[i] = s;
             }
         }
     }
 
-    static GaussianSplatAssetByteBuffer CreateChunkData(NativeArray<InputSplatData> splatData, ref Hash128 dataHash)
+    static GaussianSplatAssetByteBuffer CreateChunkData(NativeArray<InputSplatData> splatData, ref Hash128 dataHash, GaussianSplatAsset.SHFormat shFormat)
     {
         int chunkCount = (splatData.Length + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
         CalcChunkDataJob job = new CalcChunkDataJob
         {
             splatData = splatData,
-            chunks = new(chunkCount, Allocator.TempJob)
+            chunks = new(chunkCount, Allocator.TempJob),
+            keepRawSHs = shFormat == GaussianSplatAsset.SHFormat.Float32
         };
         job.Schedule(chunkCount, 8).Complete();
 
@@ -516,6 +522,7 @@ public class GaussianPlyImporter : ScriptedImporter
     {
         return format switch
         {
+            ColorFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
             ColorFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
             ColorFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
             ColorFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
@@ -542,6 +549,11 @@ public class GaussianPlyImporter : ScriptedImporter
 
                 switch (format)
                 {
+                    case ColorFormat.Float32x4:
+                    {
+                        *(float4*) dstPtr = pix;
+                    }
+                        break;
                     case ColorFormat.Float16x4:
                     {
                         half4 enc = new half4(pix);
@@ -590,6 +602,13 @@ public class GaussianPlyImporter : ScriptedImporter
         v = math.saturate(v);
         switch (format)
         {
+            case GaussianSplatAsset.VectorFormat.Float32:
+                {
+                    *(float*) outputPtr = v.x;
+                    *(float*) (outputPtr + 4) = v.y;
+                    *(float*) (outputPtr + 8) = v.z;
+                }
+                break;
             case GaussianSplatAsset.VectorFormat.Norm16:
                 {
                     ulong enc = EncodeFloat3ToNorm16(v);
@@ -790,6 +809,29 @@ public class GaussianPlyImporter : ScriptedImporter
             var splat = m_Input[index];
             switch (m_Format)
             {
+                case GaussianSplatAsset.SHFormat.Float32:
+                    {
+                        GaussianSplatAsset.SHTableItemFloat32 res;
+                        res.sh1 = splat.sh1;
+                        res.sh2 = splat.sh2;
+                        res.sh3 = splat.sh3;
+                        res.sh4 = splat.sh4;
+                        res.sh5 = splat.sh5;
+                        res.sh6 = splat.sh6;
+                        res.sh7 = splat.sh7;
+                        res.sh8 = splat.sh8;
+                        res.sh9 = splat.sh9;
+                        res.shA = splat.shA;
+                        res.shB = splat.shB;
+                        res.shC = splat.shC;
+                        res.shD = splat.shD;
+                        res.shE = splat.shE;
+                        res.shF = splat.shF;
+                        res.shPadding = default;
+                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemFloat32>(1);
+                        arr[index] = res;
+                    }
+                    break;
                 case GaussianSplatAsset.SHFormat.Float16:
                     {
                         GaussianSplatAsset.SHTableItemFloat16 res;

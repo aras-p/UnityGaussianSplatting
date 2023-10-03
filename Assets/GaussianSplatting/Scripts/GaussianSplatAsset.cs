@@ -6,7 +6,7 @@ using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
-    public const int kCurrentVersion = 20231001;
+    public const int kCurrentVersion = 20231002;
     public const int kChunkSize = 256;
     public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
@@ -16,8 +16,10 @@ public class GaussianSplatAsset : ScriptableObject
     [HideInInspector] public Vector3 m_BoundsMax;
     [HideInInspector] public Hash128 m_DataHash;
 
+    // Match VECTOR_FMT_* in HLSL
     public enum VectorFormat
     {
+        Float32, // 12 bytes: 32F.32F.32F
         Norm16, // 6 bytes: 16.16.16
         Norm11, // 4 bytes: 11.10.11
         Norm6   // 2 bytes: 6.5.5
@@ -27,6 +29,7 @@ public class GaussianSplatAsset : ScriptableObject
     {
         return fmt switch
         {
+            VectorFormat.Float32 => 12,
             VectorFormat.Norm16 => 6,
             VectorFormat.Norm11 => 4,
             VectorFormat.Norm6 => 2,
@@ -36,6 +39,7 @@ public class GaussianSplatAsset : ScriptableObject
 
     public enum SHFormat
     {
+        Float32,
         Float16,
         Norm11,
         Norm6,
@@ -46,6 +50,11 @@ public class GaussianSplatAsset : ScriptableObject
         Cluster4k,
     }
 
+    public struct SHTableItemFloat32
+    {
+        public float3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
+        public float3 shPadding; // pad to multiple of 16 bytes
+    }
     public struct SHTableItemFloat16
     {
         public half3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
@@ -70,6 +79,7 @@ public class GaussianSplatAsset : ScriptableObject
     {
         return fmt switch
         {
+            SHFormat.Float32 => splatCount,
             SHFormat.Float16 => splatCount,
             SHFormat.Norm11 => splatCount,
             SHFormat.Norm6 => splatCount,
@@ -110,6 +120,7 @@ public class GaussianSplatAsset : ScriptableObject
         int shCount = GetSHCount(formatSh, splatCount);
         return formatSh switch
         {
+            SHFormat.Float32 => shCount * UnsafeUtility.SizeOf<SHTableItemFloat32>(),
             SHFormat.Float16 => shCount * UnsafeUtility.SizeOf<SHTableItemFloat16>(),
             SHFormat.Norm11 => shCount * UnsafeUtility.SizeOf<SHTableItemNorm11>(),
             SHFormat.Norm6 => shCount * UnsafeUtility.SizeOf<SHTableItemNorm6>(),
