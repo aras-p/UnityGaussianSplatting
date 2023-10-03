@@ -92,6 +92,9 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         
         float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
 
+        // Guard against precision issues that would result in occasional splat explosions, where a single splat would explode to covering the whole screen at rare angles / positions as its covariance matrix becomes degenerate.
+        det = max(1e-11, det);
+
         float mid = 0.5f * (cov2d.x + cov2d.z);
         float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
         float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
