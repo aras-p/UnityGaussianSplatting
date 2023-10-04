@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
 using UnityEngine;
@@ -47,3 +48,4 @@ public class GaussianSplatAssetEditor : Editor
         }
     }
 }
+#endif

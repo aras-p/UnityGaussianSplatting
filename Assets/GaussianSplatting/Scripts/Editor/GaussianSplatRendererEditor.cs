@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
@@ -50,3 +51,4 @@ public class GaussianSplatRendererEditor : Editor
         }
     }
 }
+#endif

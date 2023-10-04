@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.IO;
 using Unity.Burst;
 using Unity.Collections;
@@ -177,3 +178,4 @@ public class GaussianSplatValidator
         }
     }
 }
+#if UNITY_EDITOR

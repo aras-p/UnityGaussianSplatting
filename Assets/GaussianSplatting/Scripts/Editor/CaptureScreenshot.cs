@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -19,3 +20,4 @@ public class CaptureScreenshot : MonoBehaviour
         Debug.Log($"Captured {path}");
     }
 }
+#endif
