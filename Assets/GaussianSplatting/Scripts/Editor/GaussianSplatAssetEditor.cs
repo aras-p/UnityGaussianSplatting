@@ -33,9 +33,9 @@ public class GaussianSplatAssetEditor : Editor
 
             EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeOther + sizeSH + sizeCol + sizeChunk));
             EditorGUI.indentLevel++;
-            EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  {gs.m_PosFormat}");
-            EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  {gs.m_ScaleFormat}");
-            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  {gs.m_ColorFormat}");
+            EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  ({gs.m_PosFormat})");
+            EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  ({gs.m_ScaleFormat})");
+            EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  ({gs.m_ColorFormat})");
             EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.m_SHFormat})");
             EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChunk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
             EditorGUI.indentLevel--;

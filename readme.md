@@ -22,14 +22,17 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
 requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 
-<img align="right" src="Doc/shotAssetImport.png" width="250px">
+<img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
-Next up, **create some GaussianSplat assets**: just drop your Gaussian Splat `.ply` file into Unity (e.g. from under
-`point/cloud/iteration_30000/point_cloud.ply` when using models from official paper). Optionally, drop
-the `cameras.json` file next to it. The project contains a custom PLY importer that allows you to choose asset size vs.
-fidelity options. The compression even at "very low" quality setting is decently usable, e.g. 
+Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
+In the dialog, point `Input PLY File` to your Gaussian Splat file. Optionally there can be `cameras.json` next to it or somewhere
+in parent folders.
+
+Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
 this capture at Very Low preset is under 8MB of total size (click to see the video): \
 [![Watch the video](https://img.youtube.com/vi/iccfV0YlWVI/0.jpg)](https://youtu.be/iccfV0YlWVI)
+
+If everything was fine, there should be a GaussianSplat asset that has several data files next to it.
 
 Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
 [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to

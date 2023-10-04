@@ -6,7 +6,7 @@ using UnityEngine.Experimental.Rendering;
 
 public class GaussianSplatAsset : ScriptableObject
 {
-    public const int kCurrentVersion = 20231005;
+    public const int kCurrentVersion = 20231006;
     public const int kChunkSize = 256;
     public const int kTextureWidth = 2048; //@TODO: bump to 4k?
 
