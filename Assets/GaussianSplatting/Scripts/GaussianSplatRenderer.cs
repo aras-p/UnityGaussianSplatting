@@ -277,17 +277,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (!HasValidAsset)
             return;
 
-        m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_PosData.bytes.Length / 4, 4) { name = "GaussianPosData" };
-        m_GpuPosData.SetData(asset.m_PosData.bytes);
-        m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_OtherData.bytes.Length / 4, 4) { name = "GaussianOtherData" };
-        m_GpuOtherData.SetData(asset.m_OtherData.bytes);
-        m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_SHData.bytes.Length / 4, 4) { name = "GaussianSHData" };
-        m_GpuSHData.SetData(asset.m_SHData.bytes);
+        m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_PosData.data.Length * 2, 4) { name = "GaussianPosData" };
+        m_GpuPosData.SetData(asset.m_PosData.data);
+        m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_OtherData.data.Length * 2, 4) { name = "GaussianOtherData" };
+        m_GpuOtherData.SetData(asset.m_OtherData.data);
+        m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, asset.m_SHData.data.Length * 2, 4) { name = "GaussianSHData" };
+        m_GpuSHData.SetData(asset.m_SHData.data);
         m_GpuColorData = new Texture2D(asset.m_ColorWidth, asset.m_ColorHeight, asset.m_ColorFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate);
-        m_GpuColorData.SetPixelData(asset.m_ColorData.bytes, 0);
+        m_GpuColorData.SetPixelData(asset.m_ColorData.data, 0);
         m_GpuColorData.Apply(false, true);
-        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_ChunkData.bytes.Length / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>() , UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
-        m_GpuChunks.SetData(asset.m_ChunkData.bytes);
+        m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, asset.m_ChunkData.data.Length * 8 / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>() , UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
+        m_GpuChunks.SetData(asset.m_ChunkData.data);
 
         m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
         m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);

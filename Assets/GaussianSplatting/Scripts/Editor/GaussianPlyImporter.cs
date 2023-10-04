@@ -513,7 +513,7 @@ public class GaussianPlyImporter : ScriptedImporter
 
         dataHash.Append(ref job.chunks);
 
-        byte[] res = job.chunks.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()).ToArray();
+        ulong[] res = job.chunks.Reinterpret<ulong>(UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()).ToArray();
         job.chunks.Dispose();
         return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
@@ -678,10 +678,15 @@ public class GaussianPlyImporter : ScriptedImporter
         }
     }
 
+    static int NextMultipleOf(int size, int multipleOf)
+    {
+        return (size + multipleOf - 1) / multipleOf * multipleOf;
+    }
+
     GaussianSplatAssetByteBuffer CreatePositionsData(NativeArray<InputSplatData> inputSplats, ref Hash128 dataHash)
     {
         int dataLen = inputSplats.Length * GaussianSplatAsset.GetVectorSize(m_FormatPos);
-        dataLen = (dataLen + 3) / 4 * 4; // multiple of 4
+        dataLen = NextMultipleOf(dataLen, 8); // serialized as ulong
         NativeArray<byte> data = new(dataLen, Allocator.TempJob);
 
         CreatePositionsDataJob job = new CreatePositionsDataJob
@@ -694,7 +699,7 @@ public class GaussianPlyImporter : ScriptedImporter
         job.Schedule(inputSplats.Length, 8192).Complete();
 
         dataHash.Append(data);
-        byte[] res = data.ToArray();
+        ulong[] res = data.Reinterpret<ulong>(1).ToArray();
         data.Dispose();
         return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
@@ -706,7 +711,7 @@ public class GaussianPlyImporter : ScriptedImporter
             formatSize += 2;
         int dataLen = inputSplats.Length * formatSize;
 
-        dataLen = (dataLen + 3) / 4 * 4; // multiple of 4
+        dataLen = NextMultipleOf(dataLen, 8); // serialized as ulong
         NativeArray<byte> data = new(dataLen, Allocator.TempJob);
 
         CreateOtherDataJob job = new CreateOtherDataJob
@@ -720,7 +725,7 @@ public class GaussianPlyImporter : ScriptedImporter
         job.Schedule(inputSplats.Length, 8192).Complete();
 
         dataHash.Append(data);
-        byte[] res = data.ToArray();
+        ulong[] res = data.Reinterpret<ulong>(1).ToArray();
         data.Dispose();
         return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
@@ -767,13 +772,13 @@ public class GaussianPlyImporter : ScriptedImporter
         format = ColorFormatToGraphics(m_FormatColor);
         int dstSize = (int)GraphicsFormatUtility.ComputeMipmapSize(width, height, format);
 
-        byte[] res;
+        ulong[] res;
         if (GraphicsFormatUtility.IsCompressedFormat(format))
         {
             Texture2D tex = new Texture2D(width, height, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.DontUploadUponCreate);
             tex.SetPixelData(data, 0);
             EditorUtility.CompressTexture(tex, GraphicsFormatUtility.GetTextureFormat(format), 100);
-            NativeArray<byte> cmpData = tex.GetPixelData<byte>(0);
+            NativeArray<ulong> cmpData = tex.GetPixelData<ulong>(0);
             res = cmpData.ToArray();
             DestroyImmediate(tex);
         }
@@ -789,7 +794,7 @@ public class GaussianPlyImporter : ScriptedImporter
                 formatBytesPerPixel = dstSize / width / height
             };
             jobConvert.Schedule(height, 1).Complete();
-            res = jobConvert.outputData.ToArray();
+            res = jobConvert.outputData.Reinterpret<ulong>(1).ToArray();
             jobConvert.outputData.Dispose();
         }
 
@@ -804,9 +809,10 @@ public class GaussianPlyImporter : ScriptedImporter
         [ReadOnly] public NativeArray<InputSplatData> m_Input;
         public GaussianSplatAsset.SHFormat m_Format;
         public NativeArray<byte> m_Output;
-        public void Execute(int index)
+        public unsafe void Execute(int index)
         {
             var splat = m_Input[index];
+
             switch (m_Format)
             {
                 case GaussianSplatAsset.SHFormat.Float32:
@@ -828,8 +834,7 @@ public class GaussianPlyImporter : ScriptedImporter
                         res.shE = splat.shE;
                         res.shF = splat.shF;
                         res.shPadding = default;
-                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemFloat32>(1);
-                        arr[index] = res;
+                        ((GaussianSplatAsset.SHTableItemFloat32*) m_Output.GetUnsafePtr())[index] = res;
                     }
                     break;
                 case GaussianSplatAsset.SHFormat.Float16:
@@ -851,8 +856,7 @@ public class GaussianPlyImporter : ScriptedImporter
                         res.shE = new half3(splat.shE);
                         res.shF = new half3(splat.shF);
                         res.shPadding = default;
-                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemFloat16>(1);
-                        arr[index] = res;
+                        ((GaussianSplatAsset.SHTableItemFloat16*) m_Output.GetUnsafePtr())[index] = res;
                     }
                     break;
                 case GaussianSplatAsset.SHFormat.Norm11:
@@ -873,8 +877,7 @@ public class GaussianPlyImporter : ScriptedImporter
                         res.shD = EncodeFloat3ToNorm11(splat.shD);
                         res.shE = EncodeFloat3ToNorm11(splat.shE);
                         res.shF = EncodeFloat3ToNorm11(splat.shF);
-                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemNorm11>(1);
-                        arr[index] = res;
+                        ((GaussianSplatAsset.SHTableItemNorm11*) m_Output.GetUnsafePtr())[index] = res;
                     }
                     break;
                 case GaussianSplatAsset.SHFormat.Norm6:
@@ -896,8 +899,7 @@ public class GaussianPlyImporter : ScriptedImporter
                         res.shE = EncodeFloat3ToNorm565(splat.shE);
                         res.shF = EncodeFloat3ToNorm565(splat.shF);
                         res.shPadding = default;
-                        var arr = m_Output.Reinterpret<GaussianSplatAsset.SHTableItemNorm6>(1);
-                        arr[index] = res;
+                        ((GaussianSplatAsset.SHTableItemNorm6*) m_Output.GetUnsafePtr())[index] = res;
                     }
                     break;
                 default:
@@ -911,10 +913,11 @@ public class GaussianPlyImporter : ScriptedImporter
         if (clusteredSHs.IsCreated)
         {
             dataHash.Append(clusteredSHs);
-            return GaussianSplatAssetByteBuffer.CreateContainer(clusteredSHs.Reinterpret<byte>(UnsafeUtility.SizeOf<GaussianSplatAsset.SHTableItemFloat16>()).ToArray());
+            return GaussianSplatAssetByteBuffer.CreateContainer(clusteredSHs.Reinterpret<ulong>(UnsafeUtility.SizeOf<GaussianSplatAsset.SHTableItemFloat16>()).ToArray());
         }
 
         int dataLen = (int)GaussianSplatAsset.CalcSHDataSize(inputSplats.Length, m_FormatSH);
+        dataLen = NextMultipleOf(dataLen, 8); // serialized as ulong
         NativeArray<byte> data = new(dataLen, Allocator.TempJob);
         CreateSHDataJob job = new CreateSHDataJob
         {
@@ -924,7 +927,7 @@ public class GaussianPlyImporter : ScriptedImporter
         };
         job.Schedule(inputSplats.Length, 8192).Complete();
         dataHash.Append(data);
-        byte[] res = data.ToArray();
+        ulong[] res = data.Reinterpret<ulong>(1).ToArray();
         data.Dispose();
         return GaussianSplatAssetByteBuffer.CreateContainer(res);
     }
