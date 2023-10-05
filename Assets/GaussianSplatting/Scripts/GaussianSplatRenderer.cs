@@ -69,8 +69,6 @@ class GaussianSplatRenderSystem
             var gs = kvp.Key;
             if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
                 continue;
-            if (!gs.m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
-                continue;
             m_ActiveSplats.Add((kvp.Key, kvp.Value));
         }
         if (m_ActiveSplats.Count == 0)
@@ -221,7 +219,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
-    public bool m_RenderInSceneView = true;
 
     [Header("Resources")]
 
@@ -394,7 +391,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     internal void CalcViewData(CommandBuffer cmb, Camera cam, Matrix4x4 matrix)
     {
-        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+        if (cam.cameraType == CameraType.Preview)
             return;
 
         using var prof = s_ProfView.Auto();
@@ -436,7 +433,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
     {
-        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+        if (cam.cameraType == CameraType.Preview)
             return;
 
         Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
