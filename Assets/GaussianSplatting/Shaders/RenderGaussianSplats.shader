@@ -29,6 +29,8 @@ struct v2f
 };
 
 StructuredBuffer<SplatViewData> _SplatViewData;
+ByteAddressBuffer _SplatSelectedBits;
+uint _SplatBitsValid;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -59,6 +61,18 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		float2 deltaScreenPos = quadPos * radius * 2 / _ScreenParams.xy;
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;
+
+		// is this splat selected?
+		if (_SplatBitsValid)
+		{
+			uint wordIdx = instID / 32;
+			uint bitIdx = instID & 31;
+			uint selVal = _SplatSelectedBits.Load(wordIdx * 4);
+			if (selVal & (1 << bitIdx))
+			{
+				o.col.a = -1;				
+			}
+		}
 	}
     return o;
 }
@@ -68,7 +82,26 @@ half4 frag (v2f i) : SV_Target
     float2 d = CalcScreenSpaceDelta(i.vertex.xy, i.centerScreenPos, _ProjectionParams);
     float power = CalcPowerFromConic(i.conic, d);
 	half alpha = exp(power);
-	alpha = saturate(alpha * i.col.a);
+	if (i.col.a >= 0)
+	{
+		alpha = saturate(alpha * i.col.a);
+	}
+	else
+	{
+		// "selected" splat: magenta outline, increase opacity, magenta tint
+		half3 selectedColor = half3(1,0,1);
+		if (alpha > 7.0/255.0)
+		{
+			if (alpha < 10.0/255.0)
+			{
+				alpha = 1;
+				i.col.rgb = selectedColor;
+			}
+			alpha = saturate(alpha + 0.3);
+		}
+		i.col.rgb = lerp(i.col.rgb, selectedColor, 0.5);
+	}
+	
     if (alpha < 1.0/255.0)
         discard;
 

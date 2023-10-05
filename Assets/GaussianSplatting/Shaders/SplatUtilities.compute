@@ -1,8 +1,12 @@
 #define GROUP_SIZE 1024
 
-#pragma kernel CSSetIndices
-#pragma kernel CSCalcDistances
-#pragma kernel CSCalcViewData
+#pragma kernel CSSetIndices // 0
+#pragma kernel CSCalcDistances // 1
+#pragma kernel CSCalcViewData // 2
+#pragma kernel CSClearBuffer // 3
+#pragma kernel CSInvertBuffer // 4
+#pragma kernel CSOrBuffers // 5
+#pragma kernel CSSelectionUpdate // 6
 
 #pragma use_dxc
 
@@ -63,6 +67,11 @@ float _SplatScale;
 float _SplatOpacityScale;
 uint _SHOrder;
 
+RWByteAddressBuffer _SplatSelectedBits;
+ByteAddressBuffer _SplatDeletedBits;
+uint _SplatBitsValid;
+
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 {
@@ -75,6 +84,19 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
     float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
+
+    // deleted?
+    if (_SplatBitsValid)
+    {
+        uint wordIdx = idx / 32;
+        uint bitIdx = idx & 31;
+        uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
+        if (wordVal & (1 << bitIdx))
+        {
+            centerClipPos.w = 0;
+        }
+    }
+
     view.pos = centerClipPos;
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
@@ -117,3 +139,73 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     _SplatViewData[idx] = view;
 }
 
+
+RWByteAddressBuffer _DstBuffer;
+uint _DstBufferSize;
+uint _DstBufferValue;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSClearBuffer (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _DstBufferSize)
+        return;
+    _DstBuffer.Store(idx * 4, _DstBufferValue);
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSInvertBuffer (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _DstBufferSize)
+        return;
+    uint v = _DstBuffer.Load(idx * 4);
+    _DstBuffer.Store(idx * 4, ~v);
+}
+
+ByteAddressBuffer _SrcBuffer;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSOrBuffers (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _DstBufferSize)
+        return;
+    uint a = _SrcBuffer.Load(idx * 4);
+    uint b = _DstBuffer.Load(idx * 4);
+    _DstBuffer.Store(idx * 4, a | b);
+}
+
+float4 _SelectionRect;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    uint chunkIdx = idx / kChunkSize;
+    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
+    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+
+    float3 pos = LoadSplatPos(idx);
+    pos = lerp(posMin, posMax, pos);
+
+    float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
+    float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
+    bool behindCam = centerClipPos.w <= 0;
+    if (behindCam)
+        return;
+
+    float2 pixelPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, -0.5) + 0.5) * _VecScreenParams.xy;
+    if (pixelPos.x < _SelectionRect.x || pixelPos.x > _SelectionRect.z ||
+        pixelPos.y < _SelectionRect.y || pixelPos.y > _SelectionRect.w)
+    {
+        return;
+    }
+    uint wordIdx = idx / 32;
+    uint bitIdx = idx & 31;
+    _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1 << bitIdx);
+}
