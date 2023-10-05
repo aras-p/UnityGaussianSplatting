@@ -25,8 +25,9 @@ requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
-In the dialog, point `Input PLY File` to your Gaussian Splat file. Optionally there can be `cameras.json` next to it or somewhere
-in parent folders.
+In the dialog, point `Input PLY File` to your Gaussian Splat file (note that it has to be a gaussian splat PLY file, not some 
+other PLY file. E.g. in the official paper models, the correct files are under `point_cloud/iteration_*/point_cloud.ply`).
+Optionally there can be `cameras.json` next to it or somewhere in parent folders.
 
 Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
 this capture at Very Low preset is under 8MB of total size (click to see the video): \
