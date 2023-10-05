@@ -279,6 +279,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     const int kKernelInvertBuffer = 5;
     const int kKernelOrBuffers = 6;
     const int kKernelSelectionUpdate = 7;
+    const int kKernelExportData = 8;
 
     public bool HasValidAsset =>
         m_Asset != null &&
@@ -676,4 +677,23 @@ public class GaussianSplatRenderer : MonoBehaviour
         InvertGraphicsBuffer(m_GpuSplatSelectedBuffer);
         UpdateEditCounts();
     }
+
+    public bool EditExportData(GraphicsBuffer dstData)
+    {
+        if (!EnsureSelectionBuffers()) return false;
+        
+        var cmb = new CommandBuffer { name = "SplatExportData" };
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, kKernelExportData);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, kKernelExportData, "_SplatChunks", m_GpuChunks);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, kKernelExportData, "_ExportBuffer", dstData);
+
+        m_CSSplatUtilities.GetKernelThreadGroupSizes(kKernelExportData, out uint gsX, out _, out _);
+        cmb.DispatchCompute(m_CSSplatUtilities, kKernelExportData, (m_Asset.m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
+        Graphics.ExecuteCommandBuffer(cmb);
+        cmb.Dispose();
+        return true;
+    }
+
+    public GraphicsBuffer gpuSplatDeletedBuffer => m_GpuSplatDeletedBuffer;
 }

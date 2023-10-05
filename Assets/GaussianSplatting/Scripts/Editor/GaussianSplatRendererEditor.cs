@@ -1,8 +1,13 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 
 [CustomEditor(typeof(GaussianSplatRenderer))]
 public class GaussianSplatRendererEditor : Editor
@@ -74,7 +79,125 @@ public class GaussianSplatRendererEditor : Editor
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats/1000.0:F1}k splats");
             if (gs.editModified)
             {
-                GUILayout.Button("TODO save!");
+                if (GUILayout.Button("Export modified PLY"))
+                    ExportPlyFile(gs);
+                if (asset.m_PosFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                    asset.m_ScaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                    !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
+                    asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
+                {
+                    EditorGUILayout.HelpBox("It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy", MessageType.Warning);
+                }
+            }
+        }
+    }
+
+    static unsafe void ExportPlyFile(GaussianSplatRenderer gs)
+    {
+        var path = EditorUtility.SaveFilePanel(
+            "Export Gaussian Splat PLY file", "", $"{gs.asset.name}-edit.ply", "ply");
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+        int kSplatSize = UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>(); 
+        using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.asset.m_SplatCount, kSplatSize);
+        if (!gs.EditExportData(gpuData))
+            return;
+
+        GaussianSplatAssetCreator.InputSplatData[] data = new GaussianSplatAssetCreator.InputSplatData[gpuData.count];
+        gpuData.GetData(data);
+
+        var gpuDeleted = gs.gpuSplatDeletedBuffer;
+        uint[] deleted = new uint[gpuDeleted.count];
+        gpuDeleted.GetData(deleted);
+        
+        // count non-deleted splats
+        int aliveCount = 0;
+        for (int i = 0; i < data.Length; ++i)
+        {
+            int wordIdx = i >> 5;
+            int bitIdx = i & 31;
+            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+                ++aliveCount;
+        }
+        
+        using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+        var header = $@"ply
+format binary_little_endian 1.0
+element vertex {aliveCount}
+property float x
+property float y
+property float z
+property float nx
+property float ny
+property float nz
+property float f_dc_0
+property float f_dc_1
+property float f_dc_2
+property float f_rest_0
+property float f_rest_1
+property float f_rest_2
+property float f_rest_3
+property float f_rest_4
+property float f_rest_5
+property float f_rest_6
+property float f_rest_7
+property float f_rest_8
+property float f_rest_9
+property float f_rest_10
+property float f_rest_11
+property float f_rest_12
+property float f_rest_13
+property float f_rest_14
+property float f_rest_15
+property float f_rest_16
+property float f_rest_17
+property float f_rest_18
+property float f_rest_19
+property float f_rest_20
+property float f_rest_21
+property float f_rest_22
+property float f_rest_23
+property float f_rest_24
+property float f_rest_25
+property float f_rest_26
+property float f_rest_27
+property float f_rest_28
+property float f_rest_29
+property float f_rest_30
+property float f_rest_31
+property float f_rest_32
+property float f_rest_33
+property float f_rest_34
+property float f_rest_35
+property float f_rest_36
+property float f_rest_37
+property float f_rest_38
+property float f_rest_39
+property float f_rest_40
+property float f_rest_41
+property float f_rest_42
+property float f_rest_43
+property float f_rest_44
+property float opacity
+property float scale_0
+property float scale_1
+property float scale_2
+property float rot_0
+property float rot_1
+property float rot_2
+property float rot_3
+end_header
+";
+        fs.Write(Encoding.UTF8.GetBytes(header));
+        for (int i = 0; i < data.Length; ++i)
+        {
+            int wordIdx = i >> 5;
+            int bitIdx = i & 31;
+            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+            {
+                var splat = data[i];
+                byte* ptr = (byte*)&splat;
+                fs.Write(new ReadOnlySpan<byte>(ptr, kSplatSize));
             }
         }
     }
