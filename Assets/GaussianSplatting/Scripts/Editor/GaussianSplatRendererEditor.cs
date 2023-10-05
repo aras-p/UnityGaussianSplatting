@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
@@ -7,6 +8,24 @@ using UnityEngine;
 public class GaussianSplatRendererEditor : Editor
 {
     int m_CameraIndex = 0;
+
+    static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
+
+    public static void RepaintAll()
+    {
+        foreach (var e in s_AllEditors)
+            e.Repaint();
+    }
+
+    public void OnEnable()
+    {
+        s_AllEditors.Add(this);
+    }
+
+    public void OnDisable()
+    {
+        s_AllEditors.Remove(this);
+    }
 
     public override void OnInspectorGUI()
     {
@@ -32,21 +51,30 @@ public class GaussianSplatRendererEditor : Editor
         }
         var asset = gs.asset;
 
-        EditorGUILayout.Space();
-        GUILayout.Label("Stats / Controls", EditorStyles.boldLabel);
-        {
-            using var _ = new EditorGUI.DisabledScope(true);
-            EditorGUILayout.IntField("Splat Count", asset.m_SplatCount);
-        }
         var cameras = asset.m_Cameras;
         if (cameras != null && cameras.Length != 0)
         {
+            EditorGUILayout.Space();
+            GUILayout.Label("Cameras", EditorStyles.boldLabel);
             var camIndex = EditorGUILayout.IntSlider("Camera", m_CameraIndex, 0, cameras.Length - 1);
             camIndex = math.clamp(camIndex, 0, cameras.Length - 1);
             if (camIndex != m_CameraIndex)
             {
                 m_CameraIndex = camIndex;
                 gs.ActivateCamera(camIndex);
+            }
+        }
+
+        if (gs.editModified || gs.editSelectedSplats != 0 || gs.editDeletedSplats != 0)
+        {
+            EditorGUILayout.Space();
+            GUILayout.Label("Editing", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount/1000.0:F1}k splats");
+            EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats/1000.0:F1}k splats");
+            EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats/1000.0:F1}k splats");
+            if (gs.editModified)
+            {
+                GUILayout.Button("TODO save!");
             }
         }
     }
@@ -78,22 +106,34 @@ class GaussianSplatsTool : EditorTool
             case "SoftDelete":
             case "Delete":
                 if (execute)
+                {
                     gs.EditDeleteSelected();
+                    GaussianSplatRendererEditor.RepaintAll();
+                }
                 evt.Use();
                 break;
             case "SelectAll":
                 if (execute)
+                {
                     gs.EditSelectAll();
+                    GaussianSplatRendererEditor.RepaintAll();
+                }
                 evt.Use();
                 break;
             case "DeselectAll":
                 if (execute)
+                {
                     gs.EditDeselectAll();
+                    GaussianSplatRendererEditor.RepaintAll();
+                }
                 evt.Use();
                 break;
             case "InvertSelection":
                 if (execute)
+                {
                     gs.EditInvertSelection();
+                    GaussianSplatRendererEditor.RepaintAll();
+                }
                 evt.Use();
                 break;
         }
@@ -126,6 +166,7 @@ class GaussianSplatsTool : EditorTool
                     
                     // record selection state at start
                     gs.EditStoreInitialSelection();
+                    GaussianSplatRendererEditor.RepaintAll();
 
                     GUIUtility.hotControl = id;
                     m_MouseStartDragPos = evt.mousePosition;
@@ -139,6 +180,7 @@ class GaussianSplatsTool : EditorTool
                     Vector2 rectMin = HandleUtility.GUIPointToScreenPixelCoordinate(rect.min);
                     Vector2 rectMax = HandleUtility.GUIPointToScreenPixelCoordinate(rect.max);
                     gs.EditUpdateSelection(rectMin, rectMax, sceneView.camera);
+                    GaussianSplatRendererEditor.RepaintAll();
                     evt.Use();
                 }
                 break;

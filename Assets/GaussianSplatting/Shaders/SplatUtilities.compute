@@ -3,10 +3,11 @@
 #pragma kernel CSSetIndices // 0
 #pragma kernel CSCalcDistances // 1
 #pragma kernel CSCalcViewData // 2
-#pragma kernel CSClearBuffer // 3
-#pragma kernel CSInvertBuffer // 4
-#pragma kernel CSOrBuffers // 5
-#pragma kernel CSSelectionUpdate // 6
+#pragma kernel CSCountBuffer // 3
+#pragma kernel CSClearBuffer // 4
+#pragma kernel CSInvertBuffer // 5
+#pragma kernel CSOrBuffers // 6
+#pragma kernel CSSelectionUpdate // 7
 
 #pragma use_dxc
 
@@ -141,14 +142,31 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
 
 RWByteAddressBuffer _DstBuffer;
-uint _DstBufferSize;
+ByteAddressBuffer _SrcBuffer;
+uint _BufferSize;
 uint _DstBufferValue;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCountBuffer (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+
+    uint valSel = _SplatSelectedBits.Load(idx * 4);
+    uint valDel = _SplatDeletedBits.Load(idx * 4);
+    valSel &= ~valDel; // don't count deleted splats as selected
+    uint sumSel = countbits(valSel);
+    uint sumDel = countbits(valDel);
+    _DstBuffer.InterlockedAdd(0, sumSel);
+    _DstBuffer.InterlockedAdd(4, sumDel);
+}
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSClearBuffer (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _DstBufferSize)
+    if (idx >= _BufferSize)
         return;
     _DstBuffer.Store(idx * 4, _DstBufferValue);
 }
@@ -157,19 +175,17 @@ void CSClearBuffer (uint3 id : SV_DispatchThreadID)
 void CSInvertBuffer (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _DstBufferSize)
+    if (idx >= _BufferSize)
         return;
     uint v = _DstBuffer.Load(idx * 4);
     _DstBuffer.Store(idx * 4, ~v);
 }
 
-ByteAddressBuffer _SrcBuffer;
-
 [numthreads(GROUP_SIZE,1,1)]
 void CSOrBuffers (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
-    if (idx >= _DstBufferSize)
+    if (idx >= _BufferSize)
         return;
     uint a = _SrcBuffer.Load(idx * 4);
     uint b = _DstBuffer.Load(idx * 4);
