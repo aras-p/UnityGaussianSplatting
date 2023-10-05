@@ -253,8 +253,8 @@ public class GaussianSplatRenderer : MonoBehaviour
     GaussianSplatAsset m_PrevAsset;
     Hash128 m_PrevHash;
 
-    static ProfilerMarker s_ProfSort = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfView = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
+    static readonly ProfilerMarker s_ProfSort = new(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
+    static readonly ProfilerMarker s_ProfView = new(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
 
     public GaussianSplatAsset asset => m_Asset;
 

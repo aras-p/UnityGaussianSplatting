@@ -23,8 +23,8 @@ StructuredBuffer<uint> _OrderBuffer;
 struct v2f
 {
     half4 col : COLOR0;
-    float2 centerScreenPos : TEXCOORD3;
-    float3 conic : TEXCOORD4;
+    float2 centerScreenPos : TEXCOORD0;
+    float3 conic : TEXCOORD1;
     float4 vertex : SV_POSITION;
 };
 
