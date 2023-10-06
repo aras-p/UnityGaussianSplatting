@@ -16,6 +16,8 @@ public class GaussianSplatAssetCreator : EditorWindow
 {
     const string kProgressTitle = "Creating Gaussian Splat Asset";
     const string kCamerasJson = "cameras.json";
+    const string kPrefQuality = "nesnausk.GaussianSplatting.CreatorQuality";
+    const string kPrefOutputFolder = "nesnausk.GaussianSplatting.CreatorOutputFolder";
 
     enum DataQuality
     {
@@ -61,6 +63,12 @@ public class GaussianSplatAssetCreator : EditorWindow
         window.Show();
     }
 
+    void Awake()
+    {
+        m_Quality = (DataQuality)EditorPrefs.GetInt(kPrefQuality, (int)DataQuality.Medium);
+        m_OutputFolder = EditorPrefs.GetString(kPrefOutputFolder, "Assets/GaussianAssets");
+    }
+
     void OnEnable()
     {
         ApplyQualityLevel();
@@ -89,11 +97,18 @@ public class GaussianSplatAssetCreator : EditorWindow
         EditorGUILayout.Space();
         GUILayout.Label("Output", EditorStyles.boldLabel);
         rect = EditorGUILayout.GetControlRect(true);
-        m_OutputFolder = m_FilePicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
+        string newOutputFolder = m_FilePicker.PathFieldGUI(rect, new GUIContent("Output Folder"), m_OutputFolder, null, "GaussianAssetOutputFolder");
+        if (newOutputFolder != m_OutputFolder)
+        {
+            m_OutputFolder = newOutputFolder;
+            EditorPrefs.SetString(kPrefOutputFolder, m_OutputFolder);
+        }
+
         var newQuality = (DataQuality) EditorGUILayout.EnumPopup("Quality", m_Quality);
         if (newQuality != m_Quality)
         {
             m_Quality = newQuality;
+            EditorPrefs.SetInt(kPrefQuality, (int)m_Quality);
             ApplyQualityLevel();
         }
 
