@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel;
 using UnityEngine;
@@ -68,8 +70,6 @@ class GaussianSplatRenderSystem
         {
             var gs = kvp.Key;
             if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
-                continue;
-            if (!gs.m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
                 continue;
             m_ActiveSplats.Add((kvp.Key, kvp.Value));
         }
@@ -221,7 +221,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
-    public bool m_RenderInSceneView = true;
 
     [Header("Resources")]
 
@@ -243,6 +242,10 @@ public class GaussianSplatRenderer : MonoBehaviour
     internal GraphicsBuffer m_GpuChunks;
     internal GraphicsBuffer m_GpuView;
     internal GraphicsBuffer m_GpuIndexBuffer;
+    GraphicsBuffer m_GpuSplatSelectedInitBuffer;
+    GraphicsBuffer m_GpuSplatSelectedBuffer;
+    GraphicsBuffer m_GpuSplatDeletedBuffer;
+    GraphicsBuffer m_GpuSplatEditDataBuffer;
 
     FfxParallelSort m_SorterFfx;
     FfxParallelSort.Args m_SorterFfxArgs;
@@ -256,10 +259,29 @@ public class GaussianSplatRenderer : MonoBehaviour
     GaussianSplatAsset m_PrevAsset;
     Hash128 m_PrevHash;
 
-    static ProfilerMarker s_ProfSort = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
-    static ProfilerMarker s_ProfView = new ProfilerMarker(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
+    static readonly ProfilerMarker s_ProfSort = new(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
+    static readonly ProfilerMarker s_ProfView = new(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
+
+    [field: NonSerialized] public bool editModified { get; private set; }
+    [field: NonSerialized] public uint editSelectedSplats { get; private set; }
+    [field: NonSerialized] public uint editDeletedSplats { get; private set; }
+    [field: NonSerialized] public Bounds editSelectedBounds { get; private set; }
 
     public GaussianSplatAsset asset => m_Asset;
+
+    enum KernelIndices : int
+    {
+        SetIndices,
+        CalcDistances,
+        CalcViewData,
+        UpdateEditData,
+        InitEditData,
+        ClearBuffer,
+        InvertBuffer,
+        OrBuffers,
+        SelectionUpdate,
+        ExportData,
+    }
 
     public bool HasValidAsset =>
         m_Asset != null &&
@@ -306,10 +328,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 4) { name = "GaussianSplatSortIndices" };
 
         // init keys buffer to splat indices
-        m_CSSplatUtilities.SetBuffer(0, "_SplatSortKeys", m_GpuSortKeys);
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.SetIndices, "_SplatSortKeys", m_GpuSortKeys);
         m_CSSplatUtilities.SetInt("_SplatCount", m_GpuSortDistances.count);
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(0, out uint gsX, out uint gsY, out uint gsZ);
-        m_CSSplatUtilities.Dispatch(0, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.SetIndices, out uint gsX, out _, out _);
+        m_CSSplatUtilities.Dispatch((int)KernelIndices.SetIndices, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         m_SorterFfxArgs.inputKeys = m_GpuSortDistances;
         m_SorterFfxArgs.inputValues = m_GpuSortKeys;
@@ -343,6 +365,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatOther", m_GpuOtherData);
         cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatSH", m_GpuSHData);
         cmb.SetComputeTextureParam(cs, kernelIndex, "_SplatColor", m_GpuColorData);
+        cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatSelectedBits", m_GpuSplatSelectedBuffer ?? m_GpuPosData);
+        cmb.SetComputeBufferParam(cs, kernelIndex, "_SplatDeletedBits", m_GpuSplatDeletedBuffer ?? m_GpuPosData);
+        cmb.SetComputeIntParam(cs, "_SplatBitsValid", m_GpuSplatSelectedBuffer != null && m_GpuSplatDeletedBuffer != null ? 1 : 0);
         uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
         cmb.SetComputeIntParam(cs, "_SplatFormat", (int)format);
     }
@@ -353,6 +378,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         mat.SetBuffer("_SplatOther", m_GpuOtherData);
         mat.SetBuffer("_SplatSH", m_GpuSHData);
         mat.SetTexture("_SplatColor", m_GpuColorData);
+        mat.SetBuffer("_SplatSelectedBits", m_GpuSplatSelectedBuffer ?? m_GpuPosData);
+        mat.SetBuffer("_SplatDeletedBits", m_GpuSplatDeletedBuffer ?? m_GpuPosData);
+        mat.SetInt("_SplatBitsValid", m_GpuSplatSelectedBuffer != null && m_GpuSplatDeletedBuffer != null ? 1 : 0);
         uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
         mat.SetInteger("_SplatFormat", (int)format);
     }
@@ -368,6 +396,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuIndexBuffer?.Dispose();
         m_GpuSortDistances?.Dispose();
         m_GpuSortKeys?.Dispose();
+        m_GpuSplatSelectedInitBuffer?.Dispose();
+        m_GpuSplatSelectedBuffer?.Dispose();
+        m_GpuSplatDeletedBuffer?.Dispose();
+        m_GpuSplatEditDataBuffer?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
 
         m_GpuPosData = null;
@@ -379,6 +411,15 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuIndexBuffer = null;
         m_GpuSortDistances = null;
         m_GpuSortKeys = null;
+        m_GpuSplatSelectedInitBuffer = null;
+        m_GpuSplatSelectedBuffer = null;
+        m_GpuSplatDeletedBuffer = null;
+        m_GpuSplatEditDataBuffer = null;
+        
+        editSelectedSplats = 0;
+        editDeletedSplats = 0;
+        editModified = false;
+        editSelectedBounds = default;
     }
 
     public void OnDisable()
@@ -394,7 +435,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     internal void CalcViewData(CommandBuffer cmb, Camera cam, Matrix4x4 matrix)
     {
-        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+        if (cam.cameraType == CameraType.Preview)
             return;
 
         using var prof = s_ProfView.Auto();
@@ -410,13 +451,12 @@ public class GaussianSplatRenderer : MonoBehaviour
         Vector4 camPos = cam.transform.position;
 
         // calculate view dependent data for each splat
-        const int kernelIdx = 2;
-        SetAssetDataOnCS(cmb, m_CSSplatUtilities, kernelIdx);
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, (int)KernelIndices.CalcViewData);
 
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_GpuView.count);
-        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatViewData", m_GpuView);
-        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_OrderBuffer", m_GpuSortKeys);
-        cmb.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatViewData", m_GpuView);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_OrderBuffer", m_GpuSortKeys);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatChunks", m_GpuChunks);
 
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixVP", matProj * matView);
         cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixMV", matView * matO2W);
@@ -430,13 +470,13 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatOpacityScale", m_OpacityScale);
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SHOrder", m_SHOrder);
 
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out uint gsY, out uint gsZ);
-        cmb.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out uint gsY, out uint gsZ);
+        cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
     }
 
     internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
     {
-        if (cam.cameraType == CameraType.Preview || !m_RenderInSceneView && cam.cameraType == CameraType.SceneView)
+        if (cam.cameraType == CameraType.Preview)
             return;
 
         Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
@@ -445,18 +485,17 @@ public class GaussianSplatRenderer : MonoBehaviour
         worldToCamMatrix.m22 *= -1;
 
         // calculate distance to the camera for each splat
-        int kernelIdx = 1;
         cmd.BeginSample(s_ProfSort);
-        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortDistances", m_GpuSortDistances);
-        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatSortKeys", m_GpuSortKeys);
-        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatChunks", m_GpuChunks);
-        cmd.SetComputeBufferParam(m_CSSplatUtilities, kernelIdx, "_SplatPos", m_GpuPosData);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, "_SplatSortDistances", m_GpuSortDistances);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, "_SplatSortKeys", m_GpuSortKeys);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, "_SplatChunks", m_GpuChunks);
+        cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, "_SplatPos", m_GpuPosData);
         cmd.SetComputeIntParam(m_CSSplatUtilities, "_SplatFormat", (int)m_Asset.m_PosFormat);
         cmd.SetComputeMatrixParam(m_CSSplatUtilities, "_LocalToWorldMatrix", matrix);
         cmd.SetComputeMatrixParam(m_CSSplatUtilities, "_WorldToCameraMatrix", worldToCamMatrix);
         cmd.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
-        m_CSSplatUtilities.GetKernelThreadGroupSizes(kernelIdx, out uint gsX, out _, out _);
-        cmd.DispatchCompute(m_CSSplatUtilities, kernelIdx, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
+        cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
         // sort the splats
         m_SorterFfx.Dispatch(cmd, m_SorterFfxArgs);
@@ -474,7 +513,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             CreateResourcesForAsset();
         }
     }
-
+    
     public void ActivateCamera(int index)
     {
         Camera mainCam = Camera.main;
@@ -496,4 +535,190 @@ public class GaussianSplatRenderer : MonoBehaviour
         UnityEditor.EditorUtility.SetDirty(camTr);
 #endif
     }
+    
+    void ClearGraphicsBuffer(GraphicsBuffer buf, uint value = 0)
+    {
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.ClearBuffer, "_DstBuffer", buf);
+        m_CSSplatUtilities.SetInt("_BufferSize", buf.count);
+        m_CSSplatUtilities.SetInt("_DstBufferValue", (int)value);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ClearBuffer, out uint gsX, out _, out _);
+        m_CSSplatUtilities.Dispatch((int)KernelIndices.ClearBuffer, (int)((buf.count+gsX-1)/gsX), 1, 1);
+    }
+    
+    void InvertGraphicsBuffer(GraphicsBuffer buf)
+    {
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.InvertBuffer, "_DstBuffer", buf);
+        m_CSSplatUtilities.SetInt("_BufferSize", buf.count);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.InvertBuffer, out uint gsX, out _, out _);
+        m_CSSplatUtilities.Dispatch((int)KernelIndices.InvertBuffer, (int)((buf.count+gsX-1)/gsX), 1, 1);
+    }
+    
+    void UnionGraphicsBuffers(GraphicsBuffer dst, GraphicsBuffer src)
+    {
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.OrBuffers, "_SrcBuffer", src);
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.OrBuffers, "_DstBuffer", dst);
+        m_CSSplatUtilities.SetInt("_BufferSize", dst.count);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.OrBuffers, out uint gsX, out _, out _);
+        m_CSSplatUtilities.Dispatch((int)KernelIndices.OrBuffers, (int)((dst.count+gsX-1)/gsX), 1, 1);
+    }
+
+    static float SortableUintToFloat(uint v)
+    {
+        uint mask = ((v >> 31) - 1) | 0x80000000u;
+        return math.asfloat(v ^ mask);
+    }
+
+    void UpdateEditCountsAndBounds()
+    {
+        if (m_GpuSplatSelectedBuffer == null)
+        {
+            editSelectedSplats = 0;
+            editDeletedSplats = 0;
+            editModified = false;
+            editSelectedBounds = default;
+            return;
+        }
+
+        m_CSSplatUtilities.SetBuffer((int)KernelIndices.InitEditData, "_DstBuffer", m_GpuSplatEditDataBuffer);
+        m_CSSplatUtilities.Dispatch((int)KernelIndices.InitEditData, 1, 1, 1);
+
+        using CommandBuffer cmb = new CommandBuffer();
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, (int)KernelIndices.UpdateEditData);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, "_SplatChunks", m_GpuChunks);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, "_SplatSelectedBits", m_GpuSplatSelectedBuffer);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, "_SplatDeletedBits", m_GpuSplatDeletedBuffer);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, "_DstBuffer", m_GpuSplatEditDataBuffer);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_BufferSize", m_GpuSplatSelectedBuffer.count);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.UpdateEditData, out uint gsX, out _, out _);
+        cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, (int)((m_GpuSplatSelectedBuffer.count+gsX-1)/gsX), 1, 1);
+        Graphics.ExecuteCommandBuffer(cmb);
+
+        uint[] res = new uint[m_GpuSplatEditDataBuffer.count];
+        m_GpuSplatEditDataBuffer.GetData(res);
+        editSelectedSplats = res[0];
+        editDeletedSplats = res[1];
+        Vector3 bmin = new Vector3(SortableUintToFloat(res[2]), SortableUintToFloat(res[3]), SortableUintToFloat(res[4]));
+        Vector3 bmax = new Vector3(SortableUintToFloat(res[5]), SortableUintToFloat(res[6]), SortableUintToFloat(res[7]));
+        Bounds bounds = default;
+        bounds.SetMinMax(bmin, bmax);
+        if (bounds.extents.sqrMagnitude < 0.01)
+            bounds.extents = new Vector3(0.1f,0.1f,0.1f);
+        editSelectedBounds = bounds;
+    }
+
+    bool EnsureSelectionBuffers()
+    {
+        if (!HasValidAsset || !HasValidRenderSetup)
+            return false;
+        
+        if (m_GpuSplatSelectedBuffer == null)
+        {
+            var target = GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource |
+                         GraphicsBuffer.Target.CopyDestination;
+            var size = (m_Asset.m_SplatCount + 31) / 32;
+            m_GpuSplatSelectedBuffer = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatSelected"};
+            m_GpuSplatSelectedInitBuffer = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatSelectedInit"};
+            m_GpuSplatDeletedBuffer = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatDeleted"};
+            m_GpuSplatEditDataBuffer = new GraphicsBuffer(target, 1 + 1 + 6, 4) {name = "GaussianSplatEditData"}; // selected count, deleted bound, float3 min, float3 max
+            ClearGraphicsBuffer(m_GpuSplatSelectedBuffer);
+            ClearGraphicsBuffer(m_GpuSplatSelectedInitBuffer);
+            ClearGraphicsBuffer(m_GpuSplatDeletedBuffer);
+        }
+        return m_GpuSplatSelectedBuffer != null;
+    }
+
+    public void EditStoreInitialSelection()
+    {
+        if (!EnsureSelectionBuffers()) return;
+        Graphics.CopyBuffer(m_GpuSplatSelectedBuffer, m_GpuSplatSelectedInitBuffer);
+    }
+
+    public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
+    {
+        if (!EnsureSelectionBuffers()) return;
+
+        Graphics.CopyBuffer(m_GpuSplatSelectedInitBuffer, m_GpuSplatSelectedBuffer);
+        
+        var tr = transform;
+        Matrix4x4 matView = cam.worldToCameraMatrix;
+        Matrix4x4 matProj = GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
+        Matrix4x4 matO2W = tr.localToWorldMatrix;
+        Matrix4x4 matW2O = tr.worldToLocalMatrix;
+        int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
+        Vector4 screenPar = new Vector4(screenW, screenH, 0, 0);
+        Vector4 camPos = cam.transform.position;
+
+        var cmb = new CommandBuffer { name = "SplatSelectionUpdate" };
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, (int)KernelIndices.SelectionUpdate);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.SelectionUpdate, "_SplatChunks", m_GpuChunks);
+
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixVP", matProj * matView);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixMV", matView * matO2W);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixP", matProj);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixObjectToWorld", matO2W);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_MatrixWorldToObject", matW2O);
+
+        cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecScreenParams", screenPar);
+        cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecWorldSpaceCameraPos", camPos);
+        
+        cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
+
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.SelectionUpdate, out uint gsX, out _, out _);
+        cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.SelectionUpdate, (m_Asset.m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
+        Graphics.ExecuteCommandBuffer(cmb);
+        cmb.Dispose();
+        UpdateEditCountsAndBounds();
+    }
+
+    public void EditDeleteSelected()
+    {
+        if (!EnsureSelectionBuffers()) return;
+        UnionGraphicsBuffers(m_GpuSplatDeletedBuffer, m_GpuSplatSelectedBuffer);
+        EditDeselectAll();
+        UpdateEditCountsAndBounds();
+        if (editDeletedSplats != 0)
+            editModified = true;
+    }
+
+    public void EditSelectAll()
+    {
+        if (!EnsureSelectionBuffers()) return;
+        ClearGraphicsBuffer(m_GpuSplatSelectedBuffer, ~0u);
+        UpdateEditCountsAndBounds();
+    }
+
+    public void EditDeselectAll()
+    {
+        if (!EnsureSelectionBuffers()) return;
+        ClearGraphicsBuffer(m_GpuSplatSelectedBuffer);
+        UpdateEditCountsAndBounds();
+    }
+
+    public void EditInvertSelection()
+    {
+        if (!EnsureSelectionBuffers()) return;
+        InvertGraphicsBuffer(m_GpuSplatSelectedBuffer);
+        UpdateEditCountsAndBounds();
+    }
+
+    public bool EditExportData(GraphicsBuffer dstData)
+    {
+        if (!EnsureSelectionBuffers()) return false;
+        
+        var cmb = new CommandBuffer { name = "SplatExportData" };
+        SetAssetDataOnCS(cmb, m_CSSplatUtilities, (int)KernelIndices.ExportData);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCount", m_Asset.m_SplatCount);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_SplatChunks", m_GpuChunks);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_ExportBuffer", dstData);
+
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ExportData, out uint gsX, out _, out _);
+        cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ExportData, (m_Asset.m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
+        Graphics.ExecuteCommandBuffer(cmb);
+        cmb.Dispose();
+        return true;
+    }
+
+    public GraphicsBuffer gpuSplatDeletedBuffer => m_GpuSplatDeletedBuffer;
 }

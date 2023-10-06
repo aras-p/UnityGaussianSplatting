@@ -17,7 +17,7 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 
 ## Usage
 
-:warning: Note: this is all _**a toy**_, it is not robust, it does not handle errors gracefully, it does not interact or composite well with the "rest of rendering", it is not fast, etc. etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
+:warning: Note: this is all _**a toy**_, it can be not robust, not handle errors, not composite well with the rest of rendering, not be fast, etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
 First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
 requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
@@ -51,6 +51,13 @@ In the built-in render pipeline, the gaussian splatting should work with no extr
 If you are using **URP**, add GaussianSplatURPFeature to the URP renderer settings. If you are using **HDRP**, add
 CustomPass volume object and a GaussianSplatHDRPPass entry to it. Maybe also set injection point to "after postprocess"
 to stop auto-exposure from going wild.
+
+<img align="right" src="Doc/shotEdit.jpg" width="250px">
+
+When a GaussianSplatRenderer object is selected, there's an additional tool that shows up in the scene view to edit the splats.
+You can rectangle-drag to select them (shift+drag adds to selection). Usual Select All, Invert Selection etc. shortcuts work too.
+Delete/Backspace deletes the selected splats. In the inspector there's a button then to export the "edited" object back into
+a Gaussian Splat PLY file. This is best done using Very High import option for the original splat PLY file.
 
 _That's it!_
 

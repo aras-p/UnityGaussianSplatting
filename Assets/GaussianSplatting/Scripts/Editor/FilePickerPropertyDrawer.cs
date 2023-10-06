@@ -23,8 +23,16 @@ public class FilePickerPropertyDrawer : PropertyDrawer
             return "<none>";
         path = path.Replace('\\', '/');
         string[] parts = path.Split('/');
+
+        // check if filename is not some super generic one
+        var baseName = Path.GetFileNameWithoutExtension(parts[^1]).ToLowerInvariant();
+        if (baseName != "point_cloud" && baseName != "splat" && baseName != "input")
+            return parts[^1];
+
+        // otherwise if filename is just some generic "point cloud" type, then take some folder names above it into account
         if (parts.Length >= 4)
             path = string.Join('/', parts.TakeLast(4));
+
         path = path.Replace('/', '-');
         return path;
     }

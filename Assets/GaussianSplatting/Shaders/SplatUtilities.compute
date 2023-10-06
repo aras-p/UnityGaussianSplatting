@@ -3,6 +3,13 @@
 #pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 #pragma kernel CSCalcViewData
+#pragma kernel CSUpdateEditData
+#pragma kernel CSInitEditData
+#pragma kernel CSClearBuffer
+#pragma kernel CSInvertBuffer
+#pragma kernel CSOrBuffers
+#pragma kernel CSSelectionUpdate
+#pragma kernel CSExportData
 
 #pragma use_dxc
 
@@ -13,6 +20,14 @@ float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
+
+// radix sort etc. friendly, see http://stereopsis.com/radix.html
+uint FloatToSortableUint(float f)
+{
+    uint fu = asuint(f);
+    uint mask = -((int)(fu >> 31)) | 0x80000000;
+    return fu ^ mask;
+}
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSSetIndices (uint3 id : SV_DispatchThreadID)
@@ -33,20 +48,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 
     uint origIdx = _SplatSortKeys[idx];
 
-    uint chunkIdx = origIdx / kChunkSize;
-    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
-    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
-
     float3 pos = LoadSplatPos(origIdx);
-    pos = lerp(posMin, posMax, pos);
     pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
 
-    // make distance radix sort friendly from http://stereopsis.com/radix.html
-    uint fu = asuint(pos.z);
-    uint mask = -((int)(fu >> 31)) | 0x80000000;
-    _SplatSortDistances[idx] = fu ^ mask;
+    _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
 }
 
 RWStructuredBuffer<SplatViewData> _SplatViewData;
@@ -63,6 +69,11 @@ float _SplatScale;
 float _SplatOpacityScale;
 uint _SHOrder;
 
+RWByteAddressBuffer _SplatSelectedBits;
+ByteAddressBuffer _SplatDeletedBits;
+uint _SplatBitsValid;
+
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 {
@@ -75,6 +86,19 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
     float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
+
+    // deleted?
+    if (_SplatBitsValid)
+    {
+        uint wordIdx = idx / 32;
+        uint bitIdx = idx & 31;
+        uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
+        if (wordVal & (1 << bitIdx))
+        {
+            centerClipPos.w = 0;
+        }
+    }
+
     view.pos = centerClipPos;
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
@@ -117,3 +141,174 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     _SplatViewData[idx] = view;
 }
 
+
+RWByteAddressBuffer _DstBuffer;
+ByteAddressBuffer _SrcBuffer;
+uint _BufferSize;
+uint _DstBufferValue;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSUpdateEditData (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+
+    uint valSel = _SplatSelectedBits.Load(idx * 4);
+    uint valDel = _SplatDeletedBits.Load(idx * 4);
+    valSel &= ~valDel; // don't count deleted splats as selected
+    if (valSel != 0)
+    {
+        // update selection bounds
+        uint splatIdxStart = idx * 32;
+        uint splatIdxEnd = min(splatIdxStart + 32, _SplatCount);
+        float3 bmin = 1.0e38;
+        float3 bmax = -1.0e38;
+        uint mask = 1;
+        for (uint sidx = splatIdxStart; sidx < splatIdxEnd; ++sidx, mask <<= 1)
+        {
+            if (valSel & mask)
+            {
+                float3 spos = LoadSplatPos(sidx);
+                bmin = min(bmin, spos);
+                bmax = max(bmax, spos);
+            }
+        }
+        _DstBuffer.InterlockedMin(8, FloatToSortableUint(bmin.x));
+        _DstBuffer.InterlockedMin(12, FloatToSortableUint(bmin.y));
+        _DstBuffer.InterlockedMin(16, FloatToSortableUint(bmin.z));
+        _DstBuffer.InterlockedMax(20, FloatToSortableUint(bmax.x));
+        _DstBuffer.InterlockedMax(24, FloatToSortableUint(bmax.y));
+        _DstBuffer.InterlockedMax(28, FloatToSortableUint(bmax.z));
+    }
+    uint sumSel = countbits(valSel);
+    uint sumDel = countbits(valDel);
+    _DstBuffer.InterlockedAdd(0, sumSel);
+    _DstBuffer.InterlockedAdd(4, sumDel);
+}
+
+[numthreads(1,1,1)]
+void CSInitEditData (uint3 id : SV_DispatchThreadID)
+{
+    _DstBuffer.Store2(0, uint2(0,0)); // selected + deleted counts
+    uint initMin = FloatToSortableUint(1.0e38);
+    uint initMax = FloatToSortableUint(-1.0e38);
+    _DstBuffer.Store3(8, uint3(initMin, initMin, initMin));
+    _DstBuffer.Store3(20, uint3(initMax, initMax, initMax));
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSClearBuffer (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+    _DstBuffer.Store(idx * 4, _DstBufferValue);
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSInvertBuffer (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+    uint v = _DstBuffer.Load(idx * 4);
+    _DstBuffer.Store(idx * 4, ~v);
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSOrBuffers (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+    uint a = _SrcBuffer.Load(idx * 4);
+    uint b = _DstBuffer.Load(idx * 4);
+    _DstBuffer.Store(idx * 4, a | b);
+}
+
+float4 _SelectionRect;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    float3 pos = LoadSplatPos(idx);
+
+    float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
+    float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
+    bool behindCam = centerClipPos.w <= 0;
+    if (behindCam)
+        return;
+
+    float2 pixelPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, -0.5) + 0.5) * _VecScreenParams.xy;
+    if (pixelPos.x < _SelectionRect.x || pixelPos.x > _SelectionRect.z ||
+        pixelPos.y < _SelectionRect.y || pixelPos.y > _SelectionRect.w)
+    {
+        return;
+    }
+    uint wordIdx = idx / 32;
+    uint bitIdx = idx & 31;
+    _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1 << bitIdx);
+}
+
+
+struct ExportSplatData
+{
+    float3 pos;
+    float3 nor;
+    float3 dc0;
+    float4 shR14; float4 shR58; float4 shR9C; float3 shRDF;
+    float4 shG14; float4 shG58; float4 shG9C; float3 shGDF;
+    float4 shB14; float4 shB58; float4 shB9C; float3 shBDF;
+    float opacity;
+    float3 scale;
+    float4 rot;
+};
+RWStructuredBuffer<ExportSplatData> _ExportBuffer;
+
+float3 ColorToSH0(float3 col)
+{
+    return (col - 0.5) / 0.2820948;
+}
+float InvSigmoid(float v)
+{
+    return log(v / max(1 - v, 1.0e-6));
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSExportData (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+    SplatData src = LoadSplatData(idx);
+    ExportSplatData dst;
+    dst.pos = src.pos;
+    dst.nor = 0;
+    dst.dc0 = ColorToSH0(src.sh.col);
+    
+    dst.shR14 = float4(src.sh.sh1.r, src.sh.sh2.r, src.sh.sh3.r, src.sh.sh4.r);
+    dst.shR58 = float4(src.sh.sh5.r, src.sh.sh6.r, src.sh.sh7.r, src.sh.sh8.r);
+    dst.shR9C = float4(src.sh.sh9.r, src.sh.sh10.r, src.sh.sh11.r, src.sh.sh12.r);
+    dst.shRDF = float3(src.sh.sh13.r, src.sh.sh14.r, src.sh.sh15.r);
+    
+    dst.shG14 = float4(src.sh.sh1.g, src.sh.sh2.g, src.sh.sh3.g, src.sh.sh4.g);
+    dst.shG58 = float4(src.sh.sh5.g, src.sh.sh6.g, src.sh.sh7.g, src.sh.sh8.g);
+    dst.shG9C = float4(src.sh.sh9.g, src.sh.sh10.g, src.sh.sh11.g, src.sh.sh12.g);
+    dst.shGDF = float3(src.sh.sh13.g, src.sh.sh14.g, src.sh.sh15.g);
+    
+    dst.shB14 = float4(src.sh.sh1.b, src.sh.sh2.b, src.sh.sh3.b, src.sh.sh4.b);
+    dst.shB58 = float4(src.sh.sh5.b, src.sh.sh6.b, src.sh.sh7.b, src.sh.sh8.b);
+    dst.shB9C = float4(src.sh.sh9.b, src.sh.sh10.b, src.sh.sh11.b, src.sh.sh12.b);
+    dst.shBDF = float3(src.sh.sh13.b, src.sh.sh14.b, src.sh.sh15.b);
+    
+    dst.opacity = InvSigmoid(src.opacity);
+    dst.scale = log(src.scale);
+    dst.rot = src.rot.wxyz;
+    
+    _ExportBuffer[idx] = dst;
+}
