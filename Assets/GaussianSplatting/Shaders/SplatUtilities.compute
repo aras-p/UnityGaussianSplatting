@@ -1,14 +1,15 @@
 #define GROUP_SIZE 1024
 
-#pragma kernel CSSetIndices // 0
-#pragma kernel CSCalcDistances // 1
-#pragma kernel CSCalcViewData // 2
-#pragma kernel CSCountBuffer // 3
-#pragma kernel CSClearBuffer // 4
-#pragma kernel CSInvertBuffer // 5
-#pragma kernel CSOrBuffers // 6
-#pragma kernel CSSelectionUpdate // 7
-#pragma kernel CSExportData // 8
+#pragma kernel CSSetIndices
+#pragma kernel CSCalcDistances
+#pragma kernel CSCalcViewData
+#pragma kernel CSUpdateEditData
+#pragma kernel CSInitEditData
+#pragma kernel CSClearBuffer
+#pragma kernel CSInvertBuffer
+#pragma kernel CSOrBuffers
+#pragma kernel CSSelectionUpdate
+#pragma kernel CSExportData
 
 #pragma use_dxc
 
@@ -19,6 +20,14 @@ float4x4 _WorldToCameraMatrix;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
+
+// radix sort etc. friendly, see http://stereopsis.com/radix.html
+uint FloatToSortableUint(float f)
+{
+    uint fu = asuint(f);
+    uint mask = -((int)(fu >> 31)) | 0x80000000;
+    return fu ^ mask;
+}
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSSetIndices (uint3 id : SV_DispatchThreadID)
@@ -39,20 +48,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 
     uint origIdx = _SplatSortKeys[idx];
 
-    uint chunkIdx = origIdx / kChunkSize;
-    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
-    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
-
     float3 pos = LoadSplatPos(origIdx);
-    pos = lerp(posMin, posMax, pos);
     pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
     pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
 
-    // make distance radix sort friendly from http://stereopsis.com/radix.html
-    uint fu = asuint(pos.z);
-    uint mask = -((int)(fu >> 31)) | 0x80000000;
-    _SplatSortDistances[idx] = fu ^ mask;
+    _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
 }
 
 RWStructuredBuffer<SplatViewData> _SplatViewData;
@@ -148,7 +148,7 @@ uint _BufferSize;
 uint _DstBufferValue;
 
 [numthreads(GROUP_SIZE,1,1)]
-void CSCountBuffer (uint3 id : SV_DispatchThreadID)
+void CSUpdateEditData (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
     if (idx >= _BufferSize)
@@ -157,10 +157,44 @@ void CSCountBuffer (uint3 id : SV_DispatchThreadID)
     uint valSel = _SplatSelectedBits.Load(idx * 4);
     uint valDel = _SplatDeletedBits.Load(idx * 4);
     valSel &= ~valDel; // don't count deleted splats as selected
+    if (valSel != 0)
+    {
+        // update selection bounds
+        uint splatIdxStart = idx * 32;
+        uint splatIdxEnd = min(splatIdxStart + 32, _SplatCount);
+        float3 bmin = 1.0e38;
+        float3 bmax = -1.0e38;
+        uint mask = 1;
+        for (uint sidx = splatIdxStart; sidx < splatIdxEnd; ++sidx, mask <<= 1)
+        {
+            if (valSel & mask)
+            {
+                float3 spos = LoadSplatPos(sidx);
+                bmin = min(bmin, spos);
+                bmax = max(bmax, spos);
+            }
+        }
+        _DstBuffer.InterlockedMin(8, FloatToSortableUint(bmin.x));
+        _DstBuffer.InterlockedMin(12, FloatToSortableUint(bmin.y));
+        _DstBuffer.InterlockedMin(16, FloatToSortableUint(bmin.z));
+        _DstBuffer.InterlockedMax(20, FloatToSortableUint(bmax.x));
+        _DstBuffer.InterlockedMax(24, FloatToSortableUint(bmax.y));
+        _DstBuffer.InterlockedMax(28, FloatToSortableUint(bmax.z));
+    }
     uint sumSel = countbits(valSel);
     uint sumDel = countbits(valDel);
     _DstBuffer.InterlockedAdd(0, sumSel);
     _DstBuffer.InterlockedAdd(4, sumDel);
+}
+
+[numthreads(1,1,1)]
+void CSInitEditData (uint3 id : SV_DispatchThreadID)
+{
+    _DstBuffer.Store2(0, uint2(0,0)); // selected + deleted counts
+    uint initMin = FloatToSortableUint(1.0e38);
+    uint initMax = FloatToSortableUint(-1.0e38);
+    _DstBuffer.Store3(8, uint3(initMin, initMin, initMin));
+    _DstBuffer.Store3(20, uint3(initMax, initMax, initMax));
 }
 
 [numthreads(GROUP_SIZE,1,1)]
@@ -202,13 +236,7 @@ void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
     if (idx >= _SplatCount)
         return;
 
-    uint chunkIdx = idx / kChunkSize;
-    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
-    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
-
     float3 pos = LoadSplatPos(idx);
-    pos = lerp(posMin, posMax, pos);
 
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
     float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));

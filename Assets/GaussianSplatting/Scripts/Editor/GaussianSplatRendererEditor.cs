@@ -74,9 +74,9 @@ public class GaussianSplatRendererEditor : Editor
         {
             EditorGUILayout.Space();
             GUILayout.Label("Editing", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount/1000.0:F1}k splats");
-            EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats/1000.0:F1}k splats");
-            EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats/1000.0:F1}k splats");
+            EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
+            EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
+            EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
             if (gs.editModified)
             {
                 if (GUILayout.Button("Export modified PLY"))
@@ -90,6 +90,43 @@ public class GaussianSplatRendererEditor : Editor
                 }
             }
         }
+    }
+
+    bool HasFrameBounds()
+    {
+        return true;
+    }
+
+    Bounds OnGetFrameBounds()
+    {
+        var gs = target as GaussianSplatRenderer;
+        if (!gs || !gs.HasValidRenderSetup)
+            return new Bounds(Vector3.zero, Vector3.one);
+        Bounds bounds = default;
+        bounds.SetMinMax(gs.asset.m_BoundsMin, gs.asset.m_BoundsMax);
+        if (gs.editSelectedSplats > 0)
+        {
+            bounds = gs.editSelectedBounds;
+        }
+        bounds.extents *= 0.7f;
+        return TransformBounds(gs.transform, bounds);
+    }
+
+    public static Bounds TransformBounds(Transform tr, Bounds bounds )
+    {
+        var center = tr.TransformPoint(bounds.center);
+
+        var ext = bounds.extents;
+        var axisX = tr.TransformVector(ext.x, 0, 0);
+        var axisY = tr.TransformVector(0, ext.y, 0);
+        var axisZ = tr.TransformVector(0, 0, ext.z);
+
+        // sum their absolute value to get the world extents
+        ext.x = Mathf.Abs(axisX.x) + Mathf.Abs(axisY.x) + Mathf.Abs(axisZ.x);
+        ext.y = Mathf.Abs(axisX.y) + Mathf.Abs(axisY.y) + Mathf.Abs(axisZ.y);
+        ext.z = Mathf.Abs(axisX.z) + Mathf.Abs(axisY.z) + Mathf.Abs(axisZ.z);
+
+        return new Bounds { center = center, extents = ext };
     }
 
     static unsafe void ExportPlyFile(GaussianSplatRenderer gs)
@@ -316,6 +353,12 @@ class GaussianSplatsTool : EditorTool
                 }
                 break;
             case EventType.Repaint:
+                if (gs.editSelectedSplats > 0)
+                {
+                    var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.editSelectedBounds);
+                    Handles.color = new Color(1,0,1,0.7f);
+                    Handles.DrawWireCube(selBounds.center, selBounds.size);
+                }
                 if (GUIUtility.hotControl == id && evt.mousePosition != m_MouseStartDragPos)
                 {
                     GUIStyle style = "SelectionRect";

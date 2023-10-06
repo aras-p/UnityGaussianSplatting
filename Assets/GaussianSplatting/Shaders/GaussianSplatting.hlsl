@@ -344,7 +344,7 @@ float3 LoadAndDecodeVector(ByteAddressBuffer dataBuffer, uint addrU, uint fmt)
     return res;
 }
 
-float3 LoadSplatPos(uint index)
+float3 LoadSplatPosValue(uint index)
 {
     uint fmt = _SplatFormat & 0xFF;
     uint stride = 0;
@@ -357,6 +357,17 @@ float3 LoadSplatPos(uint index)
     else if (fmt == VECTOR_FMT_6)
         stride = 2;
     return LoadAndDecodeVector(_SplatPos, index * stride, fmt);
+}
+
+float3 LoadSplatPos(uint idx)
+{
+    uint chunkIdx = idx / kChunkSize;
+    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
+    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+    float3 pos = LoadSplatPosValue(idx);
+    pos = lerp(posMin, posMax, pos);
+    return pos;
 }
 
 half4 LoadSplatColTex(uint3 coord)
@@ -380,7 +391,7 @@ SplatData LoadSplatData(uint idx)
     half3 shMin = half3(f16tof32(chunk.shR    ), f16tof32(chunk.shG    ), f16tof32(chunk.shB    ));
     half3 shMax = half3(f16tof32(chunk.shR>>16), f16tof32(chunk.shG>>16), f16tof32(chunk.shB>>16));
 
-    s.pos       = lerp(posMin, posMax, LoadSplatPos(idx));
+    s.pos       = lerp(posMin, posMax, LoadSplatPosValue(idx));
 
     uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
     uint shFormat = (_SplatFormat >> 16) & 0xFF;
