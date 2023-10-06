@@ -598,7 +598,7 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_GpuSplatCounterBuffer = new GraphicsBuffer(target, 2, 4) {name = "GaussianSplatCounter"};
             ClearGraphicsBuffer(m_GpuSplatSelectedBuffer);
             ClearGraphicsBuffer(m_GpuSplatSelectedInitBuffer);
-            ClearGraphicsBuffer(m_GpuSplatSelectedBuffer);
+            ClearGraphicsBuffer(m_GpuSplatDeletedBuffer);
         }
         return m_GpuSplatSelectedBuffer != null;
     }
