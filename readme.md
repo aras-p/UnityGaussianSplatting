@@ -62,18 +62,11 @@ a Gaussian Splat PLY file. This is best done using Very High import option for t
 _That's it!_
 
 Wishlist that I may or might not do at some point:
-- [ ] Add some tools to crop / combine splat objects
 - [ ] Investigate hashed alpha testing instead of blending (removes need for sorting splats)
 - [ ] Make low quality levels work on mobile (look into ASTC texture compression?)
 - [ ] Make a C/WebAssembly library to do PLY quantization/compression just like in Unity
 - [ ] Make a WebGL/WebGPU example that uses the smaller data files
 - [ ] Make rendering faster (actual tiled compute shader rasterizer)
-- [x] Make it work in URP and HDRP as well
-- [x] Make multiple Gaussian Splat objects in the scene work better
-- [x] Make it respect the game object transform
-- [x] Look at ways to make the data sets smaller (in memory) ([blog post 1](https://aras-p.info/blog/2023/09/13/Making-Gaussian-Splats-smaller/), [blog post 2](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/))
-- [x] Integrate better with "the rest" of rendering that might be in the scene (BiRP)
-- [x] Make sorting faster (bitonic -> FidelityFX radix sort)
 
 
 ## Write-ups
@@ -98,7 +91,15 @@ Besides the gaussian splat asset that is loaded into GPU memory, currently this 
 per splat (for sorting, caching view dependent data etc.).
 
 
-## External Code Used
+## License and External Code Used
+
+The code I wrote for this is under MIT license. The project also uses several 3rd party libraries:
 
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
-- "Ffx" GPU sorting code is [AMD FidelityFX ParallelSort](https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort), ported to Unity by me.
+- "Ffx" GPU sorting code is based on
+  [AMD FidelityFX ParallelSort](https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort), MIT license,
+  (c) 2020-2021 Advanced Micro Devices, Inc. Ported to Unity by me.
+
+However, the [license of the original paper](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/LICENSE.md)
+is not quite clear to me. In this project, I have not used their code, but I have read their paper and have *seen* their
+code. I've no idea if that somehow makes this project be under their license too? Someone should figure this out.

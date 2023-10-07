@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 Shader "Gaussian Splatting/Debug/Render Boxes"
 {
     SubShader

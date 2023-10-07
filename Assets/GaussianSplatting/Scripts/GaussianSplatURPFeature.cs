@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #if GS_ENABLE_URP
 
 using UnityEngine;

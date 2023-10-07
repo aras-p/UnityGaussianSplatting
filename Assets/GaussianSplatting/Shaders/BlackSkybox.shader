@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 Shader "Unlit/BlackSkybox"
 {
     Properties

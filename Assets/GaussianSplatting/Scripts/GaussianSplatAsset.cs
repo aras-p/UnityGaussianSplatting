@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using System;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;

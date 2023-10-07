@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using Unity.Mathematics;
 
 public static class GaussianUtils

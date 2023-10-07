@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
 
 #pragma kernel CSSetIndices

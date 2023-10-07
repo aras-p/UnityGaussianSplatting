@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
 

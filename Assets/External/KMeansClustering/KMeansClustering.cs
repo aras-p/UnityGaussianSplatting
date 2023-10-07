@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using System;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
