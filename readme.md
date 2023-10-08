@@ -100,6 +100,7 @@ The code I wrote for this is under MIT license. The project also uses several 3r
   [AMD FidelityFX ParallelSort](https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort), MIT license,
   (c) 2020-2021 Advanced Micro Devices, Inc. Ported to Unity by me.
 
-However, the [license of the original paper](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/LICENSE.md)
-is not quite clear to me. In this project, I have not used their code, but I have read their paper and have *seen* their
-code. I've no idea if that somehow makes this project be under their license too? Someone should figure this out.
+However, keep in mind that the [license of the original paper implementation](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/LICENSE.md)
+says that the official _training_ software for the Gaussian Splats is for educational / academic / non-commercial
+purpose; commercial usage requires getting license from INRIA. That is: even if this viewer / integration
+into Unity is just "MIT license", you need to separately consider *how* did you get your Gaussian Splat PLY files.
