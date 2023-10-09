@@ -269,7 +269,6 @@ ByteAddressBuffer _SplatOther;
 ByteAddressBuffer _SplatSH;
 Texture2D _SplatColor;
 uint _SplatFormat;
-float4x4 _SplatCutout;
 
 // Match GaussianSplatAsset.VectorFormat
 #define VECTOR_FMT_32F 0

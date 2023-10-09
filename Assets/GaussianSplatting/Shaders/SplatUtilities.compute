@@ -70,6 +70,9 @@ float _SplatScale;
 float _SplatOpacityScale;
 uint _SHOrder;
 
+uint _SplatCutoutValid;
+float4x4 _SplatCutout;
+
 RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
@@ -100,7 +103,15 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    view.pos = float4(splat.pos, centerClipPos.w);
+    // ellipsoid cutout
+    if (_SplatCutoutValid)
+    {
+        float3 cutoutPos = mul(_SplatCutout, float4(splat.pos, 1)).xyz;
+        if (dot(cutoutPos, cutoutPos) > 1)
+            centerClipPos.w = 0;
+    }
+
+    view.pos = centerClipPos;
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
     {

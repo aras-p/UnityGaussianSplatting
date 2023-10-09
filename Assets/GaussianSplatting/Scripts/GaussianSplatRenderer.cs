@@ -134,7 +134,6 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
-            displayMat.SetMatrix("_SplatCutout", gs.m_Cutout.worldToLocalMatrix * gs.transform.localToWorldMatrix);
             gs.CalcViewData(cmb, cam, matrix);
 
             // draw
@@ -219,7 +218,9 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Range(1,30)] [Tooltip("Sort splats only every N frames")]
     public int m_SortNthFrame = 1;
 
+    [Tooltip("Cut splats by an ellipsoid")]
     public Transform m_Cutout;
+    
     [Header("Debugging Tweaks")]
 
     public RenderMode m_RenderMode = RenderMode.Splats;
@@ -472,6 +473,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatScale", m_SplatScale);
         cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatOpacityScale", m_OpacityScale);
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SHOrder", m_SHOrder);
+
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutValid", m_Cutout ? 1 : 0);
+        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_SplatCutout", m_Cutout ? m_Cutout.worldToLocalMatrix * transform.localToWorldMatrix : Matrix4x4.identity);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out uint gsY, out uint gsZ);
         cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);

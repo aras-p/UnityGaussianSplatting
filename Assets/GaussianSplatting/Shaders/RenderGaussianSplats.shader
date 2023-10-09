@@ -38,11 +38,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     v2f o = (v2f)0;
     instID = _OrderBuffer[instID];
 	SplatViewData view = _SplatViewData[instID];
-	float3 centerWorldPos = view.pos.xyz;
-	float4 centerClipPos = UnityObjectToClipPos (centerWorldPos);
+	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
-	float3 cutoutPos = mul(_SplatCutout, float4(centerWorldPos, 1)).xyz;
-	behindCam |= dot(cutoutPos, cutoutPos) > 1;
 	if (behindCam)
 	{
 		o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
