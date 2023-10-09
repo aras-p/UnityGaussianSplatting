@@ -134,6 +134,7 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
+            displayMat.SetMatrix("_SplatCutout", gs.m_Cutout.worldToLocalMatrix * gs.transform.localToWorldMatrix);
             gs.CalcViewData(cmb, cam, matrix);
 
             // draw
@@ -218,6 +219,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Range(1,30)] [Tooltip("Sort splats only every N frames")]
     public int m_SortNthFrame = 1;
 
+    public Transform m_Cutout;
     [Header("Debugging Tweaks")]
 
     public RenderMode m_RenderMode = RenderMode.Splats;

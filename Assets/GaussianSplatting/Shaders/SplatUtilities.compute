@@ -100,7 +100,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    view.pos = centerClipPos;
+    view.pos = float4(splat.pos, centerClipPos.w);
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
     {
