@@ -13,6 +13,22 @@ using UnityEngine.Experimental.Rendering;
 [CustomEditor(typeof(GaussianSplatRenderer))]
 public class GaussianSplatRendererEditor : Editor
 {
+    SerializedProperty m_PropAsset;
+    SerializedProperty m_PropSplatScale;
+    SerializedProperty m_PropOpacityScale;
+    SerializedProperty m_PropSHOrder;
+    SerializedProperty m_PropSortNthFrame;
+    SerializedProperty m_PropCutout;
+    SerializedProperty m_PropRenderMode;
+    SerializedProperty m_PropPointDisplaySize;
+    SerializedProperty m_PropShaderSplats;
+    SerializedProperty m_PropShaderComposite;
+    SerializedProperty m_PropShaderDebugPoints;
+    SerializedProperty m_PropShaderDebugBoxes;
+    SerializedProperty m_PropCSSplatUtilities;
+    SerializedProperty m_PropCSFfxSort;
+
+    bool m_ResourcesExpanded = false;
     int m_CameraIndex = 0;
 
     static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
@@ -25,6 +41,21 @@ public class GaussianSplatRendererEditor : Editor
 
     public void OnEnable()
     {
+        m_PropAsset = serializedObject.FindProperty("m_Asset");
+        m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
+        m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
+        m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
+        m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
+        m_PropCutout = serializedObject.FindProperty("m_Cutout");
+        m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
+        m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
+        m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
+        m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
+        m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
+        m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
+        m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+        m_PropCSFfxSort = serializedObject.FindProperty("m_CSFfxSort");
+
         s_AllEditors.Add(this);
     }
 
@@ -35,20 +66,49 @@ public class GaussianSplatRendererEditor : Editor
 
     public override void OnInspectorGUI()
     {
-        DrawDefaultInspector();
+        serializedObject.Update();
+
+        GUILayout.Label("Data Asset", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropAsset);
 
         var gs = target as GaussianSplatRenderer;
-        if (!gs)
-            return;
-        if (!gs.HasValidAsset)
+        if (!gs || !gs.HasValidAsset)
         {
             var msg = gs.asset != null && gs.asset.m_FormatVersion != GaussianSplatAsset.kCurrentVersion
                 ? "Gaussian Splat asset version is not compatible, please recreate the asset"
                 : "Gaussian Splat asset is not assigned or is empty";
             EditorGUILayout.HelpBox(msg, MessageType.Error);
-            return;
         }
-        if (!gs.enabled || !gs.gameObject.activeInHierarchy)
+
+        EditorGUILayout.Space();
+        GUILayout.Label("Render Options", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropSplatScale);
+        EditorGUILayout.PropertyField(m_PropOpacityScale);
+        EditorGUILayout.PropertyField(m_PropSHOrder);
+        EditorGUILayout.PropertyField(m_PropSortNthFrame);
+        EditorGUILayout.PropertyField(m_PropCutout);
+
+        EditorGUILayout.Space();
+        GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropRenderMode);
+        if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
+            EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+
+        EditorGUILayout.Space();
+        m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
+        if (m_ResourcesExpanded)
+        {
+            EditorGUILayout.PropertyField(m_PropShaderSplats);
+            EditorGUILayout.PropertyField(m_PropShaderComposite);
+            EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
+            EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
+            EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
+            EditorGUILayout.PropertyField(m_PropCSFfxSort);
+        }
+
+        serializedObject.ApplyModifiedProperties();
+
+        if (!gs || !gs.enabled || !gs.gameObject.activeInHierarchy || !gs.HasValidAsset)
             return;
         if (!gs.HasValidRenderSetup)
         {

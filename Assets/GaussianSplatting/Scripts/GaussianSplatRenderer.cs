@@ -202,11 +202,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         DebugChunkBounds,
     }
 
-    [Header("Data Asset")]
-
     public GaussianSplatAsset m_Asset;
-
-    [Header("Render Options")]
 
     [Range(0.1f, 2.0f)] [Tooltip("Additional scaling factor for the splats")]
     public float m_SplatScale = 1.0f;
@@ -221,12 +217,8 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Tooltip("Cut splats by an ellipsoid")]
     public Transform m_Cutout;
     
-    [Header("Debugging Tweaks")]
-
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
-
-    [Header("Resources")]
 
     public Shader m_ShaderSplats;
     public Shader m_ShaderComposite;
