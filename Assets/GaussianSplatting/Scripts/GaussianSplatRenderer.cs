@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Profiling;
@@ -214,11 +215,10 @@ public class GaussianSplatRenderer : MonoBehaviour
     [Range(1,30)] [Tooltip("Sort splats only every N frames")]
     public int m_SortNthFrame = 1;
 
-    [Tooltip("Cut splats by an ellipsoid")]
-    public Transform m_Cutout;
-    
     public RenderMode m_RenderMode = RenderMode.Splats;
     [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
+
+    public GaussianCutout[] m_Cutouts;
 
     public Shader m_ShaderSplats;
     public Shader m_ShaderComposite;
@@ -241,6 +241,7 @@ public class GaussianSplatRenderer : MonoBehaviour
     GraphicsBuffer m_GpuSplatSelectedInitBuffer;
     GraphicsBuffer m_GpuSplatSelectedBuffer;
     GraphicsBuffer m_GpuSplatDeletedBuffer;
+    GraphicsBuffer m_GpuSplatCutoutsBuffer;
     GraphicsBuffer m_GpuSplatEditDataBuffer;
 
     FfxParallelSort m_SorterFfx;
@@ -265,7 +266,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public GaussianSplatAsset asset => m_Asset;
 
-    enum KernelIndices : int
+    enum KernelIndices
     {
         SetIndices,
         CalcDistances,
@@ -396,6 +397,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuSplatSelectedBuffer?.Dispose();
         m_GpuSplatDeletedBuffer?.Dispose();
         m_GpuSplatEditDataBuffer?.Dispose();
+        m_GpuSplatCutoutsBuffer?.Dispose();
         m_SorterFfxArgs.resources.Dispose();
 
         m_GpuPosData = null;
@@ -411,6 +413,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         m_GpuSplatSelectedBuffer = null;
         m_GpuSplatDeletedBuffer = null;
         m_GpuSplatEditDataBuffer = null;
+        m_GpuSplatCutoutsBuffer = null;
         
         editSelectedSplats = 0;
         editDeletedSplats = 0;
@@ -466,8 +469,9 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeFloatParam(m_CSSplatUtilities, "_SplatOpacityScale", m_OpacityScale);
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SHOrder", m_SHOrder);
 
-        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutValid", m_Cutout ? 1 : 0);
-        cmb.SetComputeMatrixParam(m_CSSplatUtilities, "_SplatCutout", m_Cutout ? m_Cutout.worldToLocalMatrix * transform.localToWorldMatrix : Matrix4x4.identity);
+        UpdateCutoutsBuffer();
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out uint gsY, out uint gsZ);
         cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
@@ -606,7 +610,29 @@ public class GaussianSplatRenderer : MonoBehaviour
         editSelectedBounds = bounds;
     }
 
-    bool EnsureSelectionBuffers()
+    void UpdateCutoutsBuffer()
+    {
+        int bufferSize = m_Cutouts.Length;
+        if (m_Cutouts.Length == 0)
+            bufferSize = 1;
+        if (m_GpuSplatCutoutsBuffer == null || m_GpuSplatCutoutsBuffer.count != bufferSize)
+        {
+            m_GpuSplatCutoutsBuffer?.Dispose();
+            m_GpuSplatCutoutsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, bufferSize, UnsafeUtility.SizeOf<GaussianCutout.ShaderData>()) { name = "GaussianCutouts" };
+        }
+
+        var matrix = transform.localToWorldMatrix;
+        NativeArray<GaussianCutout.ShaderData> data = new(bufferSize, Allocator.Temp);
+        for (var i = 0; i < m_Cutouts.Length; ++i)
+        {
+            data[i] = GaussianCutout.GetShaderData(m_Cutouts[i], matrix);
+        }
+
+        m_GpuSplatCutoutsBuffer.SetData(data);
+        data.Dispose();
+    }
+
+    bool EnsureEditingBuffers()
     {
         if (!HasValidAsset || !HasValidRenderSetup)
             return false;
@@ -629,13 +655,13 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void EditStoreInitialSelection()
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
         Graphics.CopyBuffer(m_GpuSplatSelectedBuffer, m_GpuSplatSelectedInitBuffer);
     }
 
     public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
 
         Graphics.CopyBuffer(m_GpuSplatSelectedInitBuffer, m_GpuSplatSelectedBuffer);
         
@@ -673,7 +699,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void EditDeleteSelected()
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
         UnionGraphicsBuffers(m_GpuSplatDeletedBuffer, m_GpuSplatSelectedBuffer);
         EditDeselectAll();
         UpdateEditCountsAndBounds();
@@ -683,28 +709,28 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     public void EditSelectAll()
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
         ClearGraphicsBuffer(m_GpuSplatSelectedBuffer, ~0u);
         UpdateEditCountsAndBounds();
     }
 
     public void EditDeselectAll()
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
         ClearGraphicsBuffer(m_GpuSplatSelectedBuffer);
         UpdateEditCountsAndBounds();
     }
 
     public void EditInvertSelection()
     {
-        if (!EnsureSelectionBuffers()) return;
+        if (!EnsureEditingBuffers()) return;
         InvertGraphicsBuffer(m_GpuSplatSelectedBuffer);
         UpdateEditCountsAndBounds();
     }
 
     public bool EditExportData(GraphicsBuffer dstData)
     {
-        if (!EnsureSelectionBuffers()) return false;
+        if (!EnsureEditingBuffers()) return false;
         
         var cmb = new CommandBuffer { name = "SplatExportData" };
         SetAssetDataOnCS(cmb, m_CSSplatUtilities, (int)KernelIndices.ExportData);

@@ -18,9 +18,9 @@ public class GaussianSplatRendererEditor : Editor
     SerializedProperty m_PropOpacityScale;
     SerializedProperty m_PropSHOrder;
     SerializedProperty m_PropSortNthFrame;
-    SerializedProperty m_PropCutout;
     SerializedProperty m_PropRenderMode;
     SerializedProperty m_PropPointDisplaySize;
+    SerializedProperty m_PropCutouts;
     SerializedProperty m_PropShaderSplats;
     SerializedProperty m_PropShaderComposite;
     SerializedProperty m_PropShaderDebugPoints;
@@ -46,9 +46,9 @@ public class GaussianSplatRendererEditor : Editor
         m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
         m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
         m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
-        m_PropCutout = serializedObject.FindProperty("m_Cutout");
         m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
         m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
+        m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
         m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
         m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
         m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
@@ -86,7 +86,6 @@ public class GaussianSplatRendererEditor : Editor
         EditorGUILayout.PropertyField(m_PropOpacityScale);
         EditorGUILayout.PropertyField(m_PropSHOrder);
         EditorGUILayout.PropertyField(m_PropSortNthFrame);
-        EditorGUILayout.PropertyField(m_PropCutout);
 
         EditorGUILayout.Space();
         GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
@@ -105,18 +104,25 @@ public class GaussianSplatRendererEditor : Editor
             EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
             EditorGUILayout.PropertyField(m_PropCSFfxSort);
         }
-
-        serializedObject.ApplyModifiedProperties();
-
-        if (!gs || !gs.enabled || !gs.gameObject.activeInHierarchy || !gs.HasValidAsset)
-            return;
-        if (!gs.HasValidRenderSetup)
+        bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
+        if (validAndEnabled && !gs.HasValidRenderSetup)
         {
             EditorGUILayout.HelpBox("Shader resources are not set up", MessageType.Error);
-            return;
+            validAndEnabled = false;
         }
-        var asset = gs.asset;
 
+        if (validAndEnabled)
+        {
+            EditCameras(gs);
+            EditGUI(gs);
+        }
+
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    void EditCameras(GaussianSplatRenderer gs)
+    {
+        var asset = gs.asset;
         var cameras = asset.m_Cameras;
         if (cameras != null && cameras.Length != 0)
         {
@@ -130,11 +136,22 @@ public class GaussianSplatRendererEditor : Editor
                 gs.ActivateCamera(camIndex);
             }
         }
+    }
 
+    void EditGUI(GaussianSplatRenderer gs)
+    {
+        EditorGUILayout.Space();
+        GUILayout.Label("Editing", EditorStyles.boldLabel);
+        bool wasToolActive = ToolManager.activeToolType == typeof(GaussianSplatsTool);
+        bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
+        if (!wasToolActive && isToolActive)
+            ToolManager.SetActiveTool<GaussianSplatsTool>();
+
+        EditorGUILayout.PropertyField(m_PropCutouts);
+
+        var asset = gs.asset;
         if (gs.editModified || gs.editSelectedSplats != 0 || gs.editDeletedSplats != 0)
         {
-            EditorGUILayout.Space();
-            GUILayout.Label("Editing", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
             EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
@@ -147,7 +164,9 @@ public class GaussianSplatRendererEditor : Editor
                     !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
                     asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
                 {
-                    EditorGUILayout.HelpBox("It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy", MessageType.Warning);
+                    EditorGUILayout.HelpBox(
+                        "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
+                        MessageType.Warning);
                 }
             }
         }

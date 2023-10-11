@@ -70,12 +70,44 @@ float _SplatScale;
 float _SplatOpacityScale;
 uint _SHOrder;
 
-uint _SplatCutoutValid;
-float4x4 _SplatCutout;
+uint _SplatCutoutsCount;
+#define SPLAT_CUTOUT_TYPE_ELLIPSOID 0
+#define SPLAT_CUTOUT_TYPE_BOX 1
+struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
+{
+    float4x4 mat;
+    int type;
+};
+StructuredBuffer<GaussianCutoutShaderData> _SplatCutouts;
 
 RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
+
+
+bool IsSplatCut(float3 pos)
+{
+    if (_SplatCutoutsCount == 0)
+        return false;
+
+    for (uint i = 0; i < _SplatCutoutsCount; ++i)
+    {
+        GaussianCutoutShaderData cutData = _SplatCutouts[i];
+        if (cutData.type < 0) // invalid/null cutout, ignore
+            continue;
+
+        float3 cutoutPos = mul(cutData.mat, float4(pos, 1)).xyz;
+        if (cutData.type == SPLAT_CUTOUT_TYPE_ELLIPSOID)
+        {
+            if (dot(cutoutPos, cutoutPos) <= 1) return false;
+        }
+        if (cutData.type == SPLAT_CUTOUT_TYPE_BOX)
+        {
+            if (all(abs(cutoutPos) <= 1)) return false;
+        }
+    }
+    return true;
+}
 
 
 [numthreads(GROUP_SIZE,1,1)]
@@ -103,12 +135,13 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // ellipsoid cutout
-    if (_SplatCutoutValid)
+    // cutouts
+    half opacityScale = _SplatOpacityScale;
+    float splatScale = _SplatScale;
+    if (IsSplatCut(splat.pos))
     {
-        float3 cutoutPos = mul(_SplatCutout, float4(splat.pos, 1)).xyz;
-        if (dot(cutoutPos, cutoutPos) > 1)
-            centerClipPos.w = 0;
+        opacityScale *= 0.15;
+        splatScale *= 0.3;
     }
 
     view.pos = centerClipPos;
@@ -122,8 +155,9 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
         float3 cov3d0, cov3d1;
         CalcCovariance3D(splatRotScaleMat, cov3d0, cov3d1);
-        cov3d0 *= _SplatScale * _SplatScale;
-        cov3d1 *= _SplatScale * _SplatScale;
+        float splatScale2 = splatScale * splatScale;
+        cov3d0 *= splatScale2;
+        cov3d1 *= splatScale2;
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, _MatrixP, _VecScreenParams);
         
         float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
@@ -145,7 +179,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
         half4 col;
         col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder);
-        col.a = min(splat.opacity * _SplatOpacityScale, 65000);
+        col.a = min(splat.opacity * opacityScale, 65000);
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
