@@ -750,6 +750,10 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_SplatChunks", m_GpuChunks);
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_ExportBuffer", dstData);
 
+        UpdateCutoutsBuffer();
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
+
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ExportData, out uint gsX, out _, out _);
         cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.ExportData, (m_Asset.m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
         Graphics.ExecuteCommandBuffer(cmb);

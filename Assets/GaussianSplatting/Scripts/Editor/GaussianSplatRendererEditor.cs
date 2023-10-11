@@ -264,7 +264,9 @@ public class GaussianSplatRendererEditor : Editor
         {
             int wordIdx = i >> 5;
             int bitIdx = i & 31;
-            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+            bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
+            bool isCutout = data[i].nor.sqrMagnitude > 0;
+            if (!isDeleted && !isCutout)
                 ++aliveCount;
         }
         
@@ -341,7 +343,9 @@ end_header
         {
             int wordIdx = i >> 5;
             int bitIdx = i & 31;
-            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+            bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
+            bool isCutout = data[i].nor.sqrMagnitude > 0;
+            if (!isDeleted && !isCutout)
             {
                 var splat = data[i];
                 byte* ptr = (byte*)&splat;

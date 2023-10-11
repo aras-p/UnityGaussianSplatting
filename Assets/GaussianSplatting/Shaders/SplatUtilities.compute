@@ -375,6 +375,9 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
     dst.opacity = InvSigmoid(src.opacity);
     dst.scale = log(src.scale);
     dst.rot = src.rot.wxyz;
+
+    if (IsSplatCut(src.pos))
+        dst.nor = 1; // mark as skipped for export
     
     _ExportBuffer[idx] = dst;
 }
