@@ -140,14 +140,41 @@ public class GaussianSplatRendererEditor : Editor
 
     void EditGUI(GaussianSplatRenderer gs)
     {
+        EditorGUILayout.Space(12f, true);
+        GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
         EditorGUILayout.Space();
-        GUILayout.Label("Editing", EditorStyles.boldLabel);
         bool wasToolActive = ToolManager.activeToolType == typeof(GaussianSplatsTool);
         bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
         if (!wasToolActive && isToolActive)
             ToolManager.SetActiveTool<GaussianSplatsTool>();
+        if (wasToolActive && !isToolActive)
+            Tools.current = Tool.View;
 
+        EditorGUILayout.Space();
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Add Cutout"))
+        {
+            GaussianCutout cutout = ObjectFactory.CreateGameObject("GSCutout", typeof(GaussianCutout)).GetComponent<GaussianCutout>();
+            Transform cutoutTr = cutout.transform;
+            cutoutTr.SetParent(gs.transform, false);
+            cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
+            ArrayUtility.Add(ref gs.m_Cutouts, cutout);
+            EditorUtility.SetDirty(gs);
+        }
+        if (GUILayout.Button("Use All Cutouts"))
+        {
+            gs.m_Cutouts = FindObjectsByType<GaussianCutout>(FindObjectsSortMode.InstanceID);
+            EditorUtility.SetDirty(gs);
+        }
+
+        if (GUILayout.Button("No Cutouts"))
+        {
+            gs.m_Cutouts = Array.Empty<GaussianCutout>();
+            EditorUtility.SetDirty(gs);
+        }
+        GUILayout.EndHorizontal();
         EditorGUILayout.PropertyField(m_PropCutouts);
+        EditorGUILayout.Space();
 
         bool displayEditTools = isToolActive || gs.editModified || gs.m_Cutouts.Length != 0;
         if (displayEditTools)
