@@ -149,9 +149,13 @@ public class GaussianSplatRendererEditor : Editor
 
         EditorGUILayout.PropertyField(m_PropCutouts);
 
-        var asset = gs.asset;
-        if (gs.editModified || gs.editSelectedSplats != 0 || gs.editDeletedSplats != 0)
+        bool displayEditTools = isToolActive || gs.editModified || gs.m_Cutouts.Length != 0;
+        if (displayEditTools)
         {
+            gs.editDeletedDisplay = (GaussianSplatRenderer.EditDisplayMode)EditorGUILayout.EnumPopup("Deleted Display", gs.editDeletedDisplay);
+            gs.editCutoutDisplay = (GaussianSplatRenderer.EditDisplayMode)EditorGUILayout.EnumPopup("Cutout Display", gs.editCutoutDisplay);
+
+            var asset = gs.asset;
             EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
             EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
@@ -433,12 +437,32 @@ class GaussianSplatsTool : EditorTool
                 }
                 break;
             case EventType.Repaint:
+                // draw cutout gizmos
+                Handles.color = new Color(1,0,1,0.7f);
+                var prevMatrix = Handles.matrix;
+                foreach (var cutout in gs.m_Cutouts)
+                {
+                    if (!cutout)
+                        continue;
+                    Handles.matrix = cutout.transform.localToWorldMatrix;
+                    if (cutout.m_Type == GaussianCutout.Type.Ellipsoid)
+                    {
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.up, 1.0f);
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.right, 1.0f);
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.forward, 1.0f);
+                    }
+                    if (cutout.m_Type == GaussianCutout.Type.Box)
+                        Handles.DrawWireCube(Vector3.zero, Vector3.one * 2);
+                }
+
+                Handles.matrix = prevMatrix;
+                // draw selection bounding box
                 if (gs.editSelectedSplats > 0)
                 {
                     var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.editSelectedBounds);
-                    Handles.color = new Color(1,0,1,0.7f);
                     Handles.DrawWireCube(selBounds.center, selBounds.size);
                 }
+                // draw drag rectangle
                 if (GUIUtility.hotControl == id && evt.mousePosition != m_MouseStartDragPos)
                 {
                     GUIStyle style = "SelectionRect";

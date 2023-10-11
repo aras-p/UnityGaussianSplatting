@@ -202,6 +202,11 @@ public class GaussianSplatRenderer : MonoBehaviour
         DebugBoxes,
         DebugChunkBounds,
     }
+    public enum EditDisplayMode
+    {
+        Hidden,
+        Faded
+    }
 
     public GaussianSplatAsset m_Asset;
 
@@ -263,6 +268,8 @@ public class GaussianSplatRenderer : MonoBehaviour
     [field: NonSerialized] public uint editSelectedSplats { get; private set; }
     [field: NonSerialized] public uint editDeletedSplats { get; private set; }
     [field: NonSerialized] public Bounds editSelectedBounds { get; private set; }
+    [field: NonSerialized] public EditDisplayMode editDeletedDisplay { get; set; } = EditDisplayMode.Hidden;
+    [field: NonSerialized] public EditDisplayMode editCutoutDisplay { get; set; } = EditDisplayMode.Faded;
 
     public GaussianSplatAsset asset => m_Asset;
 
@@ -471,6 +478,7 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         UpdateCutoutsBuffer();
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatEditDisplayMode", (int)(editCutoutDisplay) | ((int)editDeletedDisplay << 8));
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out uint gsY, out uint gsZ);
@@ -687,7 +695,11 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecScreenParams", screenPar);
         cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecWorldSpaceCameraPos", camPos);
-        
+
+        UpdateCutoutsBuffer();
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.SelectionUpdate, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
+
         cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.SelectionUpdate, out uint gsX, out _, out _);

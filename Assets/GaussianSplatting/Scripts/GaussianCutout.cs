@@ -33,7 +33,7 @@ public class GaussianCutout : MonoBehaviour
         return sd;
     }
 
-    public void OnDrawGizmos()
+    public void OnDrawGizmosSelected()
     {
         Gizmos.matrix = transform.localToWorldMatrix;
         Gizmos.color = Color.magenta;
