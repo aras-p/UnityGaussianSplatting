@@ -477,7 +477,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SHOrder", m_SHOrder);
 
         UpdateCutoutsBuffer();
-        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts?.Length ?? 0);
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatEditDisplayMode", (int)(editCutoutDisplay) | ((int)editDeletedDisplay << 8));
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
@@ -620,8 +620,8 @@ public class GaussianSplatRenderer : MonoBehaviour
 
     void UpdateCutoutsBuffer()
     {
-        int bufferSize = m_Cutouts.Length;
-        if (m_Cutouts.Length == 0)
+        int bufferSize = m_Cutouts?.Length ?? 0;
+        if (bufferSize == 0)
             bufferSize = 1;
         if (m_GpuSplatCutoutsBuffer == null || m_GpuSplatCutoutsBuffer.count != bufferSize)
         {
@@ -629,11 +629,14 @@ public class GaussianSplatRenderer : MonoBehaviour
             m_GpuSplatCutoutsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, bufferSize, UnsafeUtility.SizeOf<GaussianCutout.ShaderData>()) { name = "GaussianCutouts" };
         }
 
-        var matrix = transform.localToWorldMatrix;
         NativeArray<GaussianCutout.ShaderData> data = new(bufferSize, Allocator.Temp);
-        for (var i = 0; i < m_Cutouts.Length; ++i)
+        if (m_Cutouts != null)
         {
-            data[i] = GaussianCutout.GetShaderData(m_Cutouts[i], matrix);
+            var matrix = transform.localToWorldMatrix;
+            for (var i = 0; i < m_Cutouts.Length; ++i)
+            {
+                data[i] = GaussianCutout.GetShaderData(m_Cutouts[i], matrix);
+            }
         }
 
         m_GpuSplatCutoutsBuffer.SetData(data);
@@ -697,7 +700,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeVectorParam(m_CSSplatUtilities, "_VecWorldSpaceCameraPos", camPos);
 
         UpdateCutoutsBuffer();
-        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts?.Length ?? 0);
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.SelectionUpdate, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
         cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
@@ -751,7 +754,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_ExportBuffer", dstData);
 
         UpdateCutoutsBuffer();
-        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts.Length);
+        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts?.Length ?? 0);
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.ExportData, out uint gsX, out _, out _);

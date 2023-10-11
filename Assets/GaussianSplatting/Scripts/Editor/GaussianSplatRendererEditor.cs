@@ -176,7 +176,7 @@ public class GaussianSplatRendererEditor : Editor
         EditorGUILayout.PropertyField(m_PropCutouts);
         EditorGUILayout.Space();
 
-        bool displayEditTools = isToolActive || gs.editModified || gs.m_Cutouts.Length != 0;
+        bool displayEditTools = isToolActive || gs.editModified || (gs.m_Cutouts != null && gs.m_Cutouts.Length != 0);
         if (displayEditTools)
         {
             gs.editDeletedDisplay = (GaussianSplatRenderer.EditDisplayMode)EditorGUILayout.EnumPopup("Deleted Display", gs.editDeletedDisplay);
