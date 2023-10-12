@@ -1,4 +1,4 @@
-# Toy Gaussian Splatting playground in Unity
+# Gaussian Splatting playground in Unity
 
 SIGGRAPH 2023 had a paper "[**3D Gaussian Splatting for Real-Time Radiance Field Rendering**](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis that looks pretty cool!
 Check out their website, source code repository, data sets and so on.
@@ -11,16 +11,16 @@ The original paper code has a purely CUDA-based realtime renderer; other
 people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://github.com/cvlab-epfl/gaussian-splatting-web), Taichi at [wanmeihuali](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting), etc.).
 
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
-- The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as a screenspace aligned rectangle that covers the extents of it.
+- The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as an oriented quad that covers the extents of it.
 - Splat color accumulation is done by rendering front-to-back, with a blending mode that results in the same accumulated color as their tile-based renderer.
 - Splat sorting is done with a AMD FidelityFX derived radix sort.
 
 ## Usage
 
-:warning: Note: this is all _**a toy**_, it can be not robust, not handle errors, not composite well with the rest of rendering, not be fast, etc. Also, do not file bugs or issues just yet; I will most likely just ignore them and do whatever I please. I told you so! :warning:
+:warning: Note: this is all _**a toy**_ that I'm just playing around with. If you file bugs or feature requests, I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
 First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
-requires DX12 or Vulkan on Windows, i.e. DX11 will not work.
+requires DX12 or Vulkan on Windows, i.e. DX11 will not work. This is **not tested at all on mobile/web**, and probably does not work there.
 
 <img align="right" src="Doc/shotAssetCreator.png" width="250px">
 
@@ -79,13 +79,13 @@ My own blog posts about all this:
 ## Performance numbers:
 
 "bicycle" scene from the paper, with 6.1M splats and first camera in there, rendering at 1200x797 resolution,
-at "Medium" asset quality level (283MB asset file):
+at "Medium" asset quality level (282MB asset file):
 
 * Windows (NVIDIA RTX 3080 Ti):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
-  * Unity, DX12 or Vulkan: 12.6ms (79FPS) - 9.4ms rendering, 2.4ms sorting, 0.7ms splat view calc. 1.2GB VRAM usage.
+  * Unity, DX12 or Vulkan: 8.1ms (123FPS) - 4.55ms rendering, 2.37ms sorting, 0.78ms splat view calc. 1.3GB VRAM usage.
 * Mac (Apple M1 Max):
-  * Unity, Metal: 31.8ms (31FPS).
+  * Unity, Metal: 23.6ms (42FPS).
 
 Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 48 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).

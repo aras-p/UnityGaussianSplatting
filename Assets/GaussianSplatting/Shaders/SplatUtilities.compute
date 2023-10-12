@@ -74,6 +74,62 @@ RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
 
+void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
+{
+    #if 0 // does not quite give the correct results?
+
+    // https://jsfiddle.net/mattrossman/ehxmtgw6/
+    // References:
+    // - https://www.youtube.com/watch?v=e50Bj7jn9IQ
+    // - https://en.wikipedia.org/wiki/Eigenvalue_algorithm#2%C3%972_matrices
+    // - https://people.math.harvard.edu/~knill/teaching/math21b2004/exhibits/2dmatrices/index.html
+    float a = cov2d.x;
+    float b = cov2d.y;
+    float d = cov2d.z;
+    float det = a * d - b * b; // matrix is symmetric, so "c" is same as "b"
+    float trace = a + d;
+
+    float mean = 0.5 * trace;
+    float dist = sqrt(mean * mean - det);
+
+    float lambda1 = mean + dist; // 1st eigenvalue
+    float lambda2 = mean - dist; // 2nd eigenvalue
+
+    if (b == 0) {
+        // https://twitter.com/the_ross_man/status/1706342719776551360
+        if (a > d) v1 = float2(1, 0);
+        else v1 = float2(0, 1);
+    } else
+        v1 = normalize(float2(b, d - lambda2));
+
+    v1.y = -v1.y;
+    // The 2nd eigenvector is just a 90 degree rotation of the first since Gaussian axes are orthogonal
+    v2 = float2(v1.y, -v1.x);
+
+    // scaling components
+    v1 *= sqrt(lambda1);
+    v2 *= sqrt(lambda2);
+
+    float radius = 1.5;
+    v1 *= radius;
+    v2 *= radius;
+
+    #else
+
+    // same as in antimatter15/splat
+    float diag1 = cov2d.x, diag2 = cov2d.z, offDiag = cov2d.y;
+    float mid = 0.5f * (diag1 + diag2);
+    float radius = length(float2((diag1 - diag2) / 2.0, offDiag));
+    float lambda1 = mid + radius;
+    float lambda2 = max(mid - radius, 0.1);
+    float2 diagVec = normalize(float2(offDiag, lambda1 - diag1));
+    diagVec.y = -diagVec.y;
+    float maxSize = 4096.0;
+    v1 = min(sqrt(2.0 * lambda1), maxSize) * diagVec;
+    v2 = min(sqrt(2.0 * lambda2), maxSize) * float2(diagVec.y, -diagVec.x);
+
+    #endif
+}
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
@@ -114,19 +170,8 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         cov3d0 *= _SplatScale * _SplatScale;
         cov3d1 *= _SplatScale * _SplatScale;
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, _MatrixP, _VecScreenParams);
-        
-        float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
 
-        // Guard against precision issues that would result in occasional splat explosions, where a single splat would explode to covering the whole screen at rare angles / positions as its covariance matrix becomes degenerate.
-        det = max(1e-11, det);
-
-        float mid = 0.5f * (cov2d.x + cov2d.z);
-        float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
-        float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
-        float radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
-
-        float3 conic = float3(cov2d.z, -cov2d.y, cov2d.x) * rcp(det);
-        view.conicRadius = float4(conic, radius);
+        DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
         float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
         float3 objViewDir = mul((float3x3)_MatrixWorldToObject, worldViewDir);
