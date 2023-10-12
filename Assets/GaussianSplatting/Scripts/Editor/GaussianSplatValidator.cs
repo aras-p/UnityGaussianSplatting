@@ -12,6 +12,13 @@ using UnityEngine.Experimental.Rendering;
 [BurstCompile]
 public class GaussianSplatValidator
 {
+    struct RefItem
+    {
+        public string assetPath;
+        public int cameraIndex;
+        public float fov;
+    }
+
     [MenuItem("Tools/Gaussian Splats/Debug/Validate Rendering")]
     public static unsafe void Validate()
     {
@@ -23,109 +30,113 @@ public class GaussianSplatValidator
                 return;
             }
         }
-        var paths = new[]
+        var items = new RefItem[]
         {
-            "Assets/GaussianAssets/bicycle-point_cloud-iteration_30000-point_cloud.asset",
-            "Assets/GaussianAssets/truck-point_cloud-iteration_30000-point_cloud.asset",
-            "Assets/GaussianAssets/garden-point_cloud-iteration_30000-point_cloud.asset",
-            //"Assets/GaussianAssets/playroom_30k.asset",
+            new() {assetPath = "bicycle", cameraIndex = 0, fov = 39.09651f},
+            new() {assetPath = "truck", cameraIndex = 30, fov = 50},
+            new() {assetPath = "garden", cameraIndex = 30, fov = 47},
         };
-
-        int width = 1200;
-        int height = 797;
 
         var cam = Camera.main;
         var oldAsset = gaussians.asset;
         var oldCamPos = cam.transform.localPosition;
         var oldCamRot = cam.transform.localRotation;
-        var renderTarget = RenderTexture.GetTemporary(width, height, 24, GraphicsFormat.R8G8B8A8_SRGB);
-        cam.targetTexture = renderTarget;
+        var oldCamFov = cam.fieldOfView;
 
-        var captureTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
-        var compareTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
-        NativeArray<Color32> diffPixels = new(width * height, Allocator.Persistent);
-
-        int imageIndex = 1;
-
-
-        foreach (var path in paths)
+        for (var index = 0; index < items.Length; index++)
         {
+            var item = items[index];
+            EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", item.assetPath, (float)index / items.Length);
+            var path = $"Assets/GaussianAssets/{item.assetPath}-point_cloud-iteration_30000-point_cloud.asset";
             var gs = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(path);
+            if (gs == null)
+            {
+                Debug.LogError($"Did not find asset for validation item {item.assetPath} at {path}");
+                continue;
+            }
+            var refImageFile = $"Doc/RefImages/SBIR_{item.assetPath}{item.cameraIndex}.png";
+            if (!File.Exists(refImageFile))
+            {
+                Debug.LogError($"Did not find reference image for validation item {item.assetPath} at {refImageFile}");
+                continue;
+
+            }
+
+            var compareTexture = new Texture2D(4, 4, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
+            byte[] refImageBytes = File.ReadAllBytes(refImageFile);
+            ImageConversion.LoadImage(compareTexture, refImageBytes, false);
+
+            int width = compareTexture.width;
+            int height = compareTexture.height;
+
+            var renderTarget = RenderTexture.GetTemporary(width, height, 24, GraphicsFormat.R8G8B8A8_SRGB);
+            cam.targetTexture = renderTarget;
+            cam.fieldOfView = item.fov;
+
+            var captureTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
+            NativeArray<Color32> diffPixels = new(width * height, Allocator.Persistent);
+
             gaussians.m_Asset = gs;
             gaussians.Update();
-            for (int camIndex = 0; camIndex <= 40; camIndex += 10, ++imageIndex)
+            gaussians.ActivateCamera(item.cameraIndex);
+            cam.Render();
+            Graphics.SetRenderTarget(renderTarget);
+            captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+
+            NativeArray<Color32> refPixels = compareTexture.GetPixelData<Color32>(0);
+            NativeArray<Color32> gotPixels = captureTexture.GetPixelData<Color32>(0);
+            float psnr = 0, rmse = 0;
+            int errorsCount = 0;
+            DiffImagesJob difJob = new DiffImagesJob();
+            difJob.difPixels = diffPixels;
+            difJob.refPixels = refPixels;
+            difJob.gotPixels = gotPixels;
+            difJob.psnrPtr = &psnr;
+            difJob.rmsePtr = &rmse;
+            difJob.difPixCount = &errorsCount;
+            difJob.Schedule().Complete();
+
+            string pathDif = $"Shot-{item.assetPath}{item.cameraIndex}-diff.png";
+            string pathRef = $"Shot-{item.assetPath}{item.cameraIndex}-ref.png";
+            string pathGot = $"Shot-{item.assetPath}{item.cameraIndex}-got.png";
+
+            if (errorsCount > 50 || psnr < 90.0f)
             {
-                // we're only interested in these ones for now
-                if (imageIndex != 1 && imageIndex != 9 && imageIndex != 14)
-                    continue;
-                    
-                EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", path, (float)imageIndex / (float)(paths.Length * 5));
-                gaussians.ActivateCamera(camIndex);
-                cam.Render();
-                Graphics.SetRenderTarget(renderTarget);
-                captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                Debug.LogWarning(
+                    $"{item.assetPath} cam {item.cameraIndex}: RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
-                var refImageFile = $"Images/Ref/Shot-{imageIndex:0000}.png";
-                if (File.Exists(refImageFile))
-                {
-                    byte[] refImageBytes = File.ReadAllBytes(refImageFile);
-                    ImageConversion.LoadImage(compareTexture, refImageBytes, false);
-                }
-
-                NativeArray<Color32> refPixels = compareTexture.GetPixelData<Color32>(0);
-                NativeArray<Color32> gotPixels = captureTexture.GetPixelData<Color32>(0);
-                float psnr = 0, rmse = 0;
-                int errorsCount = 0;
-                DiffImagesJob difJob = new DiffImagesJob();
-                difJob.difPixels = diffPixels;
-                difJob.refPixels = refPixels;
-                difJob.gotPixels = gotPixels;
-                difJob.psnrPtr = &psnr;
-                difJob.rmsePtr = &rmse;
-                difJob.difPixCount = &errorsCount;
-                difJob.Schedule().Complete();
-
-                string pathDif = $"Shot-{imageIndex:0000}-diff.png";
-                string pathRef = $"Shot-{imageIndex:0000}-ref.png";
-                string pathGot = $"Shot-{imageIndex:0000}-got.png";
-
-                if (errorsCount > 50 || psnr < 70.0f)
-                {
-                    Debug.LogWarning($"{path} cam {camIndex} (image {imageIndex}): RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
-
-                    NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels,
-                        GraphicsFormat.R8G8B8A8_SRGB, (uint) width, (uint) height);
-                    File.WriteAllBytes(pathDif, pngBytes.ToArray());
-                    pngBytes.Dispose();
-                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(refPixels, GraphicsFormat.R8G8B8A8_SRGB,
-                        (uint) width, (uint) height);
-                    File.WriteAllBytes(pathRef, pngBytes.ToArray());
-                    pngBytes.Dispose();
-                    pngBytes = ImageConversion.EncodeNativeArrayToPNG(gotPixels, GraphicsFormat.R8G8B8A8_SRGB,
-                        (uint) width, (uint) height);
-                    File.WriteAllBytes(pathGot, pngBytes.ToArray());
-                    pngBytes.Dispose();
-                }
-                else
-                {
-                    File.Delete(pathDif);
-                    File.Delete(pathRef);
-                    File.Delete(pathGot);
-                }
+                NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels,
+                    GraphicsFormat.R8G8B8A8_SRGB, (uint) width, (uint) height);
+                File.WriteAllBytes(pathDif, pngBytes.ToArray());
+                pngBytes.Dispose();
+                pngBytes = ImageConversion.EncodeNativeArrayToPNG(refPixels, GraphicsFormat.R8G8B8A8_SRGB,
+                    (uint) width, (uint) height);
+                File.WriteAllBytes(pathRef, pngBytes.ToArray());
+                pngBytes.Dispose();
+                pngBytes = ImageConversion.EncodeNativeArrayToPNG(gotPixels, GraphicsFormat.R8G8B8A8_SRGB,
+                    (uint) width, (uint) height);
+                File.WriteAllBytes(pathGot, pngBytes.ToArray());
+                pngBytes.Dispose();
             }
+            else
+            {
+                File.Delete(pathDif);
+                File.Delete(pathRef);
+                File.Delete(pathGot);
+            }
+
+            diffPixels.Dispose();
+            RenderTexture.ReleaseTemporary(renderTarget);
+            Object.DestroyImmediate(captureTexture);
+            Object.DestroyImmediate(compareTexture);
         }
-
-
-        diffPixels.Dispose();
 
         cam.targetTexture = null;
         gaussians.m_Asset = oldAsset;
         gaussians.Update();
         cam.transform.localPosition = oldCamPos;
         cam.transform.localRotation = oldCamRot;
-
-        RenderTexture.ReleaseTemporary(renderTarget);
-        Object.DestroyImmediate(captureTexture);
+        cam.fieldOfView = oldCamFov;
 
         EditorUtility.ClearProgressBar();
     }

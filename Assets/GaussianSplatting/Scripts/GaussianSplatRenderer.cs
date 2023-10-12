@@ -13,8 +13,9 @@ using UnityEngine.Rendering;
 class GaussianSplatRenderSystem
 {
     static ProfilerMarker s_ProfDraw = new(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
-    internal static ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
-    
+    static ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
+    static ProfilerMarker s_ProfCalcView = new(ProfilerCategory.Render, "GaussianSplat.CalcView", MarkerFlags.SampleGPU);
+
     public static GaussianSplatRenderSystem instance => ms_Instance ??= new GaussianSplatRenderSystem();
     static GaussianSplatRenderSystem ms_Instance;
     
@@ -135,7 +136,9 @@ class GaussianSplatRenderSystem
             mpb.SetInteger("_DisplayIndex", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
             mpb.SetInteger("_DisplayChunks", gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
+            cmb.BeginSample(s_ProfCalcView);
             gs.CalcViewData(cmb, cam, matrix);
+            cmb.EndSample(s_ProfCalcView);
 
             // draw
             int indexCount = 6;
@@ -262,7 +265,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     Hash128 m_PrevHash;
 
     static readonly ProfilerMarker s_ProfSort = new(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
-    static readonly ProfilerMarker s_ProfView = new(ProfilerCategory.Render, "GaussianSplat.View", MarkerFlags.SampleGPU);
 
     [field: NonSerialized] public bool editModified { get; private set; }
     [field: NonSerialized] public uint editSelectedSplats { get; private set; }
@@ -444,8 +446,6 @@ public class GaussianSplatRenderer : MonoBehaviour
         if (cam.cameraType == CameraType.Preview)
             return;
 
-        using var prof = s_ProfView.Auto();
-
         var tr = transform;
 
         Matrix4x4 matView = cam.worldToCameraMatrix;
@@ -481,7 +481,7 @@ public class GaussianSplatRenderer : MonoBehaviour
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatEditDisplayMode", (int)(editCutoutDisplay) | ((int)editDeletedDisplay << 8));
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
-        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out uint gsY, out uint gsZ);
+        m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
         cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
     }
 
