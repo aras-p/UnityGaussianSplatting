@@ -85,7 +85,7 @@ at "Medium" asset quality level (282MB asset file):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
   * Unity, DX12 or Vulkan: 8.1ms (123FPS) - 4.55ms rendering, 2.37ms sorting, 0.78ms splat view calc. 1.3GB VRAM usage.
 * Mac (Apple M1 Max):
-  * Unity, Metal: 31.8ms (31FPS).
+  * Unity, Metal: 23.6ms (42FPS).
 
 Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 48 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).
