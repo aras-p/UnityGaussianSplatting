@@ -64,22 +64,19 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
 
     float focal = screenParams.x * matrixP._m00 / 2;
 
-    float4x4 J = float4x4(
-        focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z), 0,
-        0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z), 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0
+    float3x3 J = float3x3(
+        focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
+        0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+        0, 0, 0
     );
-    viewMatrix._m03_m13_m23 = 0;
-    float4x4 W = viewMatrix;
-    float4x4 T = mul(J, W);
-    float4x4 V = float4x4(
-        cov3d0.x, cov3d0.y, cov3d0.z, 0,
-        cov3d0.y, cov3d1.x, cov3d1.y, 0,
-        cov3d0.z, cov3d1.y, cov3d1.z, 0,
-        0, 0, 0, 0
+    float3x3 W = (float3x3)viewMatrix;
+    float3x3 T = mul(J, W);
+    float3x3 V = float3x3(
+        cov3d0.x, cov3d0.y, cov3d0.z,
+        cov3d0.y, cov3d1.x, cov3d1.y,
+        cov3d0.z, cov3d1.y, cov3d1.z
     );
-    float4x4 cov = mul(T, mul(V, transpose(T)));
+    float3x3 cov = mul(T, mul(V, transpose(T)));
 
     // Low pass filter to make each splat at least 1px size.
     cov._m00 += 0.3;
