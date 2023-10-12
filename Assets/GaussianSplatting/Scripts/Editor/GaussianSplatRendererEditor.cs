@@ -158,6 +158,7 @@ public class GaussianSplatRendererEditor : Editor
             Transform cutoutTr = cutout.transform;
             cutoutTr.SetParent(gs.transform, false);
             cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
+            gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
             ArrayUtility.Add(ref gs.m_Cutouts, cutout);
             EditorUtility.SetDirty(gs);
         }
