@@ -16,7 +16,7 @@ public class FilePickerPropertyDrawer : PropertyDrawer
     static GUIStyle s_StyleTextFieldDropdown;
     static readonly int kPathFieldControlID = "FilePickerPathField".GetHashCode();
     const int kIconSize = 15;
-    const int kRecentPathsCount = 10;
+    const int kRecentPathsCount = 20;
 
     public static string PathToDisplayString(string path)
     {
