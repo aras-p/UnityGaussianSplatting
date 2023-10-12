@@ -24,9 +24,7 @@ StructuredBuffer<uint> _OrderBuffer;
 struct v2f
 {
     half4 col : COLOR0;
-    //float2 centerScreenPos : TEXCOORD0;
-    //float3 conic : TEXCOORD1;
-	float2 pos : TEXCOORD0;
+    float2 pos : TEXCOORD0;
     float4 vertex : SV_POSITION;
 };
 
@@ -79,14 +77,11 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
-    //float2 d = CalcScreenSpaceDelta(i.vertex.xy, i.centerScreenPos, _ProjectionParams);
-    //float power = CalcPowerFromConic(i.conic, d);
 	float power = -dot(i.pos, i.pos);
 	half alpha = exp(power);
 	if (i.col.a >= 0)
 	{
 		alpha = saturate(alpha * i.col.a);
-		//alpha = i.col.a;
 	}
 	else
 	{
