@@ -549,7 +549,7 @@ SplatData LoadSplatData(uint idx)
 struct SplatViewData
 {
     float4 pos;
-    float4 conicRadius;
+    float2 axis1, axis2;
     uint2 color; // 4xFP16
 };
 

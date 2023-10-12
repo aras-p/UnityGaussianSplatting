@@ -24,8 +24,9 @@ StructuredBuffer<uint> _OrderBuffer;
 struct v2f
 {
     half4 col : COLOR0;
-    float2 centerScreenPos : TEXCOORD0;
-    float3 conic : TEXCOORD1;
+    //float2 centerScreenPos : TEXCOORD0;
+    //float3 conic : TEXCOORD1;
+	float2 pos : TEXCOORD0;
     float4 vertex : SV_POSITION;
 };
 
@@ -50,16 +51,14 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.g = f16tof32(view.color.x);
 		o.col.b = f16tof32(view.color.y >> 16);
 		o.col.a = f16tof32(view.color.y);
-		o.conic = view.conicRadius.xyz;
-
-		o.centerScreenPos = (centerClipPos.xy / centerClipPos.w * float2(0.5, 0.5*_ProjectionParams.x) + 0.5) * _ScreenParams.xy;
 
 		uint idx = vtxID;
 		float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
+		quadPos *= 2;
 
-		float radius = view.conicRadius.w;
+		o.pos = quadPos;
 
-		float2 deltaScreenPos = quadPos * radius * 2 / _ScreenParams.xy;
+		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _ScreenParams.xy;
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;
 
@@ -80,12 +79,14 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
-    float2 d = CalcScreenSpaceDelta(i.vertex.xy, i.centerScreenPos, _ProjectionParams);
-    float power = CalcPowerFromConic(i.conic, d);
+    //float2 d = CalcScreenSpaceDelta(i.vertex.xy, i.centerScreenPos, _ProjectionParams);
+    //float power = CalcPowerFromConic(i.conic, d);
+	float power = -dot(i.pos, i.pos);
 	half alpha = exp(power);
 	if (i.col.a >= 0)
 	{
 		alpha = saturate(alpha * i.col.a);
+		//alpha = i.col.a;
 	}
 	else
 	{
