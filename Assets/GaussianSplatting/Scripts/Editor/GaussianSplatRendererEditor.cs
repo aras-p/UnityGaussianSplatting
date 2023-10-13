@@ -13,6 +13,22 @@ using UnityEngine.Experimental.Rendering;
 [CustomEditor(typeof(GaussianSplatRenderer))]
 public class GaussianSplatRendererEditor : Editor
 {
+    SerializedProperty m_PropAsset;
+    SerializedProperty m_PropSplatScale;
+    SerializedProperty m_PropOpacityScale;
+    SerializedProperty m_PropSHOrder;
+    SerializedProperty m_PropSortNthFrame;
+    SerializedProperty m_PropRenderMode;
+    SerializedProperty m_PropPointDisplaySize;
+    SerializedProperty m_PropCutouts;
+    SerializedProperty m_PropShaderSplats;
+    SerializedProperty m_PropShaderComposite;
+    SerializedProperty m_PropShaderDebugPoints;
+    SerializedProperty m_PropShaderDebugBoxes;
+    SerializedProperty m_PropCSSplatUtilities;
+    SerializedProperty m_PropCSFfxSort;
+
+    bool m_ResourcesExpanded = false;
     int m_CameraIndex = 0;
 
     static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
@@ -25,6 +41,21 @@ public class GaussianSplatRendererEditor : Editor
 
     public void OnEnable()
     {
+        m_PropAsset = serializedObject.FindProperty("m_Asset");
+        m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
+        m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
+        m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
+        m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
+        m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
+        m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
+        m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
+        m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
+        m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
+        m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
+        m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
+        m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+        m_PropCSFfxSort = serializedObject.FindProperty("m_CSFfxSort");
+
         s_AllEditors.Add(this);
     }
 
@@ -35,28 +66,63 @@ public class GaussianSplatRendererEditor : Editor
 
     public override void OnInspectorGUI()
     {
-        DrawDefaultInspector();
+        serializedObject.Update();
+
+        GUILayout.Label("Data Asset", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropAsset);
 
         var gs = target as GaussianSplatRenderer;
-        if (!gs)
-            return;
-        if (!gs.HasValidAsset)
+        if (!gs || !gs.HasValidAsset)
         {
             var msg = gs.asset != null && gs.asset.m_FormatVersion != GaussianSplatAsset.kCurrentVersion
                 ? "Gaussian Splat asset version is not compatible, please recreate the asset"
                 : "Gaussian Splat asset is not assigned or is empty";
             EditorGUILayout.HelpBox(msg, MessageType.Error);
-            return;
         }
-        if (!gs.enabled || !gs.gameObject.activeInHierarchy)
-            return;
-        if (!gs.HasValidRenderSetup)
+
+        EditorGUILayout.Space();
+        GUILayout.Label("Render Options", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropSplatScale);
+        EditorGUILayout.PropertyField(m_PropOpacityScale);
+        EditorGUILayout.PropertyField(m_PropSHOrder);
+        EditorGUILayout.PropertyField(m_PropSortNthFrame);
+
+        EditorGUILayout.Space();
+        GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(m_PropRenderMode);
+        if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
+            EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+
+        EditorGUILayout.Space();
+        m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
+        if (m_ResourcesExpanded)
+        {
+            EditorGUILayout.PropertyField(m_PropShaderSplats);
+            EditorGUILayout.PropertyField(m_PropShaderComposite);
+            EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
+            EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
+            EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
+            EditorGUILayout.PropertyField(m_PropCSFfxSort);
+        }
+        bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
+        if (validAndEnabled && !gs.HasValidRenderSetup)
         {
             EditorGUILayout.HelpBox("Shader resources are not set up", MessageType.Error);
-            return;
+            validAndEnabled = false;
         }
-        var asset = gs.asset;
 
+        if (validAndEnabled)
+        {
+            EditCameras(gs);
+            EditGUI(gs);
+        }
+
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    void EditCameras(GaussianSplatRenderer gs)
+    {
+        var asset = gs.asset;
         var cameras = asset.m_Cameras;
         if (cameras != null && cameras.Length != 0)
         {
@@ -70,15 +136,59 @@ public class GaussianSplatRendererEditor : Editor
                 gs.ActivateCamera(camIndex);
             }
         }
+    }
 
-        if (gs.editModified || gs.editSelectedSplats != 0 || gs.editDeletedSplats != 0)
+    void EditGUI(GaussianSplatRenderer gs)
+    {
+        EditorGUILayout.Space(12f, true);
+        GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
+        EditorGUILayout.Space();
+        bool wasToolActive = ToolManager.activeToolType == typeof(GaussianSplatsTool);
+        bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
+        if (!wasToolActive && isToolActive)
+            ToolManager.SetActiveTool<GaussianSplatsTool>();
+        if (wasToolActive && !isToolActive)
+            Tools.current = Tool.View;
+
+        EditorGUILayout.Space();
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Add Cutout"))
         {
-            EditorGUILayout.Space();
-            GUILayout.Label("Editing", EditorStyles.boldLabel);
+            GaussianCutout cutout = ObjectFactory.CreateGameObject("GSCutout", typeof(GaussianCutout)).GetComponent<GaussianCutout>();
+            Transform cutoutTr = cutout.transform;
+            cutoutTr.SetParent(gs.transform, false);
+            cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
+            gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
+            ArrayUtility.Add(ref gs.m_Cutouts, cutout);
+            EditorUtility.SetDirty(gs);
+            Selection.activeGameObject = cutout.gameObject;
+        }
+        if (GUILayout.Button("Use All Cutouts"))
+        {
+            gs.m_Cutouts = FindObjectsByType<GaussianCutout>(FindObjectsSortMode.InstanceID);
+            EditorUtility.SetDirty(gs);
+        }
+
+        if (GUILayout.Button("No Cutouts"))
+        {
+            gs.m_Cutouts = Array.Empty<GaussianCutout>();
+            EditorUtility.SetDirty(gs);
+        }
+        GUILayout.EndHorizontal();
+        EditorGUILayout.PropertyField(m_PropCutouts);
+        EditorGUILayout.Space();
+
+        bool hasCutouts = gs.m_Cutouts != null && gs.m_Cutouts.Length != 0;
+        bool modifiedOrHasCutouts = gs.editModified || hasCutouts;
+        bool displayEditTools = isToolActive || modifiedOrHasCutouts;
+
+        if (displayEditTools)
+        {
+            var asset = gs.asset;
             EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
             EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
-            if (gs.editModified)
+            if (modifiedOrHasCutouts)
             {
                 if (GUILayout.Button("Export modified PLY"))
                     ExportPlyFile(gs);
@@ -87,7 +197,9 @@ public class GaussianSplatRendererEditor : Editor
                     !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
                     asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
                 {
-                    EditorGUILayout.HelpBox("It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy", MessageType.Warning);
+                    EditorGUILayout.HelpBox(
+                        "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
+                        MessageType.Warning);
                 }
             }
         }
@@ -154,7 +266,9 @@ public class GaussianSplatRendererEditor : Editor
         {
             int wordIdx = i >> 5;
             int bitIdx = i & 31;
-            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+            bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
+            bool isCutout = data[i].nor.sqrMagnitude > 0;
+            if (!isDeleted && !isCutout)
                 ++aliveCount;
         }
         
@@ -231,7 +345,9 @@ end_header
         {
             int wordIdx = i >> 5;
             int bitIdx = i & 31;
-            if ((deleted[wordIdx] & (1u << bitIdx)) == 0)
+            bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
+            bool isCutout = data[i].nor.sqrMagnitude > 0;
+            if (!isDeleted && !isCutout)
             {
                 var splat = data[i];
                 byte* ptr = (byte*)&splat;
@@ -354,12 +470,32 @@ class GaussianSplatsTool : EditorTool
                 }
                 break;
             case EventType.Repaint:
+                // draw cutout gizmos
+                Handles.color = new Color(1,0,1,0.7f);
+                var prevMatrix = Handles.matrix;
+                foreach (var cutout in gs.m_Cutouts)
+                {
+                    if (!cutout)
+                        continue;
+                    Handles.matrix = cutout.transform.localToWorldMatrix;
+                    if (cutout.m_Type == GaussianCutout.Type.Ellipsoid)
+                    {
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.up, 1.0f);
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.right, 1.0f);
+                        Handles.DrawWireDisc(Vector3.zero, Vector3.forward, 1.0f);
+                    }
+                    if (cutout.m_Type == GaussianCutout.Type.Box)
+                        Handles.DrawWireCube(Vector3.zero, Vector3.one * 2);
+                }
+
+                Handles.matrix = prevMatrix;
+                // draw selection bounding box
                 if (gs.editSelectedSplats > 0)
                 {
                     var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.editSelectedBounds);
-                    Handles.color = new Color(1,0,1,0.7f);
                     Handles.DrawWireCube(selBounds.center, selBounds.size);
                 }
+                // draw drag rectangle
                 if (GUIUtility.hotControl == id && evt.mousePosition != m_MouseStartDragPos)
                 {
                     GUIStyle style = "SelectionRect";
