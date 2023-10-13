@@ -16,8 +16,14 @@
 
 #include "GaussianSplatting.hlsl"
 
-float4x4 _LocalToWorldMatrix;
-float4x4 _WorldToCameraMatrix;
+float4x4 _MatrixObjectToWorld;
+float4x4 _MatrixWorldToObject;
+float4x4 _MatrixVP;
+float4x4 _MatrixMV;
+float4x4 _MatrixP;
+float4 _VecScreenParams;
+float4 _VecWorldSpaceCameraPos;
+
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
@@ -50,21 +56,12 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     uint origIdx = _SplatSortKeys[idx];
 
     float3 pos = LoadSplatPos(origIdx);
-    pos = mul(_LocalToWorldMatrix, float4(pos.xyz, 1)).xyz;
-    pos = mul(_WorldToCameraMatrix, float4(pos.xyz, 1)).xyz;
+    pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
 
     _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
 }
 
 RWStructuredBuffer<SplatViewData> _SplatViewData;
-
-float4x4 _MatrixVP;
-float4x4 _MatrixMV;
-float4x4 _MatrixP;
-float4x4 _MatrixObjectToWorld;
-float4x4 _MatrixWorldToObject;
-float4 _VecScreenParams;
-float4 _VecWorldSpaceCameraPos;
 
 float _SplatScale;
 float _SplatOpacityScale;
