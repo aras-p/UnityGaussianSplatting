@@ -86,7 +86,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         if (m_InputFile != m_PrevPlyPath && !string.IsNullOrWhiteSpace(m_InputFile))
         {
             PLYFileReader.ReadFileHeader(m_InputFile, out m_PrevVertexCount, out var _, out var _);
-            m_PrevFileSize = new FileInfo(m_InputFile).Length;
+            m_PrevFileSize = File.Exists(m_InputFile) ? new FileInfo(m_InputFile).Length : 0;
             m_PrevPlyPath = m_InputFile;
         }
 

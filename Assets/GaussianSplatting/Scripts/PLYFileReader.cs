@@ -9,6 +9,11 @@ public static class PLYFileReader
 {
     public static void ReadFileHeader(string filePath, out int vertexCount, out int vertexStride, out List<string> attrNames)
     {
+        vertexCount = 0;
+        vertexStride = 0;
+        attrNames = new List<string>();
+        if (!File.Exists(filePath))
+            return;
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
         ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrNames, fs);
     }
@@ -23,10 +28,11 @@ public static class PLYFileReader
         vertexCount = 0;
         vertexStride = 0;
         attrNames = new List<string>();
-        while (true)
+        const int kMaxHeaderLines = 9000;
+        for (int lineIdx = 0; lineIdx < kMaxHeaderLines; ++lineIdx)
         {
             var line = ReadLine(fs);
-            if (line == "end_header")
+            if (line == "end_header" || line.Length == 0)
                 break;
             var tokens = line.Split(' ');
             if (tokens.Length == 3 && tokens[0] == "element" && tokens[1] == "vertex")
