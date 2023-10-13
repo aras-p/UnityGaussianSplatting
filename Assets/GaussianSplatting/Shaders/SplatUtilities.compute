@@ -71,13 +71,9 @@ float _SplatOpacityScale;
 uint _SHOrder;
 
 uint _SplatCutoutsCount;
-uint _SplatEditDisplayMode;
 
 #define SPLAT_CUTOUT_TYPE_ELLIPSOID 0
 #define SPLAT_CUTOUT_TYPE_BOX 1
-
-#define SPLAT_EDIT_DISPLAY_MODE_HIDDEN 0
-#define SPLAT_EDIT_DISPLAY_MODE_FADED 1
 
 struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
 {
@@ -170,18 +166,6 @@ bool IsSplatCut(float3 pos)
     return hadValidCutouts;
 }
 
-void ApplyEditMode(uint mode, inout float4 centerClipPos, inout half opacityScale, inout float splatScale)
-{
-    if (mode == SPLAT_EDIT_DISPLAY_MODE_HIDDEN)
-        centerClipPos.w = 0;
-    if (mode == SPLAT_EDIT_DISPLAY_MODE_FADED)
-    {
-        opacityScale *= 0.15;
-        splatScale *= 0.4;
-    }
-}
-
-
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 {
@@ -196,7 +180,6 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
     float splatScale = _SplatScale;
-    bool applyLowPass = true;
 
     // deleted?
     if (_SplatBitsValid)
@@ -206,16 +189,14 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
         if (wordVal & (1 << bitIdx))
         {
-            applyLowPass = false;
-            ApplyEditMode((_SplatEditDisplayMode>>8)&0xFF, centerClipPos, opacityScale, splatScale);
+            centerClipPos.w = 0;
         }
     }
 
     // cutouts
     if (IsSplatCut(splat.pos))
     {
-        applyLowPass = false;
-        ApplyEditMode(_SplatEditDisplayMode&0xFF, centerClipPos, opacityScale, splatScale);
+        centerClipPos.w = 0;
     }
 
     view.pos = centerClipPos;
@@ -232,7 +213,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         float splatScale2 = splatScale * splatScale;
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
-        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, _MatrixP, _VecScreenParams, applyLowPass);
+        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, _MatrixP, _VecScreenParams);
         
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 

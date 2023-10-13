@@ -161,6 +161,7 @@ public class GaussianSplatRendererEditor : Editor
             gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
             ArrayUtility.Add(ref gs.m_Cutouts, cutout);
             EditorUtility.SetDirty(gs);
+            Selection.activeGameObject = cutout.gameObject;
         }
         if (GUILayout.Button("Use All Cutouts"))
         {
@@ -177,17 +178,17 @@ public class GaussianSplatRendererEditor : Editor
         EditorGUILayout.PropertyField(m_PropCutouts);
         EditorGUILayout.Space();
 
-        bool displayEditTools = isToolActive || gs.editModified || (gs.m_Cutouts != null && gs.m_Cutouts.Length != 0);
+        bool hasCutouts = gs.m_Cutouts != null && gs.m_Cutouts.Length != 0;
+        bool modifiedOrHasCutouts = gs.editModified || hasCutouts;
+        bool displayEditTools = isToolActive || modifiedOrHasCutouts;
+
         if (displayEditTools)
         {
-            gs.editDeletedDisplay = (GaussianSplatRenderer.EditDisplayMode)EditorGUILayout.EnumPopup("Deleted Display", gs.editDeletedDisplay);
-            gs.editCutoutDisplay = (GaussianSplatRenderer.EditDisplayMode)EditorGUILayout.EnumPopup("Cutout Display", gs.editCutoutDisplay);
-
             var asset = gs.asset;
             EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
             EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
-            if (gs.editModified)
+            if (modifiedOrHasCutouts)
             {
                 if (GUILayout.Button("Export modified PLY"))
                     ExportPlyFile(gs);

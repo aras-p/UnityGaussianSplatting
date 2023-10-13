@@ -270,8 +270,6 @@ public class GaussianSplatRenderer : MonoBehaviour
     [field: NonSerialized] public uint editSelectedSplats { get; private set; }
     [field: NonSerialized] public uint editDeletedSplats { get; private set; }
     [field: NonSerialized] public Bounds editSelectedBounds { get; private set; }
-    [field: NonSerialized] public EditDisplayMode editDeletedDisplay { get; set; } = EditDisplayMode.Hidden;
-    [field: NonSerialized] public EditDisplayMode editCutoutDisplay { get; set; } = EditDisplayMode.Faded;
 
     public GaussianSplatAsset asset => m_Asset;
 
@@ -478,7 +476,6 @@ public class GaussianSplatRenderer : MonoBehaviour
 
         UpdateCutoutsBuffer();
         cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatCutoutsCount", m_Cutouts?.Length ?? 0);
-        cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatEditDisplayMode", (int)(editCutoutDisplay) | ((int)editDeletedDisplay << 8));
         cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, "_SplatCutouts", m_GpuSplatCutoutsBuffer);
 
         m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
