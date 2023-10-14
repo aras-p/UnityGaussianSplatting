@@ -31,7 +31,14 @@ public class GaussianSplatRendererEditor : Editor
     bool m_ResourcesExpanded = false;
     int m_CameraIndex = 0;
 
+    static int s_EditStatsUpdateCounter = 0;
+
     static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
+
+    public static void BumpGUICounter()
+    {
+        ++s_EditStatsUpdateCounter;
+    }
 
     public static void RepaintAll()
     {
@@ -140,6 +147,8 @@ public class GaussianSplatRendererEditor : Editor
 
     void EditGUI(GaussianSplatRenderer gs)
     {
+        ++s_EditStatsUpdateCounter;
+
         EditorGUILayout.Space(12f, true);
         GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
         EditorGUILayout.Space();
@@ -160,18 +169,21 @@ public class GaussianSplatRendererEditor : Editor
             cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
             gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
             ArrayUtility.Add(ref gs.m_Cutouts, cutout);
+            gs.UpdateEditCountsAndBounds();
             EditorUtility.SetDirty(gs);
             Selection.activeGameObject = cutout.gameObject;
         }
         if (GUILayout.Button("Use All Cutouts"))
         {
             gs.m_Cutouts = FindObjectsByType<GaussianCutout>(FindObjectsSortMode.InstanceID);
+            gs.UpdateEditCountsAndBounds();
             EditorUtility.SetDirty(gs);
         }
 
         if (GUILayout.Button("No Cutouts"))
         {
             gs.m_Cutouts = Array.Empty<GaussianCutout>();
+            gs.UpdateEditCountsAndBounds();
             EditorUtility.SetDirty(gs);
         }
         GUILayout.EndHorizontal();
@@ -186,6 +198,7 @@ public class GaussianSplatRendererEditor : Editor
         {
             var asset = gs.asset;
             EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
+            EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
             EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
             EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
             if (modifiedOrHasCutouts)
@@ -200,6 +213,15 @@ public class GaussianSplatRendererEditor : Editor
                     EditorGUILayout.HelpBox(
                         "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
                         MessageType.Warning);
+                }
+            }
+
+            if (hasCutouts)
+            {
+                if (s_EditStatsUpdateCounter > 10)
+                {
+                    gs.UpdateEditCountsAndBounds();
+                    s_EditStatsUpdateCounter = 0;
                 }
             }
         }
@@ -358,6 +380,8 @@ class GaussianSplatsTool : EditorTool
         var gs = target as GaussianSplatRenderer;
         if (!gs)
             return;
+
+        GaussianSplatRendererEditor.BumpGUICounter();
         
         int id = GUIUtility.GetControlID(FocusType.Passive);
         Event evt = Event.current;

@@ -7,7 +7,8 @@
 #pragma kernel CSUpdateEditData
 #pragma kernel CSInitEditData
 #pragma kernel CSClearBuffer
-#pragma kernel CSInvertBuffer
+#pragma kernel CSInvertSelection
+#pragma kernel CSSelectAll
 #pragma kernel CSOrBuffers
 #pragma kernel CSSelectionUpdate
 #pragma kernel CSExportData
@@ -232,7 +233,13 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 RWByteAddressBuffer _DstBuffer;
 ByteAddressBuffer _SrcBuffer;
 uint _BufferSize;
-uint _DstBufferValue;
+
+uint2 GetSplatIndicesFromWord(uint idx)
+{
+    uint idxStart = idx * 32;
+    uint idxEnd = min(idxStart + 32, _SplatCount);
+    return uint2(idxStart, idxEnd);
+}
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSUpdateEditData (uint3 id : SV_DispatchThreadID)
@@ -244,44 +251,55 @@ void CSUpdateEditData (uint3 id : SV_DispatchThreadID)
     uint valSel = _SplatSelectedBits.Load(idx * 4);
     uint valDel = _SplatDeletedBits.Load(idx * 4);
     valSel &= ~valDel; // don't count deleted splats as selected
+    uint2 splatIndices = GetSplatIndicesFromWord(idx);
+
+    // update selection bounds
+    float3 bmin = 1.0e38;
+    float3 bmax = -1.0e38;
+    uint mask = 1;
+    uint valCut = 0;
+    for (uint sidx = splatIndices.x; sidx < splatIndices.y; ++sidx, mask <<= 1)
+    {
+        float3 spos = LoadSplatPos(sidx);
+        // don't count cut splats as selected
+        if (IsSplatCut(spos))
+        {
+            valSel &= ~mask;
+            valCut |= mask;
+        }
+        if (valSel & mask)
+        {
+            bmin = min(bmin, spos);
+            bmax = max(bmax, spos);
+        }
+    }
+    valCut &= ~valDel; // don't count deleted splats as cut
+
     if (valSel != 0)
     {
-        // update selection bounds
-        uint splatIdxStart = idx * 32;
-        uint splatIdxEnd = min(splatIdxStart + 32, _SplatCount);
-        float3 bmin = 1.0e38;
-        float3 bmax = -1.0e38;
-        uint mask = 1;
-        for (uint sidx = splatIdxStart; sidx < splatIdxEnd; ++sidx, mask <<= 1)
-        {
-            if (valSel & mask)
-            {
-                float3 spos = LoadSplatPos(sidx);
-                bmin = min(bmin, spos);
-                bmax = max(bmax, spos);
-            }
-        }
-        _DstBuffer.InterlockedMin(8, FloatToSortableUint(bmin.x));
-        _DstBuffer.InterlockedMin(12, FloatToSortableUint(bmin.y));
-        _DstBuffer.InterlockedMin(16, FloatToSortableUint(bmin.z));
-        _DstBuffer.InterlockedMax(20, FloatToSortableUint(bmax.x));
-        _DstBuffer.InterlockedMax(24, FloatToSortableUint(bmax.y));
-        _DstBuffer.InterlockedMax(28, FloatToSortableUint(bmax.z));
+        _DstBuffer.InterlockedMin(12, FloatToSortableUint(bmin.x));
+        _DstBuffer.InterlockedMin(16, FloatToSortableUint(bmin.y));
+        _DstBuffer.InterlockedMin(20, FloatToSortableUint(bmin.z));
+        _DstBuffer.InterlockedMax(24, FloatToSortableUint(bmax.x));
+        _DstBuffer.InterlockedMax(28, FloatToSortableUint(bmax.y));
+        _DstBuffer.InterlockedMax(32, FloatToSortableUint(bmax.z));
     }
     uint sumSel = countbits(valSel);
     uint sumDel = countbits(valDel);
+    uint sumCut = countbits(valCut);
     _DstBuffer.InterlockedAdd(0, sumSel);
     _DstBuffer.InterlockedAdd(4, sumDel);
+    _DstBuffer.InterlockedAdd(8, sumCut);
 }
 
 [numthreads(1,1,1)]
 void CSInitEditData (uint3 id : SV_DispatchThreadID)
 {
-    _DstBuffer.Store2(0, uint2(0,0)); // selected + deleted counts
+    _DstBuffer.Store3(0, uint3(0,0,0)); // selected, deleted, cut counts
     uint initMin = FloatToSortableUint(1.0e38);
     uint initMax = FloatToSortableUint(-1.0e38);
-    _DstBuffer.Store3(8, uint3(initMin, initMin, initMin));
-    _DstBuffer.Store3(20, uint3(initMax, initMax, initMax));
+    _DstBuffer.Store3(12, uint3(initMin, initMin, initMin));
+    _DstBuffer.Store3(24, uint3(initMax, initMax, initMax));
 }
 
 [numthreads(GROUP_SIZE,1,1)]
@@ -290,18 +308,52 @@ void CSClearBuffer (uint3 id : SV_DispatchThreadID)
     uint idx = id.x;
     if (idx >= _BufferSize)
         return;
-    _DstBuffer.Store(idx * 4, _DstBufferValue);
+    _DstBuffer.Store(idx * 4, 0);
 }
 
 [numthreads(GROUP_SIZE,1,1)]
-void CSInvertBuffer (uint3 id : SV_DispatchThreadID)
+void CSInvertSelection (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
     if (idx >= _BufferSize)
         return;
     uint v = _DstBuffer.Load(idx * 4);
-    _DstBuffer.Store(idx * 4, ~v);
+    v = ~v;
+
+    // do not select splats that are cut
+    uint2 splatIndices = GetSplatIndicesFromWord(idx);
+    uint mask = 1;
+    for (uint sidx = splatIndices.x; sidx < splatIndices.y; ++sidx, mask <<= 1)
+    {
+        float3 spos = LoadSplatPos(sidx);
+        if (IsSplatCut(spos))
+            v &= ~mask;
+    }
+
+    _DstBuffer.Store(idx * 4, v);
 }
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSSelectAll (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _BufferSize)
+        return;
+    uint v = ~0;
+
+    // do not select splats that are cut
+    uint2 splatIndices = GetSplatIndicesFromWord(idx);
+    uint mask = 1;
+    for (uint sidx = splatIndices.x; sidx < splatIndices.y; ++sidx, mask <<= 1)
+    {
+        float3 spos = LoadSplatPos(sidx);
+        if (IsSplatCut(spos))
+            v &= ~mask;
+    }
+
+    _DstBuffer.Store(idx * 4, v);
+}
+
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSOrBuffers (uint3 id : SV_DispatchThreadID)
