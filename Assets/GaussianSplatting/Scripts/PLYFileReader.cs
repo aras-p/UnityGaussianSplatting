@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Unity.Collections;
 
@@ -94,6 +95,9 @@ public static class PLYFileReader
                 break;
             byteBuffer.Add((byte)b);
         }
+        // if line had CRLF line endings, remove the CR part
+        if (byteBuffer.Count > 0 && byteBuffer.Last() == '\r')
+            byteBuffer.RemoveAt(byteBuffer.Count-1);
         return Encoding.UTF8.GetString(byteBuffer.ToArray());
     }
 }

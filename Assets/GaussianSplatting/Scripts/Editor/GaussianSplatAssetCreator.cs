@@ -349,7 +349,19 @@ public class GaussianSplatAssetCreator : EditorWindow
             return data;
         }
 
-        PLYFileReader.ReadFile(plyPath, out var splatCount, out int vertexStride, out _, out var verticesRawData);
+        int splatCount;
+        int vertexStride;
+        NativeArray<byte> verticesRawData;
+        try
+        {
+            PLYFileReader.ReadFile(plyPath, out splatCount, out vertexStride, out _, out verticesRawData);
+        }
+        catch (Exception ex)
+        {
+            m_ErrorMessage = ex.Message;
+            return data;
+        }
+
         if (UnsafeUtility.SizeOf<InputSplatData>() != vertexStride)
         {
             m_ErrorMessage = $"PLY vertex size mismatch, expected {UnsafeUtility.SizeOf<InputSplatData>()} but file has {vertexStride}";
