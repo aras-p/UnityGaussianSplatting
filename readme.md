@@ -5,7 +5,7 @@ Check out their website, source code repository, data sets and so on.
 
 I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity.
 
-![Screenshot](/Doc/shotOverview.jpg?raw=true "Screenshot")
+![Screenshot](/Doc/Images/shotOverview.jpg?raw=true "Screenshot")
 
 The original paper code has a purely CUDA-based realtime renderer; other
 people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://github.com/cvlab-epfl/gaussian-splatting-web), Taichi at [wanmeihuali](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting), etc.).
@@ -22,7 +22,7 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
 requires DX12 or Vulkan on Windows, i.e. DX11 will not work. This is **not tested at all on mobile/web**, and probably does not work there.
 
-<img align="right" src="Doc/shotAssetCreator.png" width="250px">
+<img align="right" src="Doc/Images/shotAssetCreator.png" width="250px">
 
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
 In the dialog, point `Input PLY File` to your Gaussian Splat file (note that it has to be a gaussian splat PLY file, not some 
@@ -52,7 +52,7 @@ If you are using **URP**, add GaussianSplatURPFeature to the URP renderer settin
 CustomPass volume object and a GaussianSplatHDRPPass entry to it. Maybe also set injection point to "after postprocess"
 to stop auto-exposure from going wild.
 
-<img align="right" src="Doc/shotEdit.jpg" width="250px">
+<img align="right" src="Doc/Images/shotEdit.jpg" width="250px">
 
 When a GaussianSplatRenderer object is selected, there's an additional tool that shows up in the scene view to edit the splats.
 You can rectangle-drag to select them (shift+drag adds to selection). Usual Select All, Invert Selection etc. shortcuts work too.
