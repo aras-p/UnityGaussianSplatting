@@ -38,7 +38,7 @@ public class GaussianSplatAssetCreator : EditorWindow
         BC7,
     }
 
-    readonly FilePickerPropertyDrawer m_FilePicker = new();
+    readonly FilePickerControl m_FilePicker = new();
 
     [SerializeField] string m_InputFile;
     [SerializeField] bool m_ImportCameras = true;
@@ -289,7 +289,7 @@ public class GaussianSplatAssetCreator : EditorWindow
             ClusterSHs(inputSplats, m_FormatSH, out clusteredSHs, out splatSHIndices);
         }
 
-        string baseName = Path.GetFileNameWithoutExtension(FilePickerPropertyDrawer.PathToDisplayString(m_InputFile));
+        string baseName = Path.GetFileNameWithoutExtension(FilePickerControl.PathToDisplayString(m_InputFile));
 
         GaussianSplatAsset asset = ScriptableObject.CreateInstance<GaussianSplatAsset>();
         asset.name = baseName;
