@@ -12,25 +12,26 @@ public class GaussianCutout : MonoBehaviour
     }
 
     public Type m_Type = Type.Ellipsoid;
+    public bool m_Invert = false;
 
     public struct ShaderData // match GaussianCutoutShaderData in CS
     {
         public Matrix4x4 matrix;
-        public int type;
+        public uint typeAndFlags;
     }
 
     public static ShaderData GetShaderData(GaussianCutout self, Matrix4x4 rendererMatrix)
     {
         ShaderData sd = default;
-        if (self != null)
+        if (self)
         {
             var tr = self.transform;
             sd.matrix = tr.worldToLocalMatrix * rendererMatrix;
-            sd.type = (int)self.m_Type;
+            sd.typeAndFlags = ((uint)self.m_Type) | (self.m_Invert ? 0x100u : 0u);
         }
         else
         {
-            sd.type = -1;
+            sd.typeAndFlags = ~0u;
         }
         return sd;
     }

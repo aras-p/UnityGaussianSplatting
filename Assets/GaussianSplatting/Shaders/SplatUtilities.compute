@@ -76,7 +76,7 @@ uint _SplatCutoutsCount;
 struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
 {
     float4x4 mat;
-    int type;
+    uint typeAndFlags;
 };
 StructuredBuffer<GaussianCutoutShaderData> _SplatCutouts;
 
@@ -147,17 +147,20 @@ bool IsSplatCut(float3 pos)
     for (uint i = 0; i < _SplatCutoutsCount; ++i)
     {
         GaussianCutoutShaderData cutData = _SplatCutouts[i];
-        if (cutData.type < 0) // invalid/null cutout, ignore
+        uint type = cutData.typeAndFlags & 0xFF;
+        if (type == 0xFF) // invalid/null cutout, ignore
             continue;
+        bool invert = (cutData.typeAndFlags & 0xFF00) != 0;
 
         float3 cutoutPos = mul(cutData.mat, float4(pos, 1)).xyz;
-        if (cutData.type == SPLAT_CUTOUT_TYPE_ELLIPSOID)
+        if (type == SPLAT_CUTOUT_TYPE_ELLIPSOID)
         {
-            if (dot(cutoutPos, cutoutPos) <= 1) return false;
+            float dist = dot(cutoutPos, cutoutPos);
+            if (!invert && dist <= 1 || invert && dist > 1) return false;
         }
-        if (cutData.type == SPLAT_CUTOUT_TYPE_BOX)
+        if (type == SPLAT_CUTOUT_TYPE_BOX)
         {
-            if (all(abs(cutoutPos) <= 1)) return false;
+            if (!invert && all(abs(cutoutPos) <= 1) || invert && any(abs(cutoutPos) > 1)) return false;
         }
         hadValidCutouts = true;
     }
