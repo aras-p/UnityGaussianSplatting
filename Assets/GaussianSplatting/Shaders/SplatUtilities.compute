@@ -143,7 +143,7 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 
 bool IsSplatCut(float3 pos)
 {
-    bool hadValidCutouts = false;
+    bool finalCut = false;
     for (uint i = 0; i < _SplatCutoutsCount; ++i)
     {
         GaussianCutoutShaderData cutData = _SplatCutouts[i];
@@ -155,16 +155,15 @@ bool IsSplatCut(float3 pos)
         float3 cutoutPos = mul(cutData.mat, float4(pos, 1)).xyz;
         if (type == SPLAT_CUTOUT_TYPE_ELLIPSOID)
         {
-            float dist = dot(cutoutPos, cutoutPos);
-            if (!invert && dist <= 1 || invert && dist > 1) return false;
+            if (dot(cutoutPos, cutoutPos) <= 1) return invert;
         }
         if (type == SPLAT_CUTOUT_TYPE_BOX)
         {
-            if (!invert && all(abs(cutoutPos) <= 1) || invert && any(abs(cutoutPos) > 1)) return false;
+            if (all(abs(cutoutPos) <= 1)) return invert;
         }
-        hadValidCutouts = true;
+        finalCut |= !invert;
     }
-    return hadValidCutouts;
+    return finalCut;
 }
 
 [numthreads(GROUP_SIZE,1,1)]

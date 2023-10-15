@@ -23,7 +23,7 @@ public class GaussianCutout : MonoBehaviour
     public static ShaderData GetShaderData(GaussianCutout self, Matrix4x4 rendererMatrix)
     {
         ShaderData sd = default;
-        if (self)
+        if (self && self.isActiveAndEnabled)
         {
             var tr = self.transform;
             sd.matrix = tr.worldToLocalMatrix * rendererMatrix;
