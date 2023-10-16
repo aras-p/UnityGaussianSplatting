@@ -47,10 +47,9 @@ locations.
 The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
 -160 degrees around X axis, and mirrored around Z axis, so in the sample scene the object has such a transform set up.
 
-In the built-in render pipeline, the gaussian splatting should work with no extra steps.
-If you are using **URP**, add GaussianSplatURPFeature to the URP renderer settings. If you are using **HDRP**, add
-CustomPass volume object and a GaussianSplatHDRPPass entry to it. Maybe also set injection point to "after postprocess"
-to stop auto-exposure from going wild.
+Additional documentation:
+
+* [Render Pipeline Integration](/Doc/render-pipeline-integration.md)
 
 <img align="right" src="Doc/Images/shotEdit.jpg" width="250px">
 
