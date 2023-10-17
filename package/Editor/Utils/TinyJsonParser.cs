@@ -23,6 +23,7 @@ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -30,8 +31,7 @@ using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text;
 
-// ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Editor
+namespace GaussianSplatting.Editor.Utils
 {
     // Really simple JSON parser in ~300 lines
     // - Attempts to parse JSON files with minimal GC allocation

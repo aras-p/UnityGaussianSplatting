@@ -1,6 +1,6 @@
 {
     "name": "GaussianSplattingEditor",
-    "rootNamespace": "",
+    "rootNamespace": "GaussianSplatting.Editor",
     "references": [
         "GUID:4b653174f8fcdcd49b4c9a6f1ca8c7c3",
         "GUID:2665a8d13d1b3f18800f46e256720795",

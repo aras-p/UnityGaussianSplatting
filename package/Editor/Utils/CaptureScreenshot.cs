@@ -3,8 +3,7 @@
 using UnityEditor;
 using UnityEngine;
 
-// ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Editor
+namespace GaussianSplatting.Editor.Utils
 {
     public class CaptureScreenshot : MonoBehaviour
     {

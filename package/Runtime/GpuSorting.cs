@@ -2,7 +2,6 @@ using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Rendering;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Runtime
 {
     // GPU (uint key, uint payload) radix sort, originally based on code derived from AMD FidelityFX SDK:

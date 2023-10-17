@@ -4,7 +4,6 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Runtime
 {
     public class GaussianCutout : MonoBehaviour

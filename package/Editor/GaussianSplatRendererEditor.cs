@@ -12,7 +12,6 @@ using UnityEditor.EditorTools;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Editor
 {
     [CustomEditor(typeof(GaussianSplatRenderer))]

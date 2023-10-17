@@ -7,8 +7,7 @@ using System.Linq;
 using System.Text;
 using Unity.Collections;
 
-// ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Editor
+namespace GaussianSplatting.Editor.Utils
 {
     public static class PLYFileReader
     {

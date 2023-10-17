@@ -10,8 +10,7 @@ using Unity.Mathematics;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel;
 
-// ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Editor
+namespace GaussianSplatting.Editor.Utils
 {
     // Implementation of "Mini Batch" k-means clustering ("Web-Scale K-Means Clustering", Sculley 2010)
     // using k-means++ for cluster initialization.

@@ -6,7 +6,6 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Runtime
 {
     public class GaussianSplatAsset : ScriptableObject

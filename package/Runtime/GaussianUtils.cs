@@ -2,7 +2,6 @@
 
 using Unity.Mathematics;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Runtime
 {
     public static class GaussianUtils

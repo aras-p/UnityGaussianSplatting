@@ -5,7 +5,6 @@ using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor;
 using UnityEngine;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Editor
 {
     [CustomEditor(typeof(GaussianSplatAsset))]

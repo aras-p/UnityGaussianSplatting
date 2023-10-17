@@ -11,7 +11,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Editor
 {
     [BurstCompile]

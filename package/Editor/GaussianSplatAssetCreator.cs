@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using GaussianSplatting.Editor.Utils;
 using GaussianSplatting.Runtime;
 using Unity.Burst;
 using Unity.Collections;
@@ -13,7 +14,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-// ReSharper disable once CheckNamespace
 namespace GaussianSplatting.Editor
 {
     [BurstCompile]
