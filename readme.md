@@ -19,7 +19,7 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 
 :warning: Note: this is all _**a toy**_ that I'm just playing around with. If you file bugs or feature requests, I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
-Download or clone this repository and open `project/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work).
+Download or clone this repository and open `projects/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work).
 Note that the project requires DX12 or Vulkan on Windows, i.e. DX11 will not work. This is **not tested at all on mobile/web**, and probably
 does not work there.
 

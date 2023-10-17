@@ -16,11 +16,11 @@
 /UserSettings/*
 /obj/*
 
-/project/**/Assets/GaussianAssets/*
-/project/**/Assets/GaussianAssets.meta
-/project/**/Assets/Models~/*
-/project/**/Library/*
-/project/**/Logs/*
-/project/**/Temp/*
-/project/**/UserSettings/*
-/project/**/obj/*
+/projects/**/Assets/GaussianAssets/*
+/projects/**/Assets/GaussianAssets.meta
+/projects/**/Assets/Models~/*
+/projects/**/Library/*
+/projects/**/Logs/*
+/projects/**/Temp/*
+/projects/**/UserSettings/*
+/projects/**/obj/*
