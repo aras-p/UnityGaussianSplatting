@@ -50,13 +50,7 @@ The rendering takes game object transformation matrix into account; the official
 Additional documentation:
 
 * [Render Pipeline Integration](/Doc/render-pipeline-integration.md)
-
-<img align="right" src="Doc/Images/shotEdit.jpg" width="250px">
-
-When a GaussianSplatRenderer object is selected, there's an additional tool that shows up in the scene view to edit the splats.
-You can rectangle-drag to select them (shift+drag adds to selection). Usual Select All, Invert Selection etc. shortcuts work too.
-Delete/Backspace deletes the selected splats. In the inspector there's a button then to export the "edited" object back into
-a Gaussian Splat PLY file. This is best done using Very High import option for the original splat PLY file.
+* [Editing Splats](/Doc/splat-editing.md)
 
 _That's it!_
 
