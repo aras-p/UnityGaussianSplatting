@@ -59,7 +59,7 @@ namespace GaussianSplatting.Editor
                     Debug.LogError($"Did not find asset for validation item {item.assetPath} at {path}");
                     continue;
                 }
-                var refImageFile = $"Doc/RefImages/SBIR_{item.assetPath}{item.cameraIndex}.png";
+                var refImageFile = $"../../doc/RefImages/SBIR_{item.assetPath}{item.cameraIndex}.png";
                 if (!File.Exists(refImageFile))
                 {
                     Debug.LogError($"Did not find reference image for validation item {item.assetPath} at {refImageFile}");
@@ -101,9 +101,9 @@ namespace GaussianSplatting.Editor
                 difJob.difPixCount = &errorsCount;
                 difJob.Schedule().Complete();
 
-                string pathDif = $"Shot-{item.assetPath}{item.cameraIndex}-diff.png";
-                string pathRef = $"Shot-{item.assetPath}{item.cameraIndex}-ref.png";
-                string pathGot = $"Shot-{item.assetPath}{item.cameraIndex}-got.png";
+                string pathDif = $"../../Shot-{item.assetPath}{item.cameraIndex}-diff.png";
+                string pathRef = $"../../Shot-{item.assetPath}{item.cameraIndex}-ref.png";
+                string pathGot = $"../../Shot-{item.assetPath}{item.cameraIndex}-got.png";
 
                 if (errorsCount > 50 || psnr < 90.0f)
                 {
