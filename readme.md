@@ -5,7 +5,7 @@ Check out their website, source code repository, data sets and so on.
 
 I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced gaussian splat "model" file) in Unity.
 
-![Screenshot](/Doc/Images/shotOverview.jpg?raw=true "Screenshot")
+![Screenshot](/doc/Images/shotOverview.jpg?raw=true "Screenshot")
 
 The original paper code has a purely CUDA-based realtime renderer; other
 people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://github.com/cvlab-epfl/gaussian-splatting-web), Taichi at [wanmeihuali](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting), etc.).
@@ -19,10 +19,11 @@ Code in here so far is randomly cribbled together from reading the paper (as wel
 
 :warning: Note: this is all _**a toy**_ that I'm just playing around with. If you file bugs or feature requests, I will most likely just ignore them and do whatever I please. I told you so! :warning:
 
-First download or clone this repository and open as a Unity (2022.3, other versions might also work) project. Note that the project
-requires DX12 or Vulkan on Windows, i.e. DX11 will not work. This is **not tested at all on mobile/web**, and probably does not work there.
+Download or clone this repository and open `project/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work).
+Note that the project requires DX12 or Vulkan on Windows, i.e. DX11 will not work. This is **not tested at all on mobile/web**, and probably
+does not work there.
 
-<img align="right" src="Doc/Images/shotAssetCreator.png" width="250px">
+<img align="right" src="doc/Images/shotAssetCreator.png" width="250px">
 
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
 In the dialog, point `Input PLY File` to your Gaussian Splat file (note that it has to be a gaussian splat PLY file, not some 
@@ -49,8 +50,8 @@ The rendering takes game object transformation matrix into account; the official
 
 Additional documentation:
 
-* [Render Pipeline Integration](/Doc/render-pipeline-integration.md)
-* [Editing Splats](/Doc/splat-editing.md)
+* [Render Pipeline Integration](/doc/render-pipeline-integration.md)
+* [Editing Splats](/doc/splat-editing.md)
 
 _That's it!_
 

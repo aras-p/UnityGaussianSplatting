@@ -51,7 +51,7 @@
       "url": "https://packages.unity.com"
     },
     "org.nesnausk.gaussian-splatting": {
-      "version": "file:../org.nesnausk.gaussian-splatting",
+      "version": "file:../../../package",
       "depth": 0,
       "source": "local",
       "dependencies": {}
