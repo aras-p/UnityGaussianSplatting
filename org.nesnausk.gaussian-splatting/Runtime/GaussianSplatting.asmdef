@@ -2,8 +2,6 @@
     "name": "GaussianSplatting",
     "rootNamespace": "",
     "references": [
-        "GUID:2665a8d13d1b3f18800f46e256720795",
-        "GUID:e0cd26848372d4e5c891c569017e11f1",
         "GUID:d8b63aba1907145bea998dd612889d6b",
         "GUID:8992d429105beaf428dfc91fb5b9f531",
         "GUID:15fc0a57446b3144c949da3e2b9737a9",

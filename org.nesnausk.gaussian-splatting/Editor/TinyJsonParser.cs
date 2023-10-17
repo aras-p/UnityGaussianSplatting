@@ -31,7 +31,7 @@ using System.Runtime.Serialization;
 using System.Text;
 
 // ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Embedded
+namespace GaussianSplatting.Editor
 {
     // Really simple JSON parser in ~300 lines
     // - Attempts to parse JSON files with minimal GC allocation

@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: MIT
+
 using UnityEditor;
 using UnityEngine;
 
-public class CaptureScreenshot : MonoBehaviour
+// ReSharper disable once CheckNamespace
+namespace GaussianSplatting.Editor
 {
-    [MenuItem("Tools/Gaussian Splats/Debug/Capture Screenshot %g")]
-    public static void CaptureShot()
+    public class CaptureScreenshot : MonoBehaviour
     {
-        int counter = 0;
-        string path;
-        while(true)
+        [MenuItem("Tools/Gaussian Splats/Debug/Capture Screenshot %g")]
+        public static void CaptureShot()
         {
-            path = $"Shot-{counter:0000}.png";
-            if (!System.IO.File.Exists(path))
-                break;
-            ++counter;
+            int counter = 0;
+            string path;
+            while(true)
+            {
+                path = $"Shot-{counter:0000}.png";
+                if (!System.IO.File.Exists(path))
+                    break;
+                ++counter;
+            }
+            ScreenCapture.CaptureScreenshot(path);
+            Debug.Log($"Captured {path}");
         }
-        ScreenCapture.CaptureScreenshot(path);
-        Debug.Log($"Captured {path}");
     }
 }
