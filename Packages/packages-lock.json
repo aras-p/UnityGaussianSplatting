@@ -50,6 +50,12 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "org.nesnausk.gaussian-splatting": {
+      "version": "file:../org.nesnausk.gaussian-splatting",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+    },
     "com.unity.modules.ai": {
       "version": "1.0.0",
       "depth": 0,

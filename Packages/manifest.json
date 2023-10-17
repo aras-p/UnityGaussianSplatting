@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "org.nesnausk.gaussian-splatting": "file:../org.nesnausk.gaussian-splatting",
     "com.unity.burst": "1.8.8",
     "com.unity.collections": "2.1.4",
     "com.unity.ide.rider": "3.0.24",
