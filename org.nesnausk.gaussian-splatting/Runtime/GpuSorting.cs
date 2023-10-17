@@ -1,14 +1,14 @@
-// Originally based on FidelityFX SDK, Copyright © 2023 Advanced Micro Devices, Inc., MIT license
-// https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort v1.1.1
-
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Rendering;
 
 // ReSharper disable once CheckNamespace
-namespace GaussianSplatting.Embedded.FfxParallelSort
+namespace GaussianSplatting.Runtime
 {
-    public class FfxParallelSort
+    // GPU (uint key, uint payload) radix sort, originally based on code derived from AMD FidelityFX SDK:
+    // Copyright © 2023 Advanced Micro Devices, Inc., MIT license
+    // https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort v1.1.1
+    public class GpuSorting
     {
         // These need to match constants in the compute shader
         const uint FFX_PARALLELSORT_ELEMENTS_PER_THREAD = 4;
@@ -79,7 +79,7 @@ namespace GaussianSplatting.Embedded.FfxParallelSort
 
         public bool Valid => m_Valid;
 
-        public FfxParallelSort(ComputeShader cs)
+        public GpuSorting(ComputeShader cs)
         {
             m_CS = cs;
             if (cs)

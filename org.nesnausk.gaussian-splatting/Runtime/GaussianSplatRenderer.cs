@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using GaussianSplatting.Embedded.FfxParallelSort;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -235,10 +234,8 @@ namespace GaussianSplatting.Runtime
         public Shader m_ShaderComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
-        [Tooltip("Gaussian splatting utilities compute shader")]
+        [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
-        [Tooltip("AMD FidelityFX sort compute shader")]
-        public ComputeShader m_CSFfxSort;
 
         GraphicsBuffer m_GpuSortDistances;
         internal GraphicsBuffer m_GpuSortKeys;
@@ -255,8 +252,8 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_GpuSplatCutoutsBuffer;
         GraphicsBuffer m_GpuSplatEditDataBuffer;
 
-        FfxParallelSort m_SorterFfx;
-        FfxParallelSort.Args m_SorterFfxArgs;
+        GpuSorting m_Sorter;
+        GpuSorting.Args m_SorterArgs;
 
         internal Material m_MatSplats;
         internal Material m_MatComposite;
@@ -380,11 +377,11 @@ namespace GaussianSplatting.Runtime
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.SetIndices, out uint gsX, out _, out _);
             m_CSSplatUtilities.Dispatch((int)KernelIndices.SetIndices, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
-            m_SorterFfxArgs.inputKeys = m_GpuSortDistances;
-            m_SorterFfxArgs.inputValues = m_GpuSortKeys;
-            m_SorterFfxArgs.count = (uint) m_Asset.m_SplatCount;
-            if (m_SorterFfx.Valid)
-                m_SorterFfxArgs.resources = FfxParallelSort.SupportResources.Load((uint)m_Asset.m_SplatCount);
+            m_SorterArgs.inputKeys = m_GpuSortDistances;
+            m_SorterArgs.inputValues = m_GpuSortKeys;
+            m_SorterArgs.count = (uint) m_Asset.m_SplatCount;
+            if (m_Sorter.Valid)
+                m_SorterArgs.resources = GpuSorting.SupportResources.Load((uint)m_Asset.m_SplatCount);
         }
 
         public void OnEnable()
@@ -400,7 +397,7 @@ namespace GaussianSplatting.Runtime
             m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
             m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
 
-            m_SorterFfx = new FfxParallelSort(m_CSFfxSort);
+            m_Sorter = new GpuSorting(m_CSSplatUtilities);
             GaussianSplatRenderSystem.instance.RegisterSplat(this);
 
             CreateResourcesForAsset();
@@ -459,7 +456,7 @@ namespace GaussianSplatting.Runtime
             m_GpuSplatDeletedBuffer?.Dispose();
             m_GpuSplatEditDataBuffer?.Dispose();
             m_GpuSplatCutoutsBuffer?.Dispose();
-            m_SorterFfxArgs.resources.Dispose();
+            m_SorterArgs.resources.Dispose();
 
             m_GpuPosData = null;
             m_GpuOtherData = null;
@@ -551,7 +548,7 @@ namespace GaussianSplatting.Runtime
             cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
             // sort the splats
-            m_SorterFfx.Dispatch(cmd, m_SorterFfxArgs);
+            m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
         }
 

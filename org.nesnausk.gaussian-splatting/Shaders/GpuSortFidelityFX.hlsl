@@ -1,15 +1,6 @@
 // Originally based on FidelityFX SDK, Copyright © 2023 Advanced Micro Devices, Inc., MIT license
 // https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort v1.1.1
 
-#pragma kernel FfxParallelSortReduce
-#pragma kernel FfxParallelSortScanAdd
-#pragma kernel FfxParallelSortScan
-#pragma kernel FfxParallelSortScatter
-#pragma kernel FfxParallelSortCount
-
-#pragma use_dxc
-#pragma require wavebasic
-
 // -------- Constant buffer data
 
 cbuffer cbParallelSort : register(b0)
