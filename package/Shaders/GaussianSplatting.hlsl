@@ -195,6 +195,7 @@ struct SplatChunkInfo
 };
 
 StructuredBuffer<SplatChunkInfo> _SplatChunks;
+uint _SplatChunkCount;
 
 static const uint kChunkSize = 256;
 
@@ -359,12 +360,15 @@ float3 LoadSplatPosValue(uint index)
 
 float3 LoadSplatPos(uint idx)
 {
-    uint chunkIdx = idx / kChunkSize;
-    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
-    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
     float3 pos = LoadSplatPosValue(idx);
-    pos = lerp(posMin, posMax, pos);
+    uint chunkIdx = idx / kChunkSize;
+    if (chunkIdx < _SplatChunkCount)
+    {
+        SplatChunkInfo chunk = _SplatChunks[chunkIdx];
+        float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+        float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+        pos = lerp(posMin, posMax, pos);
+    }
     return pos;
 }
 
@@ -376,20 +380,9 @@ half4 LoadSplatColTex(uint3 coord)
 SplatData LoadSplatData(uint idx)
 {
     SplatData s = (SplatData)0;
+
+    // figure out raw data offsets / locations
     uint3 coord = SplatIndexToPixelIndex(idx);
-
-    uint chunkIdx = idx / kChunkSize;
-    SplatChunkInfo chunk = _SplatChunks[chunkIdx];
-    float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
-    float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
-    half3 sclMin = half3(f16tof32(chunk.sclX    ), f16tof32(chunk.sclY    ), f16tof32(chunk.sclZ    ));
-    half3 sclMax = half3(f16tof32(chunk.sclX>>16), f16tof32(chunk.sclY>>16), f16tof32(chunk.sclZ>>16));
-    half4 colMin = half4(f16tof32(chunk.colR    ), f16tof32(chunk.colG    ), f16tof32(chunk.colB    ), f16tof32(chunk.colA    ));
-    half4 colMax = half4(f16tof32(chunk.colR>>16), f16tof32(chunk.colG>>16), f16tof32(chunk.colB>>16), f16tof32(chunk.colA>>16));
-    half3 shMin = half3(f16tof32(chunk.shR    ), f16tof32(chunk.shG    ), f16tof32(chunk.shB    ));
-    half3 shMax = half3(f16tof32(chunk.shR>>16), f16tof32(chunk.shG>>16), f16tof32(chunk.shB>>16));
-
-    s.pos       = lerp(posMin, posMax, LoadSplatPosValue(idx));
 
     uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
     uint shFormat = (_SplatFormat >> 16) & 0xFF;
@@ -407,19 +400,6 @@ SplatData LoadSplatData(uint idx)
         otherStride += 2;
     uint otherAddr = idx * otherStride;
 
-    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
-    s.scale     = lerp(sclMin, sclMax, LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt));
-    s.scale *= s.scale;
-    s.scale *= s.scale;
-    s.scale *= s.scale;
-    half4 col   = lerp(colMin, colMax, LoadSplatColTex(coord));
-    s.opacity   = InvSquareCentered01(col.a);
-    s.sh.col    = col.rgb;
-
-    uint shIndex = idx;
-    if (shFormat > VECTOR_FMT_6)
-        shIndex = LoadUShort(_SplatOther, otherAddr + otherStride - 2);
-
     uint shStride = 0;
     if (shFormat == VECTOR_FMT_32F)
         shStride = 192; // 15*3 fp32, rounded up to multiple of 16
@@ -429,6 +409,17 @@ SplatData LoadSplatData(uint idx)
         shStride = 60; // 15x uint
     else if (shFormat == VECTOR_FMT_6)
         shStride = 32; // 15x ushort, rounded up to multiple of 4
+
+
+    // load raw splat data, which might be chunk-relative
+    s.pos       = LoadSplatPosValue(idx);
+    s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
+    s.scale     = LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt);
+    half4 col   = LoadSplatColTex(coord);
+
+    uint shIndex = idx;
+    if (shFormat > VECTOR_FMT_6)
+        shIndex = LoadUShort(_SplatOther, otherAddr + otherStride - 2);
 
     uint shOffset = shIndex * shStride;
     uint4 shRaw0 = _SplatSH.Load4(shOffset);
@@ -522,24 +513,49 @@ SplatData LoadSplatData(uint idx)
         s.sh.sh15 = DecodePacked_5_6_5(shRaw1.w);
     }
 
-    if (shFormat > VECTOR_FMT_32F && shFormat <= VECTOR_FMT_6)
+    // if raw data is chunk-relative, convert to final values by interpolating between chunk min/max
+    uint chunkIdx = idx / kChunkSize;
+    if (chunkIdx < _SplatChunkCount)
     {
-        s.sh.sh1    = lerp(shMin, shMax, asfloat(s.sh.sh1 ));
-        s.sh.sh2    = lerp(shMin, shMax, asfloat(s.sh.sh2 ));
-        s.sh.sh3    = lerp(shMin, shMax, asfloat(s.sh.sh3 ));
-        s.sh.sh4    = lerp(shMin, shMax, asfloat(s.sh.sh4 ));
-        s.sh.sh5    = lerp(shMin, shMax, asfloat(s.sh.sh5 ));
-        s.sh.sh6    = lerp(shMin, shMax, asfloat(s.sh.sh6 ));
-        s.sh.sh7    = lerp(shMin, shMax, asfloat(s.sh.sh7 ));
-        s.sh.sh8    = lerp(shMin, shMax, asfloat(s.sh.sh8 ));
-        s.sh.sh9    = lerp(shMin, shMax, asfloat(s.sh.sh9 ));
-        s.sh.sh10   = lerp(shMin, shMax, asfloat(s.sh.sh10));
-        s.sh.sh11   = lerp(shMin, shMax, asfloat(s.sh.sh11));
-        s.sh.sh12   = lerp(shMin, shMax, asfloat(s.sh.sh12));
-        s.sh.sh13   = lerp(shMin, shMax, asfloat(s.sh.sh13));
-        s.sh.sh14   = lerp(shMin, shMax, asfloat(s.sh.sh14));
-        s.sh.sh15   = lerp(shMin, shMax, asfloat(s.sh.sh15));
+        SplatChunkInfo chunk = _SplatChunks[chunkIdx];
+        float3 posMin = float3(chunk.posX.x, chunk.posY.x, chunk.posZ.x);
+        float3 posMax = float3(chunk.posX.y, chunk.posY.y, chunk.posZ.y);
+        half3 sclMin = half3(f16tof32(chunk.sclX    ), f16tof32(chunk.sclY    ), f16tof32(chunk.sclZ    ));
+        half3 sclMax = half3(f16tof32(chunk.sclX>>16), f16tof32(chunk.sclY>>16), f16tof32(chunk.sclZ>>16));
+        half4 colMin = half4(f16tof32(chunk.colR    ), f16tof32(chunk.colG    ), f16tof32(chunk.colB    ), f16tof32(chunk.colA    ));
+        half4 colMax = half4(f16tof32(chunk.colR>>16), f16tof32(chunk.colG>>16), f16tof32(chunk.colB>>16), f16tof32(chunk.colA>>16));
+        half3 shMin = half3(f16tof32(chunk.shR    ), f16tof32(chunk.shG    ), f16tof32(chunk.shB    ));
+        half3 shMax = half3(f16tof32(chunk.shR>>16), f16tof32(chunk.shG>>16), f16tof32(chunk.shB>>16));
+        s.pos = lerp(posMin, posMax, s.pos);
+        s.scale     = lerp(sclMin, sclMax, s.scale);
+        s.scale *= s.scale;
+        s.scale *= s.scale;
+        s.scale *= s.scale;
+        col   = lerp(colMin, colMax, col);
+        col.a = InvSquareCentered01(col.a);
+
+        if (shFormat > VECTOR_FMT_32F && shFormat <= VECTOR_FMT_6)
+        {
+            s.sh.sh1    = lerp(shMin, shMax, s.sh.sh1 );
+            s.sh.sh2    = lerp(shMin, shMax, s.sh.sh2 );
+            s.sh.sh3    = lerp(shMin, shMax, s.sh.sh3 );
+            s.sh.sh4    = lerp(shMin, shMax, s.sh.sh4 );
+            s.sh.sh5    = lerp(shMin, shMax, s.sh.sh5 );
+            s.sh.sh6    = lerp(shMin, shMax, s.sh.sh6 );
+            s.sh.sh7    = lerp(shMin, shMax, s.sh.sh7 );
+            s.sh.sh8    = lerp(shMin, shMax, s.sh.sh8 );
+            s.sh.sh9    = lerp(shMin, shMax, s.sh.sh9 );
+            s.sh.sh10   = lerp(shMin, shMax, s.sh.sh10);
+            s.sh.sh11   = lerp(shMin, shMax, s.sh.sh11);
+            s.sh.sh12   = lerp(shMin, shMax, s.sh.sh12);
+            s.sh.sh13   = lerp(shMin, shMax, s.sh.sh13);
+            s.sh.sh14   = lerp(shMin, shMax, s.sh.sh14);
+            s.sh.sh15   = lerp(shMin, shMax, s.sh.sh15);
+        }
     }
+    s.opacity   = col.a;
+    s.sh.col    = col.rgb;
+
     return s;
 }
 

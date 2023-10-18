@@ -147,6 +147,7 @@ namespace GaussianSplatting.Runtime
         [HideInInspector] public TextAsset m_ColorData;
         [HideInInspector] public TextAsset m_OtherData;
         [HideInInspector] public TextAsset m_SHData;
+        // Chunk data is optional (if data formats are fully lossless then there's no chunking)
         [HideInInspector] public TextAsset m_ChunkData;
 
         [HideInInspector] public CameraInfo[] m_Cameras;

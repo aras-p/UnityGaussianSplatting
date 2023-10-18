@@ -34,7 +34,7 @@ namespace GaussianSplatting.Editor
                 long sizeOther = GaussianSplatAsset.CalcOtherDataSize(gs.m_SplatCount, gs.m_ScaleFormat);
                 long sizeCol = GaussianSplatAsset.CalcColorDataSize(gs.m_SplatCount, gs.m_ColorFormat);
                 long sizeSH = GaussianSplatAsset.CalcSHDataSize(gs.m_SplatCount, gs.m_SHFormat);
-                long sizeChunk = GaussianSplatAsset.CalcChunkDataSize(gs.m_SplatCount);
+                long sizeChunk = gs.m_ChunkData != null ? GaussianSplatAsset.CalcChunkDataSize(gs.m_SplatCount) : 0;
 
                 EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeOther + sizeSH + sizeCol + sizeChunk));
                 EditorGUI.indentLevel++;

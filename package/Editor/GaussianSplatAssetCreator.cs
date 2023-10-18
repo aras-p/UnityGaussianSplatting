@@ -59,6 +59,12 @@ namespace GaussianSplatting.Editor
         int m_PrevVertexCount;
         long m_PrevFileSize;
 
+        bool isUsingChunks =>
+            m_FormatPos != GaussianSplatAsset.VectorFormat.Float32 ||
+            m_FormatScale != GaussianSplatAsset.VectorFormat.Float32 ||
+            m_FormatColor != ColorFormat.Float32x4 ||
+            m_FormatSH != GaussianSplatAsset.SHFormat.Float32;
+
         [MenuItem("Tools/Gaussian Splats/Create GaussianSplatAsset")]
         public static void Init()
         {
@@ -124,7 +130,7 @@ namespace GaussianSplatting.Editor
                 sizeOther = GaussianSplatAsset.CalcOtherDataSize(m_PrevVertexCount, m_FormatScale);
                 sizeCol = GaussianSplatAsset.CalcColorDataSize(m_PrevVertexCount, ColorFormatToGraphics(m_FormatColor));
                 sizeSHs = GaussianSplatAsset.CalcSHDataSize(m_PrevVertexCount, m_FormatSH);
-                long sizeChunk = GaussianSplatAsset.CalcChunkDataSize(m_PrevVertexCount);
+                long sizeChunk = isUsingChunks ? GaussianSplatAsset.CalcChunkDataSize(m_PrevVertexCount) : 0;
                 totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
             }
 
@@ -314,7 +320,11 @@ namespace GaussianSplatting.Editor
             string pathCol = $"{m_OutputFolder}/{baseName}_col.bytes";
             string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
             LinearizeData(inputSplats);
-            CreateChunkData(inputSplats, pathChunk, ref asset.m_DataHash, m_FormatSH);
+
+            // if we are using full lossless (FP32) data, then do not use any chunking, and keep data as-is
+            bool useChunks = isUsingChunks;
+            if (useChunks)
+                CreateChunkData(inputSplats, pathChunk, ref asset.m_DataHash);
             CreatePositionsData(inputSplats, pathPos, ref asset.m_DataHash);
             CreateOtherData(inputSplats, pathOther, ref asset.m_DataHash, splatSHIndices);
             CreateColorData(inputSplats, pathCol, ref asset.m_DataHash, out asset.m_ColorWidth, out asset.m_ColorHeight, out asset.m_ColorFormat);
@@ -328,7 +338,7 @@ namespace GaussianSplatting.Editor
             AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
 
             EditorUtility.DisplayProgressBar(kProgressTitle, "Setup data onto asset", 0.95f);
-            asset.m_ChunkData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathChunk);
+            asset.m_ChunkData = useChunks ? AssetDatabase.LoadAssetAtPath<TextAsset>(pathChunk) : null;
             asset.m_PosData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos);
             asset.m_OtherData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther);
             asset.m_ColorData = AssetDatabase.LoadAssetAtPath<TextAsset>(pathCol);
@@ -426,7 +436,6 @@ namespace GaussianSplatting.Editor
                 *m_BoundsMax = boundsMax;
             }
         }
-
 
         [BurstCompile]
         struct ReorderMortonJob : IJobParallelFor
@@ -580,12 +589,10 @@ namespace GaussianSplatting.Editor
 
                 // scale
                 splat.scale = GaussianUtils.LinearScale(splat.scale);
-                // transform scale to be more uniformly distributed
-                splat.scale = math.pow(splat.scale, 1.0f / 8.0f);
 
                 // color
                 splat.dc0 = GaussianUtils.SH0ToColor(splat.dc0);
-                splat.opacity = GaussianUtils.SquareCentered01(GaussianUtils.Sigmoid(splat.opacity));
+                splat.opacity = GaussianUtils.Sigmoid(splat.opacity);
 
                 splatData[index] = splat;
             }
@@ -603,7 +610,6 @@ namespace GaussianSplatting.Editor
         {
             [NativeDisableParallelForRestriction] public NativeArray<InputSplatData> splatData;
             public NativeArray<GaussianSplatAsset.ChunkInfo> chunks;
-            public bool keepRawSHs;
 
             public void Execute(int chunkIdx)
             {
@@ -623,6 +629,13 @@ namespace GaussianSplatting.Editor
                 for (int i = splatBegin; i < splatEnd; ++i)
                 {
                     InputSplatData s = splatData[i];
+
+                    // transform scale to be more uniformly distributed
+                    s.scale = math.pow(s.scale, 1.0f / 8.0f);
+                    // transform opacity to be more unformly distributed
+                    s.opacity = GaussianUtils.SquareCentered01(s.opacity);
+                    splatData[i] = s;
+
                     chunkMinpos = math.min(chunkMinpos, s.pos);
                     chunkMinscl = math.min(chunkMinscl, s.scale);
                     chunkMincol = math.min(chunkMincol, new float4(s.dc0, s.opacity));
@@ -687,37 +700,33 @@ namespace GaussianSplatting.Editor
                     s.scale = ((float3)s.scale - chunkMinscl) / (chunkMaxscl - chunkMinscl);
                     s.dc0 = ((float3)s.dc0 - chunkMincol.xyz) / (chunkMaxcol.xyz - chunkMincol.xyz);
                     s.opacity = (s.opacity - chunkMincol.w) / (chunkMaxcol.w - chunkMincol.w);
-                    if (!keepRawSHs)
-                    {
-                        s.sh1 = ((float3) s.sh1 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh2 = ((float3) s.sh2 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh3 = ((float3) s.sh3 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh4 = ((float3) s.sh4 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh5 = ((float3) s.sh5 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh6 = ((float3) s.sh6 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh7 = ((float3) s.sh7 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh8 = ((float3) s.sh8 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.sh9 = ((float3) s.sh9 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shA = ((float3) s.shA - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shB = ((float3) s.shB - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shC = ((float3) s.shC - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shD = ((float3) s.shD - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shE = ((float3) s.shE - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                        s.shF = ((float3) s.shF - chunkMinshs) / (chunkMaxshs - chunkMinshs);
-                    }
+                    s.sh1 = ((float3) s.sh1 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh2 = ((float3) s.sh2 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh3 = ((float3) s.sh3 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh4 = ((float3) s.sh4 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh5 = ((float3) s.sh5 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh6 = ((float3) s.sh6 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh7 = ((float3) s.sh7 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh8 = ((float3) s.sh8 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.sh9 = ((float3) s.sh9 - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shA = ((float3) s.shA - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shB = ((float3) s.shB - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shC = ((float3) s.shC - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shD = ((float3) s.shD - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shE = ((float3) s.shE - chunkMinshs) / (chunkMaxshs - chunkMinshs);
+                    s.shF = ((float3) s.shF - chunkMinshs) / (chunkMaxshs - chunkMinshs);
                     splatData[i] = s;
                 }
             }
         }
 
-        static void CreateChunkData(NativeArray<InputSplatData> splatData, string filePath, ref Hash128 dataHash, GaussianSplatAsset.SHFormat shFormat)
+        static void CreateChunkData(NativeArray<InputSplatData> splatData, string filePath, ref Hash128 dataHash)
         {
             int chunkCount = (splatData.Length + GaussianSplatAsset.kChunkSize - 1) / GaussianSplatAsset.kChunkSize;
             CalcChunkDataJob job = new CalcChunkDataJob
             {
                 splatData = splatData,
                 chunks = new(chunkCount, Allocator.TempJob),
-                keepRawSHs = shFormat == GaussianSplatAsset.SHFormat.Float32
             };
 
             job.Schedule(chunkCount, 8).Complete();
@@ -811,7 +820,6 @@ namespace GaussianSplatting.Editor
 
         static unsafe void EmitEncodedVector(float3 v, byte* outputPtr, GaussianSplatAsset.VectorFormat format)
         {
-            v = math.saturate(v);
             switch (format)
             {
                 case GaussianSplatAsset.VectorFormat.Float32:
@@ -823,20 +831,20 @@ namespace GaussianSplatting.Editor
                     break;
                 case GaussianSplatAsset.VectorFormat.Norm16:
                 {
-                    ulong enc = EncodeFloat3ToNorm16(v);
+                    ulong enc = EncodeFloat3ToNorm16(math.saturate(v));
                     *(uint*) outputPtr = (uint) enc;
                     *(ushort*) (outputPtr + 4) = (ushort) (enc >> 32);
                 }
                     break;
                 case GaussianSplatAsset.VectorFormat.Norm11:
                 {
-                    uint enc = EncodeFloat3ToNorm11(v);
+                    uint enc = EncodeFloat3ToNorm11(math.saturate(v));
                     *(uint*) outputPtr = enc;
                 }
                     break;
                 case GaussianSplatAsset.VectorFormat.Norm6:
                 {
-                    ushort enc = EncodeFloat3ToNorm655(v);
+                    ushort enc = EncodeFloat3ToNorm655(math.saturate(v));
                     *(ushort*) outputPtr = enc;
                 }
                     break;

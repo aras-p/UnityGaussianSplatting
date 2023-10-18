@@ -130,7 +130,7 @@ namespace GaussianSplatting.Runtime
 
                 gs.SetAssetDataOnMaterial(mpb);
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
-                mpb.SetInteger(GaussianSplatRenderer.Props.SplatChunkCount, gs.m_GpuChunks.count);
+                mpb.SetInteger(GaussianSplatRenderer.Props.SplatChunkCount, gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0);
 
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
 
@@ -154,7 +154,7 @@ namespace GaussianSplatting.Runtime
                 if (gs.m_RenderMode is GaussianSplatRenderer.RenderMode.DebugBoxes or GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     indexCount = 36;
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
-                    instanceCount = gs.m_GpuChunks.count;
+                    instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
                 cmb.BeginSample(s_ProfDraw);
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
@@ -244,6 +244,7 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_GpuSHData;
         Texture2D m_GpuColorData;
         internal GraphicsBuffer m_GpuChunks;
+        internal bool m_GpuChunksValid;
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
         GraphicsBuffer m_GpuSplatSelectedInitBuffer;
@@ -334,7 +335,6 @@ namespace GaussianSplatting.Runtime
             m_Asset.m_PosData != null &&
             m_Asset.m_OtherData != null &&
             m_Asset.m_SHData != null &&
-            m_Asset.m_ChunkData != null &&
             m_Asset.m_ColorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
@@ -352,8 +352,21 @@ namespace GaussianSplatting.Runtime
             m_GpuColorData = new Texture2D(asset.m_ColorWidth, asset.m_ColorHeight, asset.m_ColorFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
             m_GpuColorData.SetPixelData(asset.m_ColorData.GetData<byte>(), 0);
             m_GpuColorData.Apply(false, true);
-            m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, (int)(asset.m_ChunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) , UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) { name = "GaussianChunkData" };
-            m_GpuChunks.SetData(asset.m_ChunkData.GetData<GaussianSplatAsset.ChunkInfo>());
+            if (asset.m_ChunkData != null && asset.m_ChunkData.dataSize != 0)
+            {
+                m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured,
+                    (int) (asset.m_ChunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()),
+                    UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) {name = "GaussianChunkData"};
+                m_GpuChunks.SetData(asset.m_ChunkData.GetData<GaussianSplatAsset.ChunkInfo>());
+                m_GpuChunksValid = true;
+            }
+            else
+            {
+                // just a dummy chunk buffer
+                m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1,
+                    UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) {name = "GaussianChunkData"};
+                m_GpuChunksValid = false;
+            }
 
             m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
@@ -421,6 +434,7 @@ namespace GaussianSplatting.Runtime
             uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
             cmb.SetComputeIntParam(cs, Props.SplatFormat, (int)format);
             cmb.SetComputeIntParam(cs, Props.SplatCount, m_Asset.m_SplatCount);
+            cmb.SetComputeIntParam(cs, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
 
             UpdateCutoutsBuffer();
             cmb.SetComputeIntParam(cs, Props.SplatCutoutsCount, m_Cutouts?.Length ?? 0);
@@ -472,6 +486,8 @@ namespace GaussianSplatting.Runtime
             m_GpuSplatDeletedBuffer = null;
             m_GpuSplatEditDataBuffer = null;
             m_GpuSplatCutoutsBuffer = null;
+
+            m_GpuChunksValid = false;
 
             editSelectedSplats = 0;
             editDeletedSplats = 0;
@@ -544,6 +560,7 @@ namespace GaussianSplatting.Runtime
             cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.m_PosFormat);
             cmd.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, worldToCamMatrix * matrix);
             cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_Asset.m_SplatCount);
+            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
             cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 

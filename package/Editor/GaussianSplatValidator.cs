@@ -23,7 +23,7 @@ namespace GaussianSplatting.Editor
             public float fov;
         }
 
-        // currently on RTX 3080Ti: 43.77, 39.33, 43.49 PSNR
+        // currently on RTX 3080Ti: 43.76, 39.36, 43.50 PSNR
         [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against SBIR")]
         public static void ValidateSBIR()
         {

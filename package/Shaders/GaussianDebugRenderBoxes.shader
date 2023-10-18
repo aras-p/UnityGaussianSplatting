@@ -23,7 +23,6 @@ CGPROGRAM
 StructuredBuffer<uint> _OrderBuffer;
 
 bool _DisplayChunks;
-uint _SplatChunkCount;
 
 struct v2f
 {
