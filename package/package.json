@@ -1,6 +1,6 @@
 {
   "author": "Aras Pranckevicius",
-  "dependencies": {},
+  "dependencies": { "com.unity.burst": "1.8.8", "com.unity.collections": "2.1.4", "com.unity.mathematics": "1.2.6" },
   "description": "3D Gaussian Splatting rendering and tools",
   "displayName": "Gaussian Splatting",
   "keywords": [ "unity" ],
