@@ -23,8 +23,20 @@ namespace GaussianSplatting.Editor
             public float fov;
         }
 
-        [MenuItem("Tools/Gaussian Splats/Debug/Validate Rendering")]
-        public static unsafe void Validate()
+        // currently on RTX 3080Ti: 43.77, 39.33, 43.49 PSNR
+        [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against SBIR")]
+        public static void ValidateSBIR()
+        {
+            ValidateImpl("SBIR");
+        }
+        // currently on RTX 3080Ti: matches
+        [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against D3D12")]
+        public static void ValidateD3D12()
+        {
+            ValidateImpl("D3D12");
+        }
+
+        static unsafe void ValidateImpl(string refPrefix)
         {
             var gaussians = Object.FindObjectOfType(typeof(GaussianSplatRenderer)) as GaussianSplatRenderer;
             {
@@ -58,12 +70,11 @@ namespace GaussianSplatting.Editor
                     Debug.LogError($"Did not find asset for validation item {item.assetPath} at {path}");
                     continue;
                 }
-                var refImageFile = $"../../doc/RefImages/SBIR_{item.assetPath}{item.cameraIndex}.png";
+                var refImageFile = $"../../docs/RefImages/{refPrefix}_{item.assetPath}{item.cameraIndex}.png"; // use our snapshot by default
                 if (!File.Exists(refImageFile))
                 {
                     Debug.LogError($"Did not find reference image for validation item {item.assetPath} at {refImageFile}");
                     continue;
-
                 }
 
                 var compareTexture = new Texture2D(4, 4, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
@@ -100,14 +111,14 @@ namespace GaussianSplatting.Editor
                 difJob.difPixCount = &errorsCount;
                 difJob.Schedule().Complete();
 
-                string pathDif = $"../../Shot-{item.assetPath}{item.cameraIndex}-diff.png";
-                string pathRef = $"../../Shot-{item.assetPath}{item.cameraIndex}-ref.png";
-                string pathGot = $"../../Shot-{item.assetPath}{item.cameraIndex}-got.png";
+                string pathDif = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-diff.png";
+                string pathRef = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-ref.png";
+                string pathGot = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-got.png";
 
                 if (errorsCount > 50 || psnr < 90.0f)
                 {
                     Debug.LogWarning(
-                        $"{item.assetPath} cam {item.cameraIndex}: RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
+                        $"{refPrefix} {item.assetPath} cam {item.cameraIndex}: RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
                     NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels,
                         GraphicsFormat.R8G8B8A8_SRGB, (uint) width, (uint) height);
