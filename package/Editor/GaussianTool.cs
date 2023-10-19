@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace GaussianSplatting.Editor
 {
-    public abstract class GaussianTool : EditorTool
+    abstract class GaussianTool : EditorTool
     {
         protected GaussianSplatRenderer GetRenderer()
         {

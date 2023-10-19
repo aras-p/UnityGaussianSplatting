@@ -8,7 +8,7 @@ using UnityEngine;
 namespace GaussianSplatting.Editor
 {
     [EditorTool("Gaussian Move Tool", typeof(GaussianSplatRenderer), typeof(GaussianToolContext))]
-    public sealed class GaussianMoveTool : GaussianTool
+    class GaussianMoveTool : GaussianTool
     {
         public override void OnToolGUI(EditorWindow window)
         {
@@ -20,11 +20,14 @@ namespace GaussianSplatting.Editor
             EditorGUI.BeginChangeCheck();
             var selCenterLocal = GetSelectionCenterLocal();
             var selCenterWorld = tr.TransformPoint(selCenterLocal);
-            var newPosWorld = Handles.DoPositionHandle(selCenterWorld, Quaternion.identity);
+            var newPosWorld = Handles.DoPositionHandle(selCenterWorld, Tools.handleRotation);
             if (EditorGUI.EndChangeCheck())
             {
                 var newPosLocal = tr.InverseTransformPoint(newPosWorld);
+                var wasModified = gs.editModified;
                 gs.EditTranslateSelection(newPosLocal - selCenterLocal);
+                if (!wasModified)
+                    GaussianSplatRendererEditor.RepaintAll();
                 Event.current.Use();
             }
         }

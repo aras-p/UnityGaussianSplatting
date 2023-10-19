@@ -113,7 +113,7 @@ namespace GaussianSplatting.Editor
                             gs.EditDeselectAll();
 
                         // record selection state at start
-                        gs.EditStoreInitialSelection();
+                        gs.EditStoreSelectionMouseDown();
                         GaussianSplatRendererEditor.RepaintAll();
 
                         GUIUtility.hotControl = id;

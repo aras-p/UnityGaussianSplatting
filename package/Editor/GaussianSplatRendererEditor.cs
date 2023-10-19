@@ -291,7 +291,7 @@ namespace GaussianSplatting.Editor
             GaussianSplatAssetCreator.InputSplatData[] data = new GaussianSplatAssetCreator.InputSplatData[gpuData.count];
             gpuData.GetData(data);
 
-            var gpuDeleted = gs.gpuSplatDeletedBuffer;
+            var gpuDeleted = gs.GpuEditDeleted;
             uint[] deleted = new uint[gpuDeleted.count];
             gpuDeleted.GetData(deleted);
 
