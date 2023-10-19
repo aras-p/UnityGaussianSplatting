@@ -153,10 +153,10 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.Space(12f, true);
             GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
             EditorGUILayout.Space();
-            bool wasToolActive = ToolManager.activeToolType == typeof(GaussianSplatsTool);
+            bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
             if (!wasToolActive && isToolActive)
-                ToolManager.SetActiveTool<GaussianSplatsTool>();
+                ToolManager.SetActiveContext<GaussianToolContext>();
             if (wasToolActive && !isToolActive)
                 Tools.current = Tool.View;
 

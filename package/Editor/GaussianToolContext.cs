@@ -7,12 +7,12 @@ using UnityEngine;
 
 namespace GaussianSplatting.Editor
 {
-    [EditorTool("GaussianSplats Tool", typeof(GaussianSplatRenderer))]
-    class GaussianSplatsTool : EditorTool
+    [EditorToolContext("GaussianSplats", typeof(GaussianSplatRenderer)), Icon(k_IconPath)]
+    class GaussianToolContext : EditorToolContext
     {
-        Vector2 m_MouseStartDragPos;
+        const string k_IconPath = "Packages/org.nesnausk.gaussian-splatting/Editor/Icons/GaussianContext.png";
 
-        public override GUIContent toolbarIcon => EditorGUIUtility.TrIconContent("EditCollider", "Edit Gaussian Splats");
+        Vector2 m_MouseStartDragPos;
 
         public override void OnWillBeDeactivated()
         {
