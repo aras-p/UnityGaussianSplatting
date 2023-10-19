@@ -12,6 +12,7 @@
 #pragma kernel CSOrBuffers
 #pragma kernel CSSelectionUpdate
 #pragma kernel CSTranslateSelection
+#pragma kernel CSScaleSelection
 #pragma kernel CSExportData
 
 // FidelityFX GPU sorting
@@ -429,13 +430,38 @@ void CSTranslateSelection (uint3 id : SV_DispatchThreadID)
     if (!IsSplatSelected(idx))
         return;
 
-    float3 pos = LoadSplatPos(idx);
-    pos += _SelectionDelta;
+    uint fmt = _SplatFormat & 0xFF;
+    if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
+    {
+        uint stride = 12;
+        float3 pos = asfloat(_SplatPos.Load3(idx * stride));
+        pos += _SelectionDelta;
+        _SplatPos.Store3(idx * stride, asuint(pos));
+    }
+}
+
+float3 _SelectionCenter;
+ByteAddressBuffer _SplatPosMouseDown;
+
+//@TODO: maybe scale the scale itself too?
+//@TODO: make this work in global handle orientation
+[numthreads(GROUP_SIZE,1,1)]
+void CSScaleSelection (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+    if (!IsSplatSelected(idx))
+        return;
 
     uint fmt = _SplatFormat & 0xFF;
     if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
     {
         uint stride = 12;
+        float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * stride));
+        pos -= _SelectionCenter;
+        pos *= _SelectionDelta;
+        pos += _SelectionCenter;
         _SplatPos.Store3(idx * stride, asuint(pos));
     }
 }

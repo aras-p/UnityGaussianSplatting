@@ -254,6 +254,8 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_GpuEditSelected;
         GraphicsBuffer m_GpuEditDeleted;
         GraphicsBuffer m_GpuEditSelectedMouseDown; // selection state at start of operation
+        GraphicsBuffer m_GpuEditPosMouseDown; // position state at start of operation
+        GraphicsBuffer m_GpuEditOtherMouseDown; // rotation/scale state at start of operation
 
         GpuSorting m_Sorter;
         GpuSorting.Args m_SorterArgs;
@@ -303,9 +305,11 @@ namespace GaussianSplatting.Runtime
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
+            public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
             public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
             public static readonly int SplatCutoutsCount = Shader.PropertyToID("_SplatCutoutsCount");
             public static readonly int SplatCutouts = Shader.PropertyToID("_SplatCutouts");
+            public static readonly int SplatPosMouseDown = Shader.PropertyToID("_SplatPosMouseDown");
         }
 
         [field: NonSerialized] public bool editModified { get; private set; }
@@ -329,6 +333,7 @@ namespace GaussianSplatting.Runtime
             OrBuffers,
             SelectionUpdate,
             TranslateSelection,
+            ScaleSelection,
             ExportData,
         }
 
@@ -347,7 +352,7 @@ namespace GaussianSplatting.Runtime
             if (!HasValidAsset)
                 return;
 
-            m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_PosData.dataSize / 4), 4) { name = "GaussianPosData" };
+            m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.m_PosData.dataSize / 4), 4) { name = "GaussianPosData" };
             m_GpuPosData.SetData(asset.m_PosData.GetData<uint>());
             m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_OtherData.dataSize / 4), 4) { name = "GaussianOtherData" };
             m_GpuOtherData.SetData(asset.m_OtherData.GetData<uint>());
@@ -458,38 +463,35 @@ namespace GaussianSplatting.Runtime
             mat.SetInteger(Props.SplatFormat, (int)format);
         }
 
+        static void DisposeBuffer(ref GraphicsBuffer buf)
+        {
+            buf?.Dispose();
+            buf = null;
+        }
+
         void DisposeResourcesForAsset()
         {
-            m_GpuPosData?.Dispose();
-            m_GpuOtherData?.Dispose();
-            m_GpuSHData?.Dispose();
             DestroyImmediate(m_GpuColorData);
-            m_GpuChunks?.Dispose();
-            m_GpuView?.Dispose();
-            m_GpuIndexBuffer?.Dispose();
-            m_GpuSortDistances?.Dispose();
-            m_GpuSortKeys?.Dispose();
-            m_GpuEditSelectedMouseDown?.Dispose();
-            m_GpuEditSelected?.Dispose();
-            m_GpuEditDeleted?.Dispose();
-            m_GpuEditCountsBounds?.Dispose();
-            m_GpuEditCutouts?.Dispose();
-            m_SorterArgs.resources.Dispose();
 
-            m_GpuPosData = null;
-            m_GpuOtherData = null;
-            m_GpuSHData = null;
-            m_GpuColorData = null;
-            m_GpuChunks = null;
-            m_GpuView = null;
-            m_GpuIndexBuffer = null;
-            m_GpuSortDistances = null;
-            m_GpuSortKeys = null;
-            m_GpuEditSelectedMouseDown = null;
-            m_GpuEditSelected = null;
-            m_GpuEditDeleted = null;
-            m_GpuEditCountsBounds = null;
-            m_GpuEditCutouts = null;
+            DisposeBuffer(ref m_GpuPosData);
+            DisposeBuffer(ref m_GpuOtherData);
+            DisposeBuffer(ref m_GpuSHData);
+            DisposeBuffer(ref m_GpuChunks);
+
+            DisposeBuffer(ref m_GpuView);
+            DisposeBuffer(ref m_GpuIndexBuffer);
+            DisposeBuffer(ref m_GpuSortDistances);
+            DisposeBuffer(ref m_GpuSortKeys);
+
+            DisposeBuffer(ref m_GpuEditSelectedMouseDown);
+            DisposeBuffer(ref m_GpuEditPosMouseDown);
+            DisposeBuffer(ref m_GpuEditOtherMouseDown);
+            DisposeBuffer(ref m_GpuEditSelected);
+            DisposeBuffer(ref m_GpuEditDeleted);
+            DisposeBuffer(ref m_GpuEditCountsBounds);
+            DisposeBuffer(ref m_GpuEditCutouts);
+
+            m_SorterArgs.resources.Dispose();
 
             m_GpuChunksValid = false;
 
@@ -719,6 +721,15 @@ namespace GaussianSplatting.Runtime
             Graphics.CopyBuffer(m_GpuEditSelected, m_GpuEditSelectedMouseDown);
         }
 
+        public void EditStorePosMouseDown()
+        {
+            if (m_GpuEditPosMouseDown == null)
+            {
+                m_GpuEditPosMouseDown = new GraphicsBuffer(m_GpuPosData.target | GraphicsBuffer.Target.CopyDestination, m_GpuPosData.count, m_GpuPosData.stride) {name = "GaussianSplatEditPosMouseDown"};
+            }
+            Graphics.CopyBuffer(m_GpuPosData, m_GpuEditPosMouseDown);
+        }
+
         public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
         {
             if (!EnsureEditingBuffers()) return;
@@ -762,6 +773,23 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, localSpacePosDelta);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.TranslateSelection, m_Asset.m_SplatCount);
+            UpdateEditCountsAndBounds();
+            editModified = true;
+        }
+
+        public void EditScaleSelection(Vector3 localSpaceCenter, Vector3 scale)
+        {
+            if (!EnsureEditingBuffers()) return;
+            if (m_GpuEditPosMouseDown == null) return; // should have captured initial state
+
+            using var cmb = new CommandBuffer { name = "SplatScaleSelection" };
+            SetAssetDataOnCS(cmb, KernelIndices.ScaleSelection);
+
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ScaleSelection, Props.SplatPosMouseDown, m_GpuEditPosMouseDown);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionCenter, localSpaceCenter);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, scale);
+
+            DispatchUtilsAndExecute(cmb, KernelIndices.ScaleSelection, m_Asset.m_SplatCount);
             UpdateEditCountsAndBounds();
             editModified = true;
         }

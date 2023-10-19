@@ -21,8 +21,8 @@ namespace GaussianSplatting.Editor
                 return typeof(GaussianMoveTool);
             //if (tool == Tool.Rotate)
             //    return typeof(GaussianRotateTool); //@TODO: make it
-            //if (tool == Tool.Scale)
-            //    return typeof(GaussianScaleTool); //@TODO: make it
+            if (tool == Tool.Scale)
+                return typeof(GaussianScaleTool);
             return null;
         }
 
