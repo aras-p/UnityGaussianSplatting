@@ -301,6 +301,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
+            public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
             public static readonly int SplatCutoutsCount = Shader.PropertyToID("_SplatCutoutsCount");
             public static readonly int SplatCutouts = Shader.PropertyToID("_SplatCutouts");
         }
@@ -325,6 +326,7 @@ namespace GaussianSplatting.Runtime
             SelectAll,
             OrBuffers,
             SelectionUpdate,
+            TranslateSelection,
             ExportData,
         }
 
@@ -745,6 +747,19 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
 
             DispatchUtilsAndExecute(cmb, KernelIndices.SelectionUpdate, m_Asset.m_SplatCount);
+            UpdateEditCountsAndBounds();
+        }
+
+        public void EditTranslateSelection(Vector3 localSpacePosDelta)
+        {
+            if (!EnsureEditingBuffers()) return;
+
+            using var cmb = new CommandBuffer { name = "SplatTranslateSelection" };
+            SetAssetDataOnCS(cmb, KernelIndices.TranslateSelection);
+
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, localSpacePosDelta);
+
+            DispatchUtilsAndExecute(cmb, KernelIndices.TranslateSelection, m_Asset.m_SplatCount);
             UpdateEditCountsAndBounds();
         }
 

@@ -1,5 +1,6 @@
 ﻿// SPDX-License-Identifier: MIT
 
+using System;
 using GaussianSplatting.Runtime;
 using UnityEditor;
 using UnityEditor.EditorTools;
@@ -13,6 +14,17 @@ namespace GaussianSplatting.Editor
         const string k_IconPath = "Packages/org.nesnausk.gaussian-splatting/Editor/Icons/GaussianContext.png";
 
         Vector2 m_MouseStartDragPos;
+
+        protected override Type GetEditorToolType(Tool tool)
+        {
+            if (tool == Tool.Move)
+                return typeof(GaussianMoveTool);
+            //if (tool == Tool.Rotate)
+            //    return typeof(GaussianRotateTool); //@TODO: make it
+            //if (tool == Tool.Scale)
+            //    return typeof(GaussianScaleTool); //@TODO: make it
+            return null;
+        }
 
         public override void OnWillBeDeactivated()
         {
@@ -66,6 +78,11 @@ namespace GaussianSplatting.Editor
             }
         }
 
+        static bool IsViewToolActive()
+        {
+            return Tools.viewToolActive || Tools.current == Tool.View || (Event.current != null && Event.current.alt);
+        }
+
         public override void OnToolGUI(EditorWindow window)
         {
             if (!(window is SceneView sceneView))
@@ -87,7 +104,9 @@ namespace GaussianSplatting.Editor
                     HandleUtility.AddDefaultControl(id);
                     break;
                 case EventType.MouseDown:
-                    if (HandleUtility.nearestControl == id && evt.button == 0 && !evt.alt) // ignore Alt to allow orbiting scene view
+                    if (IsViewToolActive())
+                        break;
+                    if (HandleUtility.nearestControl == id && evt.button == 0)
                     {
                         // shift/command adds to selection
                         if (!evt.shift && !EditorGUI.actionKey)

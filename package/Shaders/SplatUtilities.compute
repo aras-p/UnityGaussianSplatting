@@ -11,6 +11,7 @@
 #pragma kernel CSSelectAll
 #pragma kernel CSOrBuffers
 #pragma kernel CSSelectionUpdate
+#pragma kernel CSTranslateSelection
 #pragma kernel CSExportData
 
 // FidelityFX GPU sorting
@@ -409,6 +410,35 @@ void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
     _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1 << bitIdx);
 }
 
+float3 _SelectionDelta;
+
+bool IsSplatSelected(uint idx)
+{
+    uint wordIdx = idx / 32;
+    uint bitIdx = idx & 31;
+    uint selVal = _SplatSelectedBits.Load(wordIdx * 4);
+    return (selVal & (1 << bitIdx)) != 0;
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSTranslateSelection (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+    if (!IsSplatSelected(idx))
+        return;
+
+    float3 pos = LoadSplatPos(idx);
+    pos += _SelectionDelta;
+
+    uint fmt = _SplatFormat & 0xFF;
+    if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
+    {
+        uint stride = 12;
+        _SplatPos.Store3(idx * stride, asuint(pos));
+    }
+}
 
 struct ExportSplatData
 {

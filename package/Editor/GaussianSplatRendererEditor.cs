@@ -156,9 +156,21 @@ namespace GaussianSplatting.Editor
             bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
             if (!wasToolActive && isToolActive)
+            {
                 ToolManager.SetActiveContext<GaussianToolContext>();
+                if (Tools.current == Tool.View)
+                    Tools.current = Tool.Move;
+            }
+
             if (wasToolActive && !isToolActive)
-                Tools.current = Tool.View;
+            {
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            }
+
+            if (isToolActive && gs.asset.m_ChunkData != null)
+            {
+                EditorGUILayout.HelpBox("Splat move/rotate/scale tools need Very High splat quality preset", MessageType.Warning);
+            }
 
             EditorGUILayout.Space();
             GUILayout.BeginHorizontal();
