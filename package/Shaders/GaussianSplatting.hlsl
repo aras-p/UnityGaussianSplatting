@@ -262,9 +262,15 @@ float4 DecodePacked_10_10_10_2(uint enc)
         ((enc >> 30) & 3) / 3.0);
 }
 
-RWByteAddressBuffer _SplatPos;
-RWByteAddressBuffer _SplatOther;
-RWByteAddressBuffer _SplatSH;
+#ifdef SHADER_STAGE_COMPUTE
+#define SplatBufferDataType RWByteAddressBuffer
+#else
+#define SplatBufferDataType ByteAddressBuffer
+#endif
+
+SplatBufferDataType _SplatPos;
+SplatBufferDataType _SplatOther;
+SplatBufferDataType _SplatSH;
 Texture2D _SplatColor;
 uint _SplatFormat;
 
@@ -274,7 +280,7 @@ uint _SplatFormat;
 #define VECTOR_FMT_11 2
 #define VECTOR_FMT_6 3
 
-uint LoadUShort(RWByteAddressBuffer dataBuffer, uint addrU)
+uint LoadUShort(SplatBufferDataType dataBuffer, uint addrU)
 {
     uint addrA = addrU & ~0x3;
     uint val = dataBuffer.Load(addrA);
@@ -283,7 +289,7 @@ uint LoadUShort(RWByteAddressBuffer dataBuffer, uint addrU)
     return val & 0xFFFF;
 }
 
-uint LoadUInt(RWByteAddressBuffer dataBuffer, uint addrU)
+uint LoadUInt(SplatBufferDataType dataBuffer, uint addrU)
 {
     uint addrA = addrU & ~0x3;
     uint val = dataBuffer.Load(addrA);
@@ -295,7 +301,7 @@ uint LoadUInt(RWByteAddressBuffer dataBuffer, uint addrU)
     return val;
 }
 
-float3 LoadAndDecodeVector(RWByteAddressBuffer dataBuffer, uint addrU, uint fmt)
+float3 LoadAndDecodeVector(SplatBufferDataType dataBuffer, uint addrU, uint fmt)
 {
     uint addrA = addrU & ~0x3;
 
