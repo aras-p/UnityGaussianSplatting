@@ -589,6 +589,7 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
         if (_ExportTransformScale.z < 0)
             src.rot.xy = -src.rot.xy;
         src.rot = QuatMul(_ExportTransformRotation, src.rot);
+        src.scale *= abs(_ExportTransformScale);
 
         float3x3 shRot = CalcSHRotMatrix(_MatrixObjectToWorld);
         RotateSH(src.sh, shRot);
