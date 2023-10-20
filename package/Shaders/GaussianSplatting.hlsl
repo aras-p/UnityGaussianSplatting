@@ -16,6 +16,11 @@ float3 QuatRotateVector(float3 v, float4 r)
     return v + r.w * t + cross(r.xyz, t);
 }
 
+float4 QuatMul(float4 a, float4 b)
+{
+    return float4(a.wwww * b + (a.xyzx * b.wwwx + a.yzxy * b.zxyy) * float4(1,1,1,-1) - a.zxyz * b.yzxz);
+}
+
 float4 QuatInverse(float4 q)
 {
     return rcp(dot(q, q)) * q * float4(-1,-1,-1,1);

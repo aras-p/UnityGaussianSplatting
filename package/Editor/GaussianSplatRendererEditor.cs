@@ -17,6 +17,8 @@ namespace GaussianSplatting.Editor
     [CustomEditor(typeof(GaussianSplatRenderer))]
     public class GaussianSplatRendererEditor : UnityEditor.Editor
     {
+        const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
+
         SerializedProperty m_PropAsset;
         SerializedProperty m_PropSplatScale;
         SerializedProperty m_PropOpacityScale;
@@ -33,6 +35,8 @@ namespace GaussianSplatting.Editor
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
+
+        bool m_ExportBakeTransform;
 
         static int s_EditStatsUpdateCounter = 0;
 
@@ -51,6 +55,8 @@ namespace GaussianSplatting.Editor
 
         public void OnEnable()
         {
+            m_ExportBakeTransform = EditorPrefs.GetBool(kPrefExportBake, false);
+
             m_PropAsset = serializedObject.FindProperty("m_Asset");
             m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
             m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
@@ -201,34 +207,39 @@ namespace GaussianSplatting.Editor
             }
             GUILayout.EndHorizontal();
             EditorGUILayout.PropertyField(m_PropCutouts);
-            EditorGUILayout.Space();
 
             bool hasCutouts = gs.m_Cutouts != null && gs.m_Cutouts.Length != 0;
             bool modifiedOrHasCutouts = gs.editModified || hasCutouts;
-            bool displayEditTools = isToolActive || modifiedOrHasCutouts;
 
-            if (displayEditTools)
+            var asset = gs.asset;
+            EditorGUILayout.Space();
+            EditorGUI.BeginChangeCheck();
+            m_ExportBakeTransform = EditorGUILayout.Toggle("Bake Transform", m_ExportBakeTransform);
+            if (EditorGUI.EndChangeCheck())
             {
-                var asset = gs.asset;
+                EditorPrefs.SetBool(kPrefExportBake, m_ExportBakeTransform);
+            }
+
+            if (GUILayout.Button("Export PLY"))
+                ExportPlyFile(gs, m_ExportBakeTransform);
+            if (asset.m_PosFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                asset.m_ScaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
+                asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
+            {
+                EditorGUILayout.HelpBox(
+                    "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
+                    MessageType.Warning);
+            }
+
+            bool displayEditStats = isToolActive || modifiedOrHasCutouts;
+            if (displayEditStats)
+            {
+                EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
                 EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
                 EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
                 EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
-                if (modifiedOrHasCutouts)
-                {
-                    if (GUILayout.Button("Export modified PLY"))
-                        ExportPlyFile(gs);
-                    if (asset.m_PosFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                        asset.m_ScaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                        !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
-                        asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
-                            MessageType.Warning);
-                    }
-                }
-
                 if (hasCutouts)
                 {
                     if (s_EditStatsUpdateCounter > 10)
@@ -277,15 +288,17 @@ namespace GaussianSplatting.Editor
             return new Bounds { center = center, extents = ext };
         }
 
-        static unsafe void ExportPlyFile(GaussianSplatRenderer gs)
+        static unsafe void ExportPlyFile(GaussianSplatRenderer gs, bool bakeTransform)
         {
             var path = EditorUtility.SaveFilePanel(
                 "Export Gaussian Splat PLY file", "", $"{gs.asset.name}-edit.ply", "ply");
             if (string.IsNullOrWhiteSpace(path))
                 return;
+
             int kSplatSize = UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>();
             using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.asset.m_SplatCount, kSplatSize);
-            if (!gs.EditExportData(gpuData))
+
+            if (!gs.EditExportData(gpuData, bakeTransform))
                 return;
 
             GaussianSplatAssetCreator.InputSplatData[] data = new GaussianSplatAssetCreator.InputSplatData[gpuData.count];
@@ -324,6 +337,8 @@ namespace GaussianSplatting.Editor
                     fs.Write(new ReadOnlySpan<byte>(ptr, kSplatSize));
                 }
             }
+
+            Debug.Log($"Exported PLY {path} with {aliveCount:N0} splats");
         }
     }
 }

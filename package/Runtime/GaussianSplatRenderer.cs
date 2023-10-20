@@ -130,7 +130,6 @@ namespace GaussianSplatting.Runtime
 
                 gs.SetAssetDataOnMaterial(mpb);
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
-                mpb.SetInteger(GaussianSplatRenderer.Props.SplatChunkCount, gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0);
 
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
 
@@ -138,7 +137,6 @@ namespace GaussianSplatting.Runtime
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatScale, gs.m_SplatScale);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatOpacityScale, gs.m_OpacityScale);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, gs.m_PointDisplaySize);
-                mpb.SetInteger(GaussianSplatRenderer.Props.SplatCount, gs.asset.m_SplatCount);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
@@ -461,6 +459,8 @@ namespace GaussianSplatting.Runtime
             mat.SetInt(Props.SplatBitsValid, m_GpuEditSelected != null && m_GpuEditDeleted != null ? 1 : 0);
             uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
             mat.SetInteger(Props.SplatFormat, (int)format);
+            mat.SetInteger(Props.SplatCount, m_Asset.m_SplatCount);
+            mat.SetInteger(Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
         }
 
         static void DisposeBuffer(ref GraphicsBuffer buf)
@@ -836,12 +836,24 @@ namespace GaussianSplatting.Runtime
             UpdateEditCountsAndBounds();
         }
 
-        public bool EditExportData(GraphicsBuffer dstData)
+        public bool EditExportData(GraphicsBuffer dstData, bool bakeTransform)
         {
             if (!EnsureEditingBuffers()) return false;
 
+            int flags = 0;
+            var tr = transform;
+            Quaternion bakeRot = tr.localRotation;
+            Vector3 bakeScale = tr.localScale;
+
+            if (bakeTransform)
+                flags = 1;
+
             using var cmb = new CommandBuffer { name = "SplatExportData" };
             SetAssetDataOnCS(cmb, KernelIndices.ExportData);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_ExportTransformFlags", flags);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, "_ExportTransformRotation", new Vector4(bakeRot.x, bakeRot.y, bakeRot.z, bakeRot.w));
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, "_ExportTransformScale", bakeScale);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, tr.localToWorldMatrix);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_ExportBuffer", dstData);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.ExportData, m_Asset.m_SplatCount);
