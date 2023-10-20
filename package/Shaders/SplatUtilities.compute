@@ -12,6 +12,7 @@
 #pragma kernel CSOrBuffers
 #pragma kernel CSSelectionUpdate
 #pragma kernel CSTranslateSelection
+#pragma kernel CSRotateSelection
 #pragma kernel CSScaleSelection
 #pragma kernel CSExportData
 
@@ -441,7 +442,35 @@ void CSTranslateSelection (uint3 id : SV_DispatchThreadID)
 }
 
 float3 _SelectionCenter;
+float4 _SelectionDeltaRot;
 ByteAddressBuffer _SplatPosMouseDown;
+ByteAddressBuffer _SplatOtherMouseDown;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSRotateSelection (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+    if (!IsSplatSelected(idx))
+        return;
+
+    uint fmt = _SplatFormat & 0xFF;
+    if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
+    {
+        uint posStride = 12;
+        float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * posStride));
+        pos -= _SelectionCenter;
+        pos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
+        pos = QuatRotateVector(pos, _SelectionDeltaRot);
+        pos = mul(_MatrixWorldToObject, float4(pos,1)).xyz;
+        pos += _SelectionCenter;
+        _SplatPos.Store3(idx * posStride, asuint(pos));
+
+        //@TODO: actual splat rotation
+        //@TODO: rotate SHs
+    }
+}
 
 //@TODO: maybe scale the splat scale itself too?
 [numthreads(GROUP_SIZE,1,1)]

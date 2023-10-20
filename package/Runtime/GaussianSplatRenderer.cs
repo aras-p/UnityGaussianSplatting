@@ -305,9 +305,11 @@ namespace GaussianSplatting.Runtime
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
             public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
+            public static readonly int SelectionDeltaRot = Shader.PropertyToID("_SelectionDeltaRot");
             public static readonly int SplatCutoutsCount = Shader.PropertyToID("_SplatCutoutsCount");
             public static readonly int SplatCutouts = Shader.PropertyToID("_SplatCutouts");
             public static readonly int SplatPosMouseDown = Shader.PropertyToID("_SplatPosMouseDown");
+            public static readonly int SplatOtherMouseDown = Shader.PropertyToID("_SplatOtherMouseDown");
         }
 
         [field: NonSerialized] public bool editModified { get; private set; }
@@ -331,6 +333,7 @@ namespace GaussianSplatting.Runtime
             OrBuffers,
             SelectionUpdate,
             TranslateSelection,
+            RotateSelection,
             ScaleSelection,
             ExportData,
         }
@@ -352,7 +355,7 @@ namespace GaussianSplatting.Runtime
 
             m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.m_PosData.dataSize / 4), 4) { name = "GaussianPosData" };
             m_GpuPosData.SetData(asset.m_PosData.GetData<uint>());
-            m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_OtherData.dataSize / 4), 4) { name = "GaussianOtherData" };
+            m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.m_OtherData.dataSize / 4), 4) { name = "GaussianOtherData" };
             m_GpuOtherData.SetData(asset.m_OtherData.GetData<uint>());
             m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_SHData.dataSize / 4), 4) { name = "GaussianSHData" };
             m_GpuSHData.SetData(asset.m_SHData.GetData<uint>());
@@ -729,6 +732,14 @@ namespace GaussianSplatting.Runtime
             }
             Graphics.CopyBuffer(m_GpuPosData, m_GpuEditPosMouseDown);
         }
+        public void EditStoreOtherMouseDown()
+        {
+            if (m_GpuEditOtherMouseDown == null)
+            {
+                m_GpuEditOtherMouseDown = new GraphicsBuffer(m_GpuOtherData.target | GraphicsBuffer.Target.CopyDestination, m_GpuOtherData.count, m_GpuOtherData.stride) {name = "GaussianSplatEditOtherMouseDown"};
+            }
+            Graphics.CopyBuffer(m_GpuOtherData, m_GpuEditOtherMouseDown);
+        }
 
         public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
         {
@@ -776,6 +787,27 @@ namespace GaussianSplatting.Runtime
             UpdateEditCountsAndBounds();
             editModified = true;
         }
+
+        public void EditRotateSelection(Vector3 localSpaceCenter, Matrix4x4 localToWorld, Matrix4x4 worldToLocal, Quaternion rotation)
+        {
+            if (!EnsureEditingBuffers()) return;
+            if (m_GpuEditPosMouseDown == null || m_GpuEditOtherMouseDown == null) return; // should have captured initial state
+
+            using var cmb = new CommandBuffer { name = "SplatRotateSelection" };
+            SetAssetDataOnCS(cmb, KernelIndices.RotateSelection);
+
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.RotateSelection, Props.SplatPosMouseDown, m_GpuEditPosMouseDown);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.RotateSelection, Props.SplatOtherMouseDown, m_GpuEditOtherMouseDown);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionCenter, localSpaceCenter);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, localToWorld);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDeltaRot, new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+
+            DispatchUtilsAndExecute(cmb, KernelIndices.RotateSelection, m_Asset.m_SplatCount);
+            UpdateEditCountsAndBounds();
+            editModified = true;
+        }
+
 
         public void EditScaleSelection(Vector3 localSpaceCenter, Matrix4x4 localToWorld, Matrix4x4 worldToLocal, Vector3 scale)
         {
