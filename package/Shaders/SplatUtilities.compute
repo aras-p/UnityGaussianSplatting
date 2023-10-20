@@ -443,8 +443,7 @@ void CSTranslateSelection (uint3 id : SV_DispatchThreadID)
 float3 _SelectionCenter;
 ByteAddressBuffer _SplatPosMouseDown;
 
-//@TODO: maybe scale the scale itself too?
-//@TODO: make this work in global handle orientation
+//@TODO: maybe scale the splat scale itself too?
 [numthreads(GROUP_SIZE,1,1)]
 void CSScaleSelection (uint3 id : SV_DispatchThreadID)
 {
@@ -460,7 +459,9 @@ void CSScaleSelection (uint3 id : SV_DispatchThreadID)
         uint stride = 12;
         float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * stride));
         pos -= _SelectionCenter;
+        pos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
         pos *= _SelectionDelta;
+        pos = mul(_MatrixWorldToObject, float4(pos,1)).xyz;
         pos += _SelectionCenter;
         _SplatPos.Store3(idx * stride, asuint(pos));
     }

@@ -48,8 +48,15 @@ namespace GaussianSplatting.Editor
             m_CurrentScale = Handles.DoScaleHandle(m_CurrentScale, selCenterWorld, Tools.handleRotation, HandleUtility.GetHandleSize(selCenterWorld));
             if (EditorGUI.EndChangeCheck())
             {
+                Matrix4x4 localToWorld = Matrix4x4.identity;
+                Matrix4x4 worldToLocal = Matrix4x4.identity;
+                if (Tools.pivotRotation == PivotRotation.Global)
+                {
+                    localToWorld = gs.transform.localToWorldMatrix;
+                    worldToLocal = gs.transform.worldToLocalMatrix;
+                }
                 var wasModified = gs.editModified;
-                gs.EditScaleSelection(selCenterLocal, m_CurrentScale);
+                gs.EditScaleSelection(selCenterLocal, localToWorld, worldToLocal, m_CurrentScale);
                 if (!wasModified)
                     GaussianSplatRendererEditor.RepaintAll();
                 evt.Use();

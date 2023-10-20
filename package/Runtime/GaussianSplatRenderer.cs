@@ -777,7 +777,7 @@ namespace GaussianSplatting.Runtime
             editModified = true;
         }
 
-        public void EditScaleSelection(Vector3 localSpaceCenter, Vector3 scale)
+        public void EditScaleSelection(Vector3 localSpaceCenter, Matrix4x4 localToWorld, Matrix4x4 worldToLocal, Vector3 scale)
         {
             if (!EnsureEditingBuffers()) return;
             if (m_GpuEditPosMouseDown == null) return; // should have captured initial state
@@ -787,6 +787,8 @@ namespace GaussianSplatting.Runtime
 
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ScaleSelection, Props.SplatPosMouseDown, m_GpuEditPosMouseDown);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionCenter, localSpaceCenter);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, localToWorld);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, scale);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.ScaleSelection, m_Asset.m_SplatCount);
