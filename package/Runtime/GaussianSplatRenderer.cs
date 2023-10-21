@@ -147,7 +147,7 @@ namespace GaussianSplatting.Runtime
 
                 // draw
                 int indexCount = 6;
-                int instanceCount = gs.asset.m_SplatCount;
+                int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
                 if (gs.m_RenderMode is GaussianSplatRenderer.RenderMode.DebugBoxes or GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     indexCount = 36;
@@ -235,6 +235,7 @@ namespace GaussianSplatting.Runtime
         [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
 
+        int m_SplatCount; // initially same as asset splat count, but editing can change this
         GraphicsBuffer m_GpuSortDistances;
         internal GraphicsBuffer m_GpuSortKeys;
         GraphicsBuffer m_GpuPosData;
@@ -319,6 +320,7 @@ namespace GaussianSplatting.Runtime
         [field: NonSerialized] public Bounds editSelectedBounds { get; private set; }
 
         public GaussianSplatAsset asset => m_Asset;
+        public int splatCount => m_SplatCount;
 
         enum KernelIndices
         {
@@ -340,12 +342,12 @@ namespace GaussianSplatting.Runtime
 
         public bool HasValidAsset =>
             m_Asset != null &&
-            m_Asset.m_SplatCount > 0 &&
-            m_Asset.m_FormatVersion == GaussianSplatAsset.kCurrentVersion &&
-            m_Asset.m_PosData != null &&
-            m_Asset.m_OtherData != null &&
-            m_Asset.m_SHData != null &&
-            m_Asset.m_ColorData != null;
+            m_Asset.splatCount > 0 &&
+            m_Asset.formatVersion == GaussianSplatAsset.kCurrentVersion &&
+            m_Asset.posData != null &&
+            m_Asset.otherData != null &&
+            m_Asset.shData != null &&
+            m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
         void CreateResourcesForAsset()
@@ -353,21 +355,24 @@ namespace GaussianSplatting.Runtime
             if (!HasValidAsset)
                 return;
 
-            m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.m_PosData.dataSize / 4), 4) { name = "GaussianPosData" };
-            m_GpuPosData.SetData(asset.m_PosData.GetData<uint>());
-            m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.m_OtherData.dataSize / 4), 4) { name = "GaussianOtherData" };
-            m_GpuOtherData.SetData(asset.m_OtherData.GetData<uint>());
-            m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.m_SHData.dataSize / 4), 4) { name = "GaussianSHData" };
-            m_GpuSHData.SetData(asset.m_SHData.GetData<uint>());
-            m_GpuColorData = new Texture2D(asset.m_ColorWidth, asset.m_ColorHeight, asset.m_ColorFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
-            m_GpuColorData.SetPixelData(asset.m_ColorData.GetData<byte>(), 0);
+            m_SplatCount = asset.splatCount;
+            m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.posData.dataSize / 4), 4) { name = "GaussianPosData" };
+            m_GpuPosData.SetData(asset.posData.GetData<uint>());
+            m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.otherData.dataSize / 4), 4) { name = "GaussianOtherData" };
+            m_GpuOtherData.SetData(asset.otherData.GetData<uint>());
+            m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
+            m_GpuSHData.SetData(asset.shData.GetData<uint>());
+            var (texWidth, texHeight) = GaussianSplatAsset.CalcTextureSize(asset.splatCount);
+            var texFormat = GaussianSplatAsset.ColorFormatToGraphics(asset.colorFormat);
+            m_GpuColorData = new Texture2D(texWidth, texHeight, texFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
+            m_GpuColorData.SetPixelData(asset.colorData.GetData<byte>(), 0);
             m_GpuColorData.Apply(false, true);
-            if (asset.m_ChunkData != null && asset.m_ChunkData.dataSize != 0)
+            if (asset.chunkData != null && asset.chunkData.dataSize != 0)
             {
                 m_GpuChunks = new GraphicsBuffer(GraphicsBuffer.Target.Structured,
-                    (int) (asset.m_ChunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()),
+                    (int) (asset.chunkData.dataSize / UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()),
                     UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()) {name = "GaussianChunkData"};
-                m_GpuChunks.SetData(asset.m_ChunkData.GetData<GaussianSplatAsset.ChunkInfo>());
+                m_GpuChunks.SetData(asset.chunkData.GetData<GaussianSplatAsset.ChunkInfo>());
                 m_GpuChunksValid = true;
             }
             else
@@ -378,7 +383,7 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
-            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 40);
+            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 40);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
             // cube indices, most often we use only the first quad
             m_GpuIndexBuffer.SetData(new ushort[]
@@ -391,8 +396,8 @@ namespace GaussianSplatting.Runtime
                 2, 3, 6, 3, 7, 6
             });
 
-            m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 4) { name = "GaussianSplatSortDistances" };
-            m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.m_SplatCount, 4) { name = "GaussianSplatSortIndices" };
+            m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 4) { name = "GaussianSplatSortDistances" };
+            m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 4) { name = "GaussianSplatSortIndices" };
 
             // init keys buffer to splat indices
             m_CSSplatUtilities.SetBuffer((int)KernelIndices.SetIndices, Props.SplatSortKeys, m_GpuSortKeys);
@@ -402,9 +407,9 @@ namespace GaussianSplatting.Runtime
 
             m_SorterArgs.inputKeys = m_GpuSortDistances;
             m_SorterArgs.inputValues = m_GpuSortKeys;
-            m_SorterArgs.count = (uint) m_Asset.m_SplatCount;
+            m_SorterArgs.count = (uint) m_Asset.splatCount;
             if (m_Sorter.Valid)
-                m_SorterArgs.resources = GpuSorting.SupportResources.Load((uint)m_Asset.m_SplatCount);
+                m_SorterArgs.resources = GpuSorting.SupportResources.Load((uint)m_Asset.splatCount);
         }
 
         public void OnEnable()
@@ -441,9 +446,9 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.OrderBuffer, m_GpuSortKeys);
 
             cmb.SetComputeIntParam(cs, Props.SplatBitsValid, m_GpuEditSelected != null && m_GpuEditDeleted != null ? 1 : 0);
-            uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
+            uint format = (uint)m_Asset.posFormat | ((uint)m_Asset.scaleFormat << 8) | ((uint)m_Asset.shFormat << 16);
             cmb.SetComputeIntParam(cs, Props.SplatFormat, (int)format);
-            cmb.SetComputeIntParam(cs, Props.SplatCount, m_Asset.m_SplatCount);
+            cmb.SetComputeIntParam(cs, Props.SplatCount, m_SplatCount);
             cmb.SetComputeIntParam(cs, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
 
             UpdateCutoutsBuffer();
@@ -460,9 +465,9 @@ namespace GaussianSplatting.Runtime
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
             mat.SetInt(Props.SplatBitsValid, m_GpuEditSelected != null && m_GpuEditDeleted != null ? 1 : 0);
-            uint format = (uint)m_Asset.m_PosFormat | ((uint)m_Asset.m_ScaleFormat << 8) | ((uint)m_Asset.m_SHFormat << 16);
+            uint format = (uint)m_Asset.posFormat | ((uint)m_Asset.scaleFormat << 8) | ((uint)m_Asset.shFormat << 16);
             mat.SetInteger(Props.SplatFormat, (int)format);
-            mat.SetInteger(Props.SplatCount, m_Asset.m_SplatCount);
+            mat.SetInteger(Props.SplatCount, m_SplatCount);
             mat.SetInteger(Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
         }
 
@@ -496,6 +501,7 @@ namespace GaussianSplatting.Runtime
 
             m_SorterArgs.resources.Dispose();
 
+            m_SplatCount = 0;
             m_GpuChunksValid = false;
 
             editSelectedSplats = 0;
@@ -566,9 +572,9 @@ namespace GaussianSplatting.Runtime
             cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatSortKeys, m_GpuSortKeys);
             cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatChunks, m_GpuChunks);
             cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatPos, m_GpuPosData);
-            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.m_PosFormat);
+            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.posFormat);
             cmd.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, worldToCamMatrix * matrix);
-            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_Asset.m_SplatCount);
+            cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_SplatCount);
             cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
             cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
@@ -580,7 +586,7 @@ namespace GaussianSplatting.Runtime
 
         public void Update()
         {
-            var curHash = m_Asset ? m_Asset.m_DataHash : new Hash128();
+            var curHash = m_Asset ? m_Asset.dataHash : new Hash128();
             if (m_PrevAsset != m_Asset || m_PrevHash != curHash)
             {
                 m_PrevAsset = m_Asset;
@@ -595,13 +601,13 @@ namespace GaussianSplatting.Runtime
             Camera mainCam = Camera.main;
             if (!mainCam)
                 return;
-            if (!m_Asset || m_Asset.m_Cameras == null)
+            if (!m_Asset || m_Asset.cameras == null)
                 return;
 
             var selfTr = transform;
             var camTr = mainCam.transform;
             var prevParent = camTr.parent;
-            var cam = m_Asset.m_Cameras[index];
+            var cam = m_Asset.cameras[index];
             camTr.parent = selfTr;
             camTr.localPosition = cam.pos;
             camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
@@ -706,7 +712,7 @@ namespace GaussianSplatting.Runtime
             {
                 var target = GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource |
                              GraphicsBuffer.Target.CopyDestination;
-                var size = (m_Asset.m_SplatCount + 31) / 32;
+                var size = (m_SplatCount + 31) / 32;
                 m_GpuEditSelected = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatSelected"};
                 m_GpuEditSelectedMouseDown = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatSelectedInit"};
                 m_GpuEditDeleted = new GraphicsBuffer(target, size, 4) {name = "GaussianSplatDeleted"};
@@ -770,7 +776,7 @@ namespace GaussianSplatting.Runtime
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.SelectionUpdate, m_Asset.m_SplatCount);
+            DispatchUtilsAndExecute(cmb, KernelIndices.SelectionUpdate, m_SplatCount);
             UpdateEditCountsAndBounds();
         }
 
@@ -783,7 +789,7 @@ namespace GaussianSplatting.Runtime
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, localSpacePosDelta);
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.TranslateSelection, m_Asset.m_SplatCount);
+            DispatchUtilsAndExecute(cmb, KernelIndices.TranslateSelection, m_SplatCount);
             UpdateEditCountsAndBounds();
             editModified = true;
         }
@@ -803,7 +809,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDeltaRot, new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.RotateSelection, m_Asset.m_SplatCount);
+            DispatchUtilsAndExecute(cmb, KernelIndices.RotateSelection, m_SplatCount);
             UpdateEditCountsAndBounds();
             editModified = true;
         }
@@ -823,7 +829,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, scale);
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.ScaleSelection, m_Asset.m_SplatCount);
+            DispatchUtilsAndExecute(cmb, KernelIndices.ScaleSelection, m_SplatCount);
             UpdateEditCountsAndBounds();
             editModified = true;
         }
@@ -888,7 +894,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, tr.localToWorldMatrix);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ExportData, "_ExportBuffer", dstData);
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.ExportData, m_Asset.m_SplatCount);
+            DispatchUtilsAndExecute(cmb, KernelIndices.ExportData, m_SplatCount);
             return true;
         }
 

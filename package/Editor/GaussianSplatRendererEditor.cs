@@ -10,7 +10,6 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
 
 namespace GaussianSplatting.Editor
 {
@@ -89,7 +88,7 @@ namespace GaussianSplatting.Editor
             var gs = target as GaussianSplatRenderer;
             if (!gs || !gs.HasValidAsset)
             {
-                var msg = gs.asset != null && gs.asset.m_FormatVersion != GaussianSplatAsset.kCurrentVersion
+                var msg = gs.asset != null && gs.asset.formatVersion != GaussianSplatAsset.kCurrentVersion
                     ? "Gaussian Splat asset version is not compatible, please recreate the asset"
                     : "Gaussian Splat asset is not assigned or is empty";
                 EditorGUILayout.HelpBox(msg, MessageType.Error);
@@ -137,7 +136,7 @@ namespace GaussianSplatting.Editor
         void EditCameras(GaussianSplatRenderer gs)
         {
             var asset = gs.asset;
-            var cameras = asset.m_Cameras;
+            var cameras = asset.cameras;
             if (cameras != null && cameras.Length != 0)
             {
                 EditorGUILayout.Space();
@@ -173,7 +172,7 @@ namespace GaussianSplatting.Editor
                 ToolManager.SetActiveContext<GameObjectToolContext>();
             }
 
-            if (isToolActive && gs.asset.m_ChunkData != null)
+            if (isToolActive && gs.asset.chunkData != null)
             {
                 EditorGUILayout.HelpBox("Splat move/rotate/scale tools need Very High splat quality preset", MessageType.Warning);
             }
@@ -185,7 +184,7 @@ namespace GaussianSplatting.Editor
                 GaussianCutout cutout = ObjectFactory.CreateGameObject("GSCutout", typeof(GaussianCutout)).GetComponent<GaussianCutout>();
                 Transform cutoutTr = cutout.transform;
                 cutoutTr.SetParent(gs.transform, false);
-                cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
+                cutoutTr.localScale = (gs.asset.boundsMax - gs.asset.boundsMin) * 0.25f;
                 gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
                 ArrayUtility.Add(ref gs.m_Cutouts, cutout);
                 gs.UpdateEditCountsAndBounds();
@@ -222,10 +221,10 @@ namespace GaussianSplatting.Editor
 
             if (GUILayout.Button("Export PLY"))
                 ExportPlyFile(gs, m_ExportBakeTransform);
-            if (asset.m_PosFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                asset.m_ScaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
-                asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
+            if (asset.posFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                asset.scaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                asset.colorFormat > GaussianSplatAsset.ColorFormat.Float16x4 ||
+                asset.shFormat > GaussianSplatAsset.SHFormat.Float16)
             {
                 EditorGUILayout.HelpBox(
                     "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
@@ -236,7 +235,7 @@ namespace GaussianSplatting.Editor
             if (displayEditStats)
             {
                 EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
+                EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
                 EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
                 EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
                 EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
@@ -262,7 +261,7 @@ namespace GaussianSplatting.Editor
             if (!gs || !gs.HasValidRenderSetup)
                 return new Bounds(Vector3.zero, Vector3.one);
             Bounds bounds = default;
-            bounds.SetMinMax(gs.asset.m_BoundsMin, gs.asset.m_BoundsMax);
+            bounds.SetMinMax(gs.asset.boundsMin, gs.asset.boundsMax);
             if (gs.editSelectedSplats > 0)
             {
                 bounds = gs.editSelectedBounds;
@@ -296,7 +295,7 @@ namespace GaussianSplatting.Editor
                 return;
 
             int kSplatSize = UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>();
-            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.asset.m_SplatCount, kSplatSize);
+            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.splatCount, kSplatSize);
 
             if (!gs.EditExportData(gpuData, bakeTransform))
                 return;

@@ -21,7 +21,7 @@ namespace GaussianSplatting.Editor
             var gs = GetRenderer();
             if (!gs)
                 return false;
-            return gs.asset.m_ChunkData == null; // need to be lossless / non-chunked for editing
+            return gs.asset.chunkData == null; // need to be lossless / non-chunked for editing
         }
 
         protected bool HasSelection()

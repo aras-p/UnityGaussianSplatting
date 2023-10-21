@@ -20,35 +20,35 @@ namespace GaussianSplatting.Editor
 
             EditorGUILayout.Space();
 
-            var splatCount = gs.m_SplatCount;
+            var splatCount = gs.splatCount;
             {
                 using var _ = new EditorGUI.DisabledScope(true);
                 EditorGUILayout.IntField("Splats", splatCount);
                 var prevBackColor = GUI.backgroundColor;
-                if (gs.m_FormatVersion != GaussianSplatAsset.kCurrentVersion)
+                if (gs.formatVersion != GaussianSplatAsset.kCurrentVersion)
                     GUI.backgroundColor *= Color.red;
-                EditorGUILayout.IntField("Version", gs.m_FormatVersion);
+                EditorGUILayout.IntField("Version", gs.formatVersion);
                 GUI.backgroundColor = prevBackColor;
 
-                long sizePos = GaussianSplatAsset.CalcPosDataSize(gs.m_SplatCount, gs.m_PosFormat);
-                long sizeOther = GaussianSplatAsset.CalcOtherDataSize(gs.m_SplatCount, gs.m_ScaleFormat);
-                long sizeCol = GaussianSplatAsset.CalcColorDataSize(gs.m_SplatCount, gs.m_ColorFormat);
-                long sizeSH = GaussianSplatAsset.CalcSHDataSize(gs.m_SplatCount, gs.m_SHFormat);
-                long sizeChunk = gs.m_ChunkData != null ? GaussianSplatAsset.CalcChunkDataSize(gs.m_SplatCount) : 0;
+                long sizePos = GaussianSplatAsset.CalcPosDataSize(gs.splatCount, gs.posFormat);
+                long sizeOther = GaussianSplatAsset.CalcOtherDataSize(gs.splatCount, gs.scaleFormat);
+                long sizeCol = GaussianSplatAsset.CalcColorDataSize(gs.splatCount, gs.colorFormat);
+                long sizeSH = GaussianSplatAsset.CalcSHDataSize(gs.splatCount, gs.shFormat);
+                long sizeChunk = gs.chunkData != null ? GaussianSplatAsset.CalcChunkDataSize(gs.splatCount) : 0;
 
                 EditorGUILayout.TextField("Memory", EditorUtility.FormatBytes(sizePos + sizeOther + sizeSH + sizeCol + sizeChunk));
                 EditorGUI.indentLevel++;
-                EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  ({gs.m_PosFormat})");
-                EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  ({gs.m_ScaleFormat})");
-                EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  ({gs.m_ColorFormat})");
-                EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.m_SHFormat})");
+                EditorGUILayout.TextField("Positions", $"{EditorUtility.FormatBytes(sizePos)}  ({gs.posFormat})");
+                EditorGUILayout.TextField("Other", $"{EditorUtility.FormatBytes(sizeOther)}  ({gs.scaleFormat})");
+                EditorGUILayout.TextField("Base color", $"{EditorUtility.FormatBytes(sizeCol)}  ({gs.colorFormat})");
+                EditorGUILayout.TextField("SHs", $"{EditorUtility.FormatBytes(sizeSH)}  ({gs.shFormat})");
                 EditorGUILayout.TextField("Chunks", $"{EditorUtility.FormatBytes(sizeChunk)}  ({UnsafeUtility.SizeOf<GaussianSplatAsset.ChunkInfo>()} B/chunk)");
                 EditorGUI.indentLevel--;
 
-                EditorGUILayout.Vector3Field("Bounds Min", gs.m_BoundsMin);
-                EditorGUILayout.Vector3Field("Bounds Max", gs.m_BoundsMax);
+                EditorGUILayout.Vector3Field("Bounds Min", gs.boundsMin);
+                EditorGUILayout.Vector3Field("Bounds Max", gs.boundsMax);
 
-                EditorGUILayout.TextField("Data Hash", gs.m_DataHash.ToString());
+                EditorGUILayout.TextField("Data Hash", gs.dataHash.ToString());
             }
         }
     }
