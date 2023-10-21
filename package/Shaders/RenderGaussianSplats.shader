@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MIT
 Shader "Gaussian Splatting/Render Splats"
 {
+	Properties
+	{
+		_SrcBlend("Src Blend", Float) = 8 // OneMinusDstAlpha
+		_DstBlend("Dst Blend", Float) = 1 // One
+		_ZWrite("ZWrite", Float) = 0  // Off
+	}
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
 
         Pass
         {
-            ZWrite Off
-            Blend OneMinusDstAlpha One
+            ZWrite [_ZWrite]
+            Blend [_SrcBlend] [_DstBlend]
             Cull Off
             
 CGPROGRAM
@@ -25,6 +31,7 @@ struct v2f
 {
     half4 col : COLOR0;
     float2 pos : TEXCOORD0;
+	half idx : TEXCOORD1;
     float4 vertex : SV_POSITION;
 };
 
@@ -36,6 +43,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o = (v2f)0;
     instID = _OrderBuffer[instID];
+	o.idx = instID & 63;
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
@@ -75,6 +83,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     return o;
 }
 
+bool _UseHashedAlphaTest;
+Texture2DArray _HAT_BlueNoise;
+
 half4 frag (v2f i) : SV_Target
 {
 	float power = -dot(i.pos, i.pos);
@@ -102,7 +113,31 @@ half4 frag (v2f i) : SV_Target
     if (alpha < 1.0/255.0)
         discard;
 
-    half4 res = half4(i.col.rgb * alpha, alpha);
+	if (!_UseHashedAlphaTest)
+		i.col.rgb *= alpha;
+	else
+	{
+		float3 hatCoord;
+		hatCoord.xy = i.vertex.xy; //@TODO better coord?
+		hatCoord.z = i.idx;
+		//alpha = InvSquareCentered01(alpha);
+		//alpha = lerp(alpha, alpha*alpha, 0.7);
+		//alpha = smoothstep(0,1, alpha);
+
+		// "Hashed Alpha Testing", Wyman, McGuire 2017
+		// https://casual-effects.com/research/Wyman2017Hashed/index.html
+		// Instead of using 3D hash like in paper, this uses a 64x64x64 blue
+		// noise texture from "Free blue noise textures", Peters 2016
+		// https://momentsingraphics.de/BlueNoise.html
+	    uint4 coord;
+	    coord.xyz = (uint3)hatCoord;
+	    coord.xyz &= 63;
+	    coord.w = 0;
+		half cutoff = _HAT_BlueNoise.Load(coord).r;
+		clip(alpha - cutoff);
+		alpha = 1;
+	}
+    half4 res = half4(i.col.rgb, alpha);
     return res;
 }
 ENDCG

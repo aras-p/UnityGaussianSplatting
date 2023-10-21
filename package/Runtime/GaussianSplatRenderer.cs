@@ -129,6 +129,14 @@ namespace GaussianSplatting.Runtime
                     continue;
 
                 gs.SetAssetDataOnMaterial(mpb);
+                
+                displayMat.SetInt("_SrcBlend", (int)(gs.m_HashedAlphaTest ? BlendMode.One : BlendMode.OneMinusDstAlpha));
+                displayMat.SetInt("_DstBlend", (int)(gs.m_HashedAlphaTest ? BlendMode.Zero : BlendMode.One));
+                displayMat.SetInt("_ZWrite", gs.m_HashedAlphaTest ? 1 : 0);
+                displayMat.SetInt("_UseHashedAlphaTest", gs.m_HashedAlphaTest ? 1 : 0);
+                if (gs.m_TexBlueNoise)
+                    Shader.SetGlobalTexture("_HAT_BlueNoise", gs.m_TexBlueNoise);
+                
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SplatChunkCount, gs.m_GpuChunks.count);
 
@@ -225,6 +233,8 @@ namespace GaussianSplatting.Runtime
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
 
+        public bool m_HashedAlphaTest = false;
+
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
 
@@ -236,6 +246,8 @@ namespace GaussianSplatting.Runtime
         public Shader m_ShaderDebugBoxes;
         [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
+
+        public Texture2DArray m_TexBlueNoise;
 
         GraphicsBuffer m_GpuSortDistances;
         internal GraphicsBuffer m_GpuSortKeys;
@@ -528,6 +540,8 @@ namespace GaussianSplatting.Runtime
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
         {
             if (cam.cameraType == CameraType.Preview)
+                return;
+            if (m_HashedAlphaTest)
                 return;
 
             Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
