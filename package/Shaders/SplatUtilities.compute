@@ -605,6 +605,8 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
         return;
     SplatData src = LoadSplatData(idx);
 
+    bool isCut = IsSplatCut(src.pos);
+
     // transform splat by matrix, if needed
     if (_ExportTransformFlags != 0)
     {
@@ -648,7 +650,7 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
     dst.scale = log(src.scale);
     dst.rot = src.rot.wxyz;
 
-    if (IsSplatCut(src.pos))
+    if (isCut)
         dst.nor = 1; // mark as skipped for export
     
     _ExportBuffer[idx] = dst;
