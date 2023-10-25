@@ -455,8 +455,8 @@ void CSRotateSelection (uint3 id : SV_DispatchThreadID)
     if (!IsSplatSelected(idx))
         return;
 
-    uint fmt = _SplatFormat & 0xFF;
-    if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
+    uint posFmt = _SplatFormat & 0xFF;
+    if (_SplatChunkCount == 0 && posFmt == VECTOR_FMT_32F)
     {
         uint posStride = 12;
         float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * posStride));
@@ -466,10 +466,24 @@ void CSRotateSelection (uint3 id : SV_DispatchThreadID)
         pos = mul(_MatrixWorldToObject, float4(pos,1)).xyz;
         pos += _SelectionCenter;
         _SplatPos.Store3(idx * posStride, asuint(pos));
-
-        //@TODO: actual splat rotation
-        //@TODO: rotate SHs
     }
+
+    uint scaleFmt = (_SplatFormat >> 8) & 0xFF;
+    uint shFormat = (_SplatFormat >> 16) & 0xFF;
+    if (_SplatChunkCount == 0 && scaleFmt == VECTOR_FMT_32F && shFormat == VECTOR_FMT_32F)
+    {
+        uint otherStride = 4 + 12;
+        uint rotVal = _SplatOtherMouseDown.Load(idx * otherStride);
+        float4 rot = DecodeRotation(DecodePacked_10_10_10_2(rotVal));
+
+        //@TODO: correct rotation
+        rot = QuatMul(rot, _SelectionDeltaRot);
+
+        rotVal = EncodeQuatToNorm10(PackSmallest3Rotation(rot));
+        _SplatOther.Store(idx * otherStride, rotVal);
+    }
+
+    //@TODO: rotate SHs
 }
 
 //@TODO: maybe scale the splat scale itself too?

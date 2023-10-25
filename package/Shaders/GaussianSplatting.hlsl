@@ -225,6 +225,36 @@ float4 DecodeRotation(float4 pq)
     if (idx == 2) q = q.xywz;
     return q;
 }
+float4 PackSmallest3Rotation(float4 q)
+{
+    // find biggest component
+    float4 absQ = abs(q);
+    int index = 0;
+    float maxV = absQ.x;
+    if (absQ.y > maxV)
+    {
+        index = 1;
+        maxV = absQ.y;
+    }
+    if (absQ.z > maxV)
+    {
+        index = 2;
+        maxV = absQ.z;
+    }
+    if (absQ.w > maxV)
+    {
+        index = 3;
+        maxV = absQ.w;
+    }
+
+    if (index == 0) q = q.yzwx;
+    if (index == 1) q = q.xzwy;
+    if (index == 2) q = q.xywz;
+
+    float3 three = q.xyz * (q.w >= 0 ? 1 : -1); // -1/sqrt2..+1/sqrt2 range
+    three = (three * sqrt(2.0)) * 0.5 + 0.5; // 0..1 range
+    return float4(three, index / 3.0);
+}
 
 half3 DecodePacked_6_5_5(uint enc)
 {
@@ -266,6 +296,11 @@ float4 DecodePacked_10_10_10_2(uint enc)
         ((enc >> 20) & 1023) / 1023.0,
         ((enc >> 30) & 3) / 3.0);
 }
+uint EncodeQuatToNorm10(float4 v) // 32 bits: 10.10.10.2
+{
+    return (uint) (v.x * 1023.5f) | ((uint) (v.y * 1023.5f) << 10) | ((uint) (v.z * 1023.5f) << 20) | ((uint) (v.w * 3.5f) << 30);
+}
+
 
 #ifdef SHADER_STAGE_COMPUTE
 #define SplatBufferDataType RWByteAddressBuffer
