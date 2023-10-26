@@ -12,7 +12,7 @@ people have done their own implementations (e.g. WebGPU at [cvlab-epfl](https://
 
 Code in here so far is randomly cribbled together from reading the paper (as well as earlier literature on EWA splatting), looking at the official CUDA implementation, and so on. Current state:
 - The code does **not** use the "tile-based splat rasterizer" bit from the paper; it just draws each gaussian splat as an oriented quad that covers the extents of it.
-- Splat color accumulation is done by rendering front-to-back, with a blending mode that results in the same accumulated color as their tile-based renderer.
+- Splat color accumulation is done by rendersdafsdfsdfsdfsdfsdfing front-to-back, with a blending mode that results in the same accumulated color as their tile-based renderer.
 - Splat sorting is done with a AMD FidelityFX derived radix sort.
 
 ## Usage
