@@ -1,4 +1,4 @@
-# Gaussian Splatting playground in Unity
+# Gaussian Splatting playground in Unityfdifdn 
 
 SIGGRAPH 2023 had a paper "[**3D Gaussian Splatting for Real-Time Radiance Field Rendering**](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis that looks pretty cool!
 Check out their website, source code repository, data sets and so on.
