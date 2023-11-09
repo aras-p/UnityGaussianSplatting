@@ -220,8 +220,6 @@ namespace GaussianSplatting.Runtime
         public VectorFormat scaleFormat => m_ScaleFormat;
         public SHFormat shFormat => m_SHFormat;
         public ColorFormat colorFormat => m_ColorFormat;
-        //public int colorWidth => m_ColorWidth;
-        //public int colorHeight => m_ColorHeight;
 
         public TextAsset posData => m_PosData;
         public TextAsset colorData => m_ColorData;
