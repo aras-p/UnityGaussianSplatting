@@ -228,6 +228,7 @@ namespace GaussianSplatting.Editor
                 gs.gameObject.SetActive(false);
             }
             Debug.Assert(copyDstOffset == totalSplats, $"Merge count mismatch, {copyDstOffset} vs {totalSplats}");
+            Selection.activeObject = targetGs;
         }
 
         void EditGUI(GaussianSplatRenderer gs)
@@ -236,7 +237,23 @@ namespace GaussianSplatting.Editor
 
             DrawSeparator();
             bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
+            GUILayout.BeginHorizontal();
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
+            using (new EditorGUI.DisabledScope(!gs.editModified))
+            {
+                if (GUILayout.Button("Reset", GUILayout.ExpandWidth(false)))
+                {
+                    if (EditorUtility.DisplayDialog("Reset Splat Modifications?",
+                            $"This will reset edits of {gs.name} to match the {gs.asset.name} asset. Continue?",
+                            "Yes, reset", "Cancel"))
+                    {
+                        gs.enabled = false;
+                        gs.enabled = true;
+                    }
+                }
+            }
+
+            GUILayout.EndHorizontal();
             if (!wasToolActive && isToolActive)
             {
                 ToolManager.SetActiveContext<GaussianToolContext>();
@@ -309,10 +326,10 @@ namespace GaussianSplatting.Editor
             }
 
             bool displayEditStats = isToolActive || modifiedOrHasCutouts;
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
             if (displayEditStats)
             {
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
                 EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
                 EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
                 EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");

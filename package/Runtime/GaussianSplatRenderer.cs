@@ -988,6 +988,7 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuEditOtherMouseDown);
 
             m_SplatCount = newSplatCount;
+            editModified = true;
         }
 
         public void EditCopySplatsInto(GaussianSplatRenderer dst, int copySrcStartIndex, int copyDstStartIndex, int copyCount)
@@ -997,6 +998,7 @@ namespace GaussianSplatting.Runtime
                 dst.m_GpuPosData, dst.m_GpuOtherData, dst.m_GpuSHData, dst.m_GpuColorData, dst.m_GpuEditDeleted,
                 dst.splatCount,
                 copySrcStartIndex, copyDstStartIndex, copyCount);
+            dst.editModified = true;
         }
 
         public void EditCopySplats(
