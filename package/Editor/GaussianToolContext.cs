@@ -21,8 +21,8 @@ namespace GaussianSplatting.Editor
                 return typeof(GaussianMoveTool);
             //if (tool == Tool.Rotate)
             //    return typeof(GaussianRotateTool); // not correctly working yet
-            if (tool == Tool.Scale)
-                return typeof(GaussianScaleTool);
+            //if (tool == Tool.Scale)
+            //    return typeof(GaussianScaleTool); // not working correctly yet when the GS itself has scale
             return null;
         }
 
@@ -108,8 +108,9 @@ namespace GaussianSplatting.Editor
                         break;
                     if (HandleUtility.nearestControl == id && evt.button == 0)
                     {
-                        // shift/command adds to selection
-                        if (!evt.shift && !EditorGUI.actionKey)
+                        // shift/command adds to selection, ctrl removes from selection: if none of these
+                        // are present, start a new selection
+                        if (!evt.shift && !EditorGUI.actionKey && !evt.control)
                             gs.EditDeselectAll();
 
                         // record selection state at start
