@@ -302,6 +302,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int SplatCutoutsCount = Shader.PropertyToID("_SplatCutoutsCount");
             public static readonly int SplatCutouts = Shader.PropertyToID("_SplatCutouts");
+            public static readonly int SelectionMode = Shader.PropertyToID("_SelectionMode");
         }
 
         [field: NonSerialized] public bool editModified { get; private set; }
@@ -698,7 +699,7 @@ namespace GaussianSplatting.Runtime
             Graphics.CopyBuffer(m_GpuSplatSelectedBuffer, m_GpuSplatSelectedInitBuffer);
         }
 
-        public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
+        public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam, bool subtract)
         {
             if (!EnsureEditingBuffers()) return;
 
@@ -726,6 +727,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SelectionMode, subtract ? 0 : 1);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.SelectionUpdate, m_Asset.m_SplatCount);
             UpdateEditCountsAndBounds();

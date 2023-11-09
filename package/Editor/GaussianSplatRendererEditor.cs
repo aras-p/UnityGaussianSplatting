@@ -416,7 +416,7 @@ namespace GaussianSplatting.Editor
                         Rect rect = FromToRect(m_MouseStartDragPos, evt.mousePosition);
                         Vector2 rectMin = HandleUtility.GUIPointToScreenPixelCoordinate(rect.min);
                         Vector2 rectMax = HandleUtility.GUIPointToScreenPixelCoordinate(rect.max);
-                        gs.EditUpdateSelection(rectMin, rectMax, sceneView.camera);
+                        gs.EditUpdateSelection(rectMin, rectMax, sceneView.camera, evt.control);
                         GaussianSplatRendererEditor.RepaintAll();
                         evt.Use();
                     }
