@@ -742,5 +742,13 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
     _CopyDstSH.Store3(shOffset + 12 * 13, asuint(src.sh.sh14));
     _CopyDstSH.Store3(shOffset + 12 * 14, asuint(src.sh.sh15));
 
-    //@TODO: deleted bits
+    // deleted bits
+    uint srcWordIdx = srcIdx / 32;
+    uint srcBitIdx = srcIdx & 31;
+    if (_SplatDeletedBits.Load(srcWordIdx * 4) & (1u << srcBitIdx))
+    {
+        uint dstWordIdx = dstIdx / 32;
+        uint dstBitIdx = dstIdx & 31;
+        _CopyDstEditDeleted.InterlockedOr(dstWordIdx * 4, 1u << dstBitIdx);
+    }
 }
