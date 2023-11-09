@@ -408,9 +408,9 @@ void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
     uint wordIdx = idx / 32;
     uint bitIdx = idx & 31;
     if (_SelectionMode)
-        _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1 << bitIdx); // +
+        _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1u << bitIdx); // +
     else
-        _SplatSelectedBits.InterlockedAnd(wordIdx * 4, 1 << bitIdx); // -
+        _SplatSelectedBits.InterlockedAnd(wordIdx * 4, ~(1u << bitIdx)); // -
 }
 
 

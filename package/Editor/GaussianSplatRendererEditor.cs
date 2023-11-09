@@ -397,8 +397,9 @@ namespace GaussianSplatting.Editor
                 case EventType.MouseDown:
                     if (HandleUtility.nearestControl == id && evt.button == 0 && !evt.alt) // ignore Alt to allow orbiting scene view
                     {
-                        // shift/command adds to selection
-                        if (!evt.shift && !EditorGUI.actionKey)
+                        // shift/command adds to selection, ctrl removes from selection: if none of these
+                        // are present, start a new selection
+                        if (!evt.shift && !EditorGUI.actionKey && !evt.control)
                             gs.EditDeselectAll();
 
                         // record selection state at start
