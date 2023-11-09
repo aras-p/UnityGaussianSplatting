@@ -10,17 +10,21 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
+using GaussianSplatRenderer = GaussianSplatting.Runtime.GaussianSplatRenderer;
 
 namespace GaussianSplatting.Editor
 {
     [CustomEditor(typeof(GaussianSplatRenderer))]
+    [CanEditMultipleObjects]
     public class GaussianSplatRendererEditor : UnityEditor.Editor
     {
+        const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
+
         SerializedProperty m_PropAsset;
         SerializedProperty m_PropSplatScale;
         SerializedProperty m_PropOpacityScale;
         SerializedProperty m_PropSHOrder;
+        SerializedProperty m_PropSHOnly;
         SerializedProperty m_PropSortNthFrame;
         SerializedProperty m_PropRenderMode;
         SerializedProperty m_PropPointDisplaySize;
@@ -33,6 +37,8 @@ namespace GaussianSplatting.Editor
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
+
+        bool m_ExportBakeTransform;
 
         static int s_EditStatsUpdateCounter = 0;
 
@@ -51,10 +57,13 @@ namespace GaussianSplatting.Editor
 
         public void OnEnable()
         {
+            m_ExportBakeTransform = EditorPrefs.GetBool(kPrefExportBake, false);
+
             m_PropAsset = serializedObject.FindProperty("m_Asset");
             m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
             m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
             m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
+            m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
             m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
             m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
             m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
@@ -75,15 +84,18 @@ namespace GaussianSplatting.Editor
 
         public override void OnInspectorGUI()
         {
+            var gs = target as GaussianSplatRenderer;
+            if (!gs)
+                return;
+
             serializedObject.Update();
 
             GUILayout.Label("Data Asset", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(m_PropAsset);
 
-            var gs = target as GaussianSplatRenderer;
-            if (!gs || !gs.HasValidAsset)
+            if (!gs.HasValidAsset)
             {
-                var msg = gs.asset != null && gs.asset.m_FormatVersion != GaussianSplatAsset.kCurrentVersion
+                var msg = gs.asset != null && gs.asset.formatVersion != GaussianSplatAsset.kCurrentVersion
                     ? "Gaussian Splat asset version is not compatible, please recreate the asset"
                     : "Gaussian Splat asset is not assigned or is empty";
                 EditorGUILayout.HelpBox(msg, MessageType.Error);
@@ -94,6 +106,7 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropSplatScale);
             EditorGUILayout.PropertyField(m_PropOpacityScale);
             EditorGUILayout.PropertyField(m_PropSHOrder);
+            EditorGUILayout.PropertyField(m_PropSHOnly);
             EditorGUILayout.PropertyField(m_PropSortNthFrame);
 
             EditorGUILayout.Space();
@@ -119,10 +132,14 @@ namespace GaussianSplatting.Editor
                 validAndEnabled = false;
             }
 
-            if (validAndEnabled)
+            if (validAndEnabled && targets.Length == 1)
             {
                 EditCameras(gs);
                 EditGUI(gs);
+            }
+            if (validAndEnabled && targets.Length > 1)
+            {
+                MultiEditGUI();
             }
 
             serializedObject.ApplyModifiedProperties();
@@ -131,7 +148,7 @@ namespace GaussianSplatting.Editor
         void EditCameras(GaussianSplatRenderer gs)
         {
             var asset = gs.asset;
-            var cameras = asset.m_Cameras;
+            var cameras = asset.cameras;
             if (cameras != null && cameras.Length != 0)
             {
                 EditorGUILayout.Space();
@@ -146,19 +163,113 @@ namespace GaussianSplatting.Editor
             }
         }
 
+        void MultiEditGUI()
+        {
+            DrawSeparator();
+            CountTargetSplats(out var totalSplats, out var totalObjects);
+            EditorGUILayout.LabelField("Total Objects", $"{totalObjects}");
+            EditorGUILayout.LabelField("Total Splats", $"{totalSplats:N0}");
+            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+            {
+                EditorGUILayout.HelpBox($"Can't merge, too many splats (max. supported {GaussianSplatAsset.kMaxSplats:N0})", MessageType.Warning);
+                return;
+            }
+
+            var targetGs = (GaussianSplatRenderer) target;
+            if (!targetGs || !targetGs.HasValidAsset || !targetGs.isActiveAndEnabled)
+            {
+                EditorGUILayout.HelpBox($"Can't merge into {target.name} (no asset or disable)", MessageType.Warning);
+                return;
+            }
+
+            if (targetGs.asset.chunkData != null)
+            {
+                EditorGUILayout.HelpBox($"Can't merge into {target.name} (needs to use Very High quality preset)", MessageType.Warning);
+                return;
+            }
+            if (GUILayout.Button($"Merge into {target.name}"))
+            {
+                MergeSplatObjects();
+            }
+        }
+
+        void CountTargetSplats(out int totalSplats, out int totalObjects)
+        {
+            totalObjects = 0;
+            totalSplats = 0;
+            foreach (var obj in targets)
+            {
+                var gs = obj as GaussianSplatRenderer;
+                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                    continue;
+                ++totalObjects;
+                totalSplats += gs.splatCount;
+            }
+        }
+
+        void MergeSplatObjects()
+        {
+            CountTargetSplats(out var totalSplats, out _);
+            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+                return;
+            var targetGs = (GaussianSplatRenderer) target;
+
+            int copyDstOffset = targetGs.splatCount;
+            targetGs.EditSetSplatCount(totalSplats);
+            foreach (var obj in targets)
+            {
+                var gs = obj as GaussianSplatRenderer;
+                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                    continue;
+                if (gs == targetGs)
+                    continue;
+                gs.EditCopySplatsInto(targetGs, 0, copyDstOffset, gs.splatCount);
+                copyDstOffset += gs.splatCount;
+                gs.gameObject.SetActive(false);
+            }
+            Debug.Assert(copyDstOffset == totalSplats, $"Merge count mismatch, {copyDstOffset} vs {totalSplats}");
+            Selection.activeObject = targetGs;
+        }
+
         void EditGUI(GaussianSplatRenderer gs)
         {
             ++s_EditStatsUpdateCounter;
 
-            EditorGUILayout.Space(12f, true);
-            GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
-            EditorGUILayout.Space();
-            bool wasToolActive = ToolManager.activeToolType == typeof(GaussianSplatsTool);
+            DrawSeparator();
+            bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
+            GUILayout.BeginHorizontal();
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
+            using (new EditorGUI.DisabledScope(!gs.editModified))
+            {
+                if (GUILayout.Button("Reset", GUILayout.ExpandWidth(false)))
+                {
+                    if (EditorUtility.DisplayDialog("Reset Splat Modifications?",
+                            $"This will reset edits of {gs.name} to match the {gs.asset.name} asset. Continue?",
+                            "Yes, reset", "Cancel"))
+                    {
+                        gs.enabled = false;
+                        gs.enabled = true;
+                    }
+                }
+            }
+
+            GUILayout.EndHorizontal();
             if (!wasToolActive && isToolActive)
-                ToolManager.SetActiveTool<GaussianSplatsTool>();
+            {
+                ToolManager.SetActiveContext<GaussianToolContext>();
+                if (Tools.current == Tool.View)
+                    Tools.current = Tool.Move;
+            }
+
             if (wasToolActive && !isToolActive)
-                Tools.current = Tool.View;
+            {
+                ToolManager.SetActiveContext<GameObjectToolContext>();
+            }
+
+            if (isToolActive && gs.asset.chunkData != null)
+            {
+                EditorGUILayout.HelpBox("Splat move/rotate/scale tools need Very High splat quality preset", MessageType.Warning);
+            }
 
             EditorGUILayout.Space();
             GUILayout.BeginHorizontal();
@@ -167,7 +278,7 @@ namespace GaussianSplatting.Editor
                 GaussianCutout cutout = ObjectFactory.CreateGameObject("GSCutout", typeof(GaussianCutout)).GetComponent<GaussianCutout>();
                 Transform cutoutTr = cutout.transform;
                 cutoutTr.SetParent(gs.transform, false);
-                cutoutTr.localScale = (gs.asset.m_BoundsMax - gs.asset.m_BoundsMin) * 0.25f;
+                cutoutTr.localScale = (gs.asset.boundsMax - gs.asset.boundsMin) * 0.25f;
                 gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
                 ArrayUtility.Add(ref gs.m_Cutouts, cutout);
                 gs.UpdateEditCountsAndBounds();
@@ -189,34 +300,39 @@ namespace GaussianSplatting.Editor
             }
             GUILayout.EndHorizontal();
             EditorGUILayout.PropertyField(m_PropCutouts);
-            EditorGUILayout.Space();
 
             bool hasCutouts = gs.m_Cutouts != null && gs.m_Cutouts.Length != 0;
             bool modifiedOrHasCutouts = gs.editModified || hasCutouts;
-            bool displayEditTools = isToolActive || modifiedOrHasCutouts;
 
-            if (displayEditTools)
+            var asset = gs.asset;
+            EditorGUILayout.Space();
+            EditorGUI.BeginChangeCheck();
+            m_ExportBakeTransform = EditorGUILayout.Toggle("Export in world space", m_ExportBakeTransform);
+            if (EditorGUI.EndChangeCheck())
             {
-                var asset = gs.asset;
-                EditorGUILayout.LabelField("Splats", $"{asset.m_SplatCount:N0}");
+                EditorPrefs.SetBool(kPrefExportBake, m_ExportBakeTransform);
+            }
+
+            if (GUILayout.Button("Export PLY"))
+                ExportPlyFile(gs, m_ExportBakeTransform);
+            if (asset.posFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                asset.scaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
+                asset.colorFormat > GaussianSplatAsset.ColorFormat.Float16x4 ||
+                asset.shFormat > GaussianSplatAsset.SHFormat.Float16)
+            {
+                EditorGUILayout.HelpBox(
+                    "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
+                    MessageType.Warning);
+            }
+
+            bool displayEditStats = isToolActive || modifiedOrHasCutouts;
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
+            if (displayEditStats)
+            {
                 EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
                 EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
                 EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
-                if (modifiedOrHasCutouts)
-                {
-                    if (GUILayout.Button("Export modified PLY"))
-                        ExportPlyFile(gs);
-                    if (asset.m_PosFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                        asset.m_ScaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                        !GraphicsFormatUtility.IsFloatFormat(asset.m_ColorFormat) ||
-                        asset.m_SHFormat > GaussianSplatAsset.SHFormat.Float16)
-                    {
-                        EditorGUILayout.HelpBox(
-                            "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
-                            MessageType.Warning);
-                    }
-                }
-
                 if (hasCutouts)
                 {
                     if (s_EditStatsUpdateCounter > 10)
@@ -226,6 +342,13 @@ namespace GaussianSplatting.Editor
                     }
                 }
             }
+        }
+
+        static void DrawSeparator()
+        {
+            EditorGUILayout.Space(12f, true);
+            GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
+            EditorGUILayout.Space();
         }
 
         bool HasFrameBounds()
@@ -239,7 +362,7 @@ namespace GaussianSplatting.Editor
             if (!gs || !gs.HasValidRenderSetup)
                 return new Bounds(Vector3.zero, Vector3.one);
             Bounds bounds = default;
-            bounds.SetMinMax(gs.asset.m_BoundsMin, gs.asset.m_BoundsMax);
+            bounds.SetMinMax(gs.asset.boundsMin, gs.asset.boundsMax);
             if (gs.editSelectedSplats > 0)
             {
                 bounds = gs.editSelectedBounds;
@@ -265,21 +388,23 @@ namespace GaussianSplatting.Editor
             return new Bounds { center = center, extents = ext };
         }
 
-        static unsafe void ExportPlyFile(GaussianSplatRenderer gs)
+        static unsafe void ExportPlyFile(GaussianSplatRenderer gs, bool bakeTransform)
         {
             var path = EditorUtility.SaveFilePanel(
                 "Export Gaussian Splat PLY file", "", $"{gs.asset.name}-edit.ply", "ply");
             if (string.IsNullOrWhiteSpace(path))
                 return;
+
             int kSplatSize = UnsafeUtility.SizeOf<GaussianSplatAssetCreator.InputSplatData>();
-            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.asset.m_SplatCount, kSplatSize);
-            if (!gs.EditExportData(gpuData))
+            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.splatCount, kSplatSize);
+
+            if (!gs.EditExportData(gpuData, bakeTransform))
                 return;
 
             GaussianSplatAssetCreator.InputSplatData[] data = new GaussianSplatAssetCreator.InputSplatData[gpuData.count];
             gpuData.GetData(data);
 
-            var gpuDeleted = gs.gpuSplatDeletedBuffer;
+            var gpuDeleted = gs.GpuEditDeleted;
             uint[] deleted = new uint[gpuDeleted.count];
             gpuDeleted.GetData(deleted);
 
@@ -312,170 +437,8 @@ namespace GaussianSplatting.Editor
                     fs.Write(new ReadOnlySpan<byte>(ptr, kSplatSize));
                 }
             }
-        }
-    }
 
-    [EditorTool("GaussianSplats Tool", typeof(GaussianSplatRenderer))]
-    class GaussianSplatsTool : EditorTool
-    {
-        Vector2 m_MouseStartDragPos;
-
-        public override GUIContent toolbarIcon => EditorGUIUtility.TrIconContent("EditCollider", "Edit Gaussian Splats");
-
-        public override void OnWillBeDeactivated()
-        {
-            var gs = target as GaussianSplatRenderer;
-            if (!gs)
-                return;
-            gs.EditDeselectAll();
-        }
-
-        static void HandleKeyboardCommands(Event evt, GaussianSplatRenderer gs)
-        {
-            if (evt.type != EventType.ValidateCommand && evt.type != EventType.ExecuteCommand)
-                return;
-            bool execute = evt.type == EventType.ExecuteCommand;
-            switch (evt.commandName)
-            {
-                // ugh, EventCommandNames string constants is internal :(
-                case "SoftDelete":
-                case "Delete":
-                    if (execute)
-                    {
-                        gs.EditDeleteSelected();
-                        GaussianSplatRendererEditor.RepaintAll();
-                    }
-                    evt.Use();
-                    break;
-                case "SelectAll":
-                    if (execute)
-                    {
-                        gs.EditSelectAll();
-                        GaussianSplatRendererEditor.RepaintAll();
-                    }
-                    evt.Use();
-                    break;
-                case "DeselectAll":
-                    if (execute)
-                    {
-                        gs.EditDeselectAll();
-                        GaussianSplatRendererEditor.RepaintAll();
-                    }
-                    evt.Use();
-                    break;
-                case "InvertSelection":
-                    if (execute)
-                    {
-                        gs.EditInvertSelection();
-                        GaussianSplatRendererEditor.RepaintAll();
-                    }
-                    evt.Use();
-                    break;
-            }
-        }
-
-        public override void OnToolGUI(EditorWindow window)
-        {
-            if (!(window is SceneView sceneView))
-                return;
-            var gs = target as GaussianSplatRenderer;
-            if (!gs)
-                return;
-
-            GaussianSplatRendererEditor.BumpGUICounter();
-
-            int id = GUIUtility.GetControlID(FocusType.Passive);
-            Event evt = Event.current;
-            HandleKeyboardCommands(evt, gs);
-            var evtType = evt.GetTypeForControl(id);
-            switch (evtType)
-            {
-                case EventType.Layout:
-                    // make this be the default tool, so that we get focus when user clicks on nothing else
-                    HandleUtility.AddDefaultControl(id);
-                    break;
-                case EventType.MouseDown:
-                    if (HandleUtility.nearestControl == id && evt.button == 0 && !evt.alt) // ignore Alt to allow orbiting scene view
-                    {
-                        // shift/command adds to selection, ctrl removes from selection: if none of these
-                        // are present, start a new selection
-                        if (!evt.shift && !EditorGUI.actionKey && !evt.control)
-                            gs.EditDeselectAll();
-
-                        // record selection state at start
-                        gs.EditStoreInitialSelection();
-                        GaussianSplatRendererEditor.RepaintAll();
-
-                        GUIUtility.hotControl = id;
-                        m_MouseStartDragPos = evt.mousePosition;
-                        evt.Use();
-                    }
-                    break;
-                case EventType.MouseDrag:
-                    if (GUIUtility.hotControl == id && evt.button == 0)
-                    {
-                        Rect rect = FromToRect(m_MouseStartDragPos, evt.mousePosition);
-                        Vector2 rectMin = HandleUtility.GUIPointToScreenPixelCoordinate(rect.min);
-                        Vector2 rectMax = HandleUtility.GUIPointToScreenPixelCoordinate(rect.max);
-                        gs.EditUpdateSelection(rectMin, rectMax, sceneView.camera, evt.control);
-                        GaussianSplatRendererEditor.RepaintAll();
-                        evt.Use();
-                    }
-                    break;
-                case EventType.MouseUp:
-                    if (GUIUtility.hotControl == id && evt.button == 0)
-                    {
-                        m_MouseStartDragPos = Vector2.zero;
-                        GUIUtility.hotControl = 0;
-                        evt.Use();
-                    }
-                    break;
-                case EventType.Repaint:
-                    // draw cutout gizmos
-                    Handles.color = new Color(1,0,1,0.7f);
-                    var prevMatrix = Handles.matrix;
-                    foreach (var cutout in gs.m_Cutouts)
-                    {
-                        if (!cutout)
-                            continue;
-                        Handles.matrix = cutout.transform.localToWorldMatrix;
-                        if (cutout.m_Type == GaussianCutout.Type.Ellipsoid)
-                        {
-                            Handles.DrawWireDisc(Vector3.zero, Vector3.up, 1.0f);
-                            Handles.DrawWireDisc(Vector3.zero, Vector3.right, 1.0f);
-                            Handles.DrawWireDisc(Vector3.zero, Vector3.forward, 1.0f);
-                        }
-                        if (cutout.m_Type == GaussianCutout.Type.Box)
-                            Handles.DrawWireCube(Vector3.zero, Vector3.one * 2);
-                    }
-
-                    Handles.matrix = prevMatrix;
-                    // draw selection bounding box
-                    if (gs.editSelectedSplats > 0)
-                    {
-                        var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.editSelectedBounds);
-                        Handles.DrawWireCube(selBounds.center, selBounds.size);
-                    }
-                    // draw drag rectangle
-                    if (GUIUtility.hotControl == id && evt.mousePosition != m_MouseStartDragPos)
-                    {
-                        GUIStyle style = "SelectionRect";
-                        Handles.BeginGUI();
-                        style.Draw(FromToRect(m_MouseStartDragPos, evt.mousePosition), false, false, false, false);
-                        Handles.EndGUI();
-                    }
-                    break;
-            }
-        }
-
-        // build a rect that always has a positive size
-        static Rect FromToRect(Vector2 from, Vector2 to)
-        {
-            if (from.x > to.x)
-                (from.x, to.x) = (to.x, from.x);
-            if (from.y > to.y)
-                (from.y, to.y) = (to.y, from.y);
-            return new Rect(from.x, from.y, to.x - from.x, to.y - from.y);
+            Debug.Log($"Exported PLY {path} with {aliveCount:N0} splats");
         }
     }
 }

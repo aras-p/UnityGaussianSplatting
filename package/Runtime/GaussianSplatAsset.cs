@@ -10,15 +10,22 @@ namespace GaussianSplatting.Runtime
 {
     public class GaussianSplatAsset : ScriptableObject
     {
-        public const int kCurrentVersion = 20231006;
+        public const int kCurrentVersion = 2023_10_20;
         public const int kChunkSize = 256;
-        public const int kTextureWidth = 2048; //@TODO: bump to 4k?
+        public const int kTextureWidth = 2048; // allows up to 32M splats on desktop GPU (2k width x 16k height)
+        public const int kMaxSplats = 8_600_000; // mostly due to 2GB GPU buffer size limit when exporting a splat (2GB / 248B is just over 8.6M)
 
-        [HideInInspector] public int m_FormatVersion;
-        [HideInInspector] public int m_SplatCount;
-        [HideInInspector] public Vector3 m_BoundsMin;
-        [HideInInspector] public Vector3 m_BoundsMax;
-        [HideInInspector] public Hash128 m_DataHash;
+        [SerializeField] int m_FormatVersion;
+        [SerializeField] int m_SplatCount;
+        [SerializeField] Vector3 m_BoundsMin;
+        [SerializeField] Vector3 m_BoundsMax;
+        [SerializeField] Hash128 m_DataHash;
+
+        public int formatVersion => m_FormatVersion;
+        public int splatCount => m_SplatCount;
+        public Vector3 boundsMin => m_BoundsMin;
+        public Vector3 boundsMax => m_BoundsMax;
+        public Hash128 dataHash => m_DataHash;
 
         // Match VECTOR_FMT_* in HLSL
         public enum VectorFormat
@@ -37,6 +44,25 @@ namespace GaussianSplatting.Runtime
                 VectorFormat.Norm16 => 6,
                 VectorFormat.Norm11 => 4,
                 VectorFormat.Norm6 => 2,
+                _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
+            };
+        }
+
+        public enum ColorFormat
+        {
+            Float32x4,
+            Float16x4,
+            Norm8x4,
+            BC7,
+        }
+        public static int GetColorSize(ColorFormat fmt)
+        {
+            return fmt switch
+            {
+                ColorFormat.Float32x4 => 16,
+                ColorFormat.Float16x4 => 8,
+                ColorFormat.Norm8x4 => 4,
+                ColorFormat.BC7 => 1,
                 _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
             };
         }
@@ -74,6 +100,33 @@ namespace GaussianSplatting.Runtime
             public ushort shPadding; // pad to multiple of 4 bytes
         }
 
+        public void Initialize(int splats, VectorFormat formatPos, VectorFormat formatScale, ColorFormat formatColor, SHFormat formatSh, Vector3 bMin, Vector3 bMax, CameraInfo[] cameraInfos)
+        {
+            m_SplatCount = splats;
+            m_FormatVersion = kCurrentVersion;
+            m_PosFormat = formatPos;
+            m_ScaleFormat = formatScale;
+            m_ColorFormat = formatColor;
+            m_SHFormat = formatSh;
+            m_Cameras = cameraInfos;
+            m_BoundsMin = bMin;
+            m_BoundsMax = bMax;
+        }
+
+        public void SetDataHash(Hash128 hash)
+        {
+            m_DataHash = hash;
+        }
+
+        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh)
+        {
+            m_ChunkData = dataChunk;
+            m_PosData = dataPos;
+            m_OtherData = dataOther;
+            m_ColorData = dataColor;
+            m_SHData = dataSh;
+        }
+
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)
         {
             return 4 + GetVectorSize(scaleFormat);
@@ -106,6 +159,18 @@ namespace GaussianSplatting.Runtime
             return (width, height);
         }
 
+        public static GraphicsFormat ColorFormatToGraphics(ColorFormat format)
+        {
+            return format switch
+            {
+                ColorFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
+                ColorFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
+                ColorFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+                ColorFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
+                _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
+            };
+        }
+
         public static long CalcPosDataSize(int splatCount, VectorFormat formatPos)
         {
             return splatCount * GetVectorSize(formatPos);
@@ -114,10 +179,10 @@ namespace GaussianSplatting.Runtime
         {
             return splatCount * GetOtherSizeNoSHIndex(formatScale);
         }
-        public static long CalcColorDataSize(int splatCount, GraphicsFormat formatColor)
+        public static long CalcColorDataSize(int splatCount, ColorFormat formatColor)
         {
             var (width, height) = CalcTextureSize(splatCount);
-            return GraphicsFormatUtility.ComputeMipmapSize(width, height, formatColor);
+            return width * height * GetColorSize(formatColor);
         }
         public static long CalcSHDataSize(int splatCount, SHFormat formatSh)
         {
@@ -137,19 +202,31 @@ namespace GaussianSplatting.Runtime
             return chunkCount * UnsafeUtility.SizeOf<ChunkInfo>();
         }
 
-        [HideInInspector] public VectorFormat m_PosFormat = VectorFormat.Norm11;
-        [HideInInspector] public VectorFormat m_ScaleFormat = VectorFormat.Norm11;
-        [HideInInspector] public SHFormat m_SHFormat = SHFormat.Norm11;
-        [HideInInspector] public GraphicsFormat m_ColorFormat;
-        [HideInInspector] public int m_ColorWidth, m_ColorHeight;
+        [SerializeField] VectorFormat m_PosFormat = VectorFormat.Norm11;
+        [SerializeField] VectorFormat m_ScaleFormat = VectorFormat.Norm11;
+        [SerializeField] SHFormat m_SHFormat = SHFormat.Norm11;
+        [SerializeField] ColorFormat m_ColorFormat;
 
-        [HideInInspector] public TextAsset m_PosData;
-        [HideInInspector] public TextAsset m_ColorData;
-        [HideInInspector] public TextAsset m_OtherData;
-        [HideInInspector] public TextAsset m_SHData;
-        [HideInInspector] public TextAsset m_ChunkData;
+        [SerializeField] TextAsset m_PosData;
+        [SerializeField] TextAsset m_ColorData;
+        [SerializeField] TextAsset m_OtherData;
+        [SerializeField] TextAsset m_SHData;
+        // Chunk data is optional (if data formats are fully lossless then there's no chunking)
+        [SerializeField] TextAsset m_ChunkData;
 
-        [HideInInspector] public CameraInfo[] m_Cameras;
+        [SerializeField] CameraInfo[] m_Cameras;
+
+        public VectorFormat posFormat => m_PosFormat;
+        public VectorFormat scaleFormat => m_ScaleFormat;
+        public SHFormat shFormat => m_SHFormat;
+        public ColorFormat colorFormat => m_ColorFormat;
+
+        public TextAsset posData => m_PosData;
+        public TextAsset colorData => m_ColorData;
+        public TextAsset otherData => m_OtherData;
+        public TextAsset shData => m_SHData;
+        public TextAsset chunkData => m_ChunkData;
+        public CameraInfo[] cameras => m_Cameras;
 
         public struct ChunkInfo
         {
