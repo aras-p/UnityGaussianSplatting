@@ -75,9 +75,11 @@ void RotateSH(float3x3 orient, int n, float3 coeffsIn[SH_MAX_COEFFS_COUNT], out 
     srcIdx += 1;
     float sh1[3][3] =
     {
-        orient._22, orient._32, orient._12,
-        orient._23, orient._33, orient._13,
-        orient._21, orient._31, orient._11
+        // NOTE: change from upstream code at https://github.com/andrewwillmott/sh-lib, some of the
+        // values need to have "-" in front of them.
+        orient._22, -orient._23, orient._21,
+        -orient._32, orient._33, -orient._31,
+        orient._12, -orient._13, orient._11
     };
     coeffs[dstIdx++] = Dot3(srcIdx, coeffsIn, sh1[0]);
     coeffs[dstIdx++] = Dot3(srcIdx, coeffsIn, sh1[1]);
