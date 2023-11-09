@@ -56,6 +56,7 @@ namespace GaussianSplatting.Runtime
         }
 
         GSRenderPass m_Pass;
+        bool m_HasCamera;
 
         public override void Create()
         {
@@ -67,16 +68,20 @@ namespace GaussianSplatting.Runtime
 
         public override void OnCameraPreCull(ScriptableRenderer renderer, in CameraData cameraData)
         {
+            m_HasCamera = false;
             var system = GaussianSplatRenderSystem.instance;
             if (!system.GatherSplatsForCamera(cameraData.camera))
                 return;
 
             CommandBuffer cmb = system.InitialClearCmdBuffer(cameraData.camera);
             m_Pass.m_Cmb = cmb;
+            m_HasCamera = true;
         }
 
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
+            if (!m_HasCamera)
+                return;
             m_Pass.m_Renderer = renderer;
             renderer.EnqueuePass(m_Pass);
         }
