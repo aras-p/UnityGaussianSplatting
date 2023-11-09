@@ -55,12 +55,8 @@ Additional documentation:
 
 _That's it!_
 
-Wishlist that I may or might not do at some point:
-- [ ] Investigate hashed alpha testing instead of blending (removes need for sorting splats)
-- [ ] Make low quality levels work on mobile (look into ASTC texture compression?)
-- [ ] Make a C/WebAssembly library to do PLY quantization/compression just like in Unity
-- [ ] Make a WebGL/WebGPU example that uses the smaller data files
-- [ ] Make rendering faster (actual tiled compute shader rasterizer)
+Future plans, roadmap and a todo list does not really exist, I'll just do whatever I randomly decide. I keep some of the open ideas as github issues.
+
 
 
 ## Write-ups

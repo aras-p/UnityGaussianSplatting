@@ -6,48 +6,53 @@ using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Rendering;
 using UnityEngine.Experimental.Rendering;
 
-// Note: I have no idea what is the proper usage of CustomPass.
-// Code below "seems to work" but I'm just fumbling along, without understanding any of it.
-class GaussianSplatHDRPPass : CustomPass
+namespace GaussianSplatting.Runtime
 {
-    RTHandle m_RenderTarget;
-
-    // It can be used to configure render targets and their clear state. Also to create temporary render target textures.
-    // When empty this render pass will render to the active camera render target.
-    // You should never call CommandBuffer.SetRenderTarget. Instead call <c>ConfigureTarget</c> and <c>ConfigureClear</c>.
-    // The render pipeline will ensure target setup and clearing happens in an performance manner.
-    protected override void Setup(ScriptableRenderContext renderContext, CommandBuffer cmd)
+    // Note: I have no idea what is the proper usage of CustomPass.
+    // Code below "seems to work" but I'm just fumbling along, without understanding any of it.
+    class GaussianSplatHDRPPass : CustomPass
     {
-        m_RenderTarget = RTHandles.Alloc(Vector2.one,
-            colorFormat:GraphicsFormat.R16G16B16A16_SFloat, useDynamicScale:true,
-            depthBufferBits:DepthBits.None, msaaSamples:MSAASamples.None,
-            filterMode:FilterMode.Point, wrapMode:TextureWrapMode.Clamp, name:"_GaussianSplatRT");
-    }
+        RTHandle m_RenderTarget;
 
-    protected override void Execute(CustomPassContext ctx)
-    {
-        var cam = ctx.hdCamera.camera;
+        // It can be used to configure render targets and their clear state. Also to create temporary render target textures.
+        // When empty this render pass will render to the active camera render target.
+        // You should never call CommandBuffer.SetRenderTarget. Instead call <c>ConfigureTarget</c> and <c>ConfigureClear</c>.
+        // The render pipeline will ensure target setup and clearing happens in an performance manner.
+        protected override void Setup(ScriptableRenderContext renderContext, CommandBuffer cmd)
+        {
+            m_RenderTarget = RTHandles.Alloc(Vector2.one,
+                colorFormat: GraphicsFormat.R16G16B16A16_SFloat, useDynamicScale: true,
+                depthBufferBits: DepthBits.None, msaaSamples: MSAASamples.None,
+                filterMode: FilterMode.Point, wrapMode: TextureWrapMode.Clamp, name: "_GaussianSplatRT");
+        }
 
-        var system = GaussianSplatRenderSystem.instance;
-        if (!system.GatherSplatsForCamera(cam))
-            return;
+        protected override void Execute(CustomPassContext ctx)
+        {
+            var cam = ctx.hdCamera.camera;
 
-        ctx.cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
-        CoreUtils.SetRenderTarget(ctx.cmd, m_RenderTarget, ctx.cameraDepthBuffer, ClearFlag.Color, new Color(0,0,0,0));
+            var system = GaussianSplatRenderSystem.instance;
+            if (!system.GatherSplatsForCamera(cam))
+                return;
 
-        // add sorting, view calc and drawing commands for each splat object
-        Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(ctx.hdCamera.camera, ctx.cmd);
+            ctx.cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
+            CoreUtils.SetRenderTarget(ctx.cmd, m_RenderTarget, ctx.cameraDepthBuffer, ClearFlag.Color,
+                new Color(0, 0, 0, 0));
 
-        // compose
-        ctx.cmd.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
-        CoreUtils.SetRenderTarget(ctx.cmd, ctx.cameraColorBuffer, ClearFlag.None);
-        CoreUtils.DrawFullScreen(ctx.cmd, matComposite, ctx.propertyBlock, shaderPassId: 0);
-        ctx.cmd.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
-    }
+            // add sorting, view calc and drawing commands for each splat object
+            Material matComposite =
+                GaussianSplatRenderSystem.instance.SortAndRenderSplats(ctx.hdCamera.camera, ctx.cmd);
 
-    protected override void Cleanup()
-    {
-        m_RenderTarget.Release();
+            // compose
+            ctx.cmd.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
+            CoreUtils.SetRenderTarget(ctx.cmd, ctx.cameraColorBuffer, ClearFlag.None);
+            CoreUtils.DrawFullScreen(ctx.cmd, matComposite, ctx.propertyBlock, shaderPassId: 0);
+            ctx.cmd.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+        }
+
+        protected override void Cleanup()
+        {
+            m_RenderTarget.Release();
+        }
     }
 }
 

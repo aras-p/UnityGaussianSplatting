@@ -39,6 +39,7 @@ float4x4 _MatrixMV;
 float4x4 _MatrixP;
 float4 _VecScreenParams;
 float4 _VecWorldSpaceCameraPos;
+int _SelectionMode;
 
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
@@ -411,7 +412,10 @@ void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
     }
     uint wordIdx = idx / 32;
     uint bitIdx = idx & 31;
-    _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1 << bitIdx);
+    if (_SelectionMode)
+        _SplatSelectedBits.InterlockedOr(wordIdx * 4, 1u << bitIdx); // +
+    else
+        _SplatSelectedBits.InterlockedAnd(wordIdx * 4, ~(1u << bitIdx)); // -
 }
 
 float3 _SelectionDelta;

@@ -313,6 +313,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int SelectionDeltaRot = Shader.PropertyToID("_SelectionDeltaRot");
             public static readonly int SplatCutoutsCount = Shader.PropertyToID("_SplatCutoutsCount");
             public static readonly int SplatCutouts = Shader.PropertyToID("_SplatCutouts");
+            public static readonly int SelectionMode = Shader.PropertyToID("_SelectionMode");
             public static readonly int SplatPosMouseDown = Shader.PropertyToID("_SplatPosMouseDown");
             public static readonly int SplatOtherMouseDown = Shader.PropertyToID("_SplatOtherMouseDown");
         }
@@ -765,7 +766,7 @@ namespace GaussianSplatting.Runtime
             Graphics.CopyBuffer(m_GpuOtherData, m_GpuEditOtherMouseDown);
         }
 
-        public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam)
+        public void EditUpdateSelection(Vector2 rectMin, Vector2 rectMax, Camera cam, bool subtract)
         {
             if (!EnsureEditingBuffers()) return;
 
@@ -793,6 +794,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, "_SelectionRect", new Vector4(rectMin.x, rectMax.y, rectMax.x, rectMin.y));
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SelectionMode, subtract ? 0 : 1);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.SelectionUpdate, m_SplatCount);
             UpdateEditCountsAndBounds();
