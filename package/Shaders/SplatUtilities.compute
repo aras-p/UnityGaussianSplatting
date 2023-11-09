@@ -15,6 +15,7 @@
 #pragma kernel CSRotateSelection
 #pragma kernel CSScaleSelection
 #pragma kernel CSExportData
+#pragma kernel CSCopySplats
 
 // FidelityFX GPU sorting
 #pragma kernel FfxParallelSortReduce
@@ -668,4 +669,81 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
         dst.nor = 1; // mark as skipped for export
     
     _ExportBuffer[idx] = dst;
+}
+
+RWByteAddressBuffer _CopyDstPos;
+RWByteAddressBuffer _CopyDstOther;
+RWByteAddressBuffer _CopyDstSH;
+RWByteAddressBuffer _CopyDstEditDeleted;
+RWTexture2D<float4> _CopyDstColor;
+uint _CopyDstSize, _CopySrcStartIndex, _CopyDstStartIndex, _CopyCount;
+
+float4x4 _CopyTransformMatrix;
+float4 _CopyTransformRotation;
+float3 _CopyTransformScale;
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCopySplats (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _CopyCount)
+        return;
+    uint srcIdx = _CopySrcStartIndex + idx;
+    uint dstIdx = _CopyDstStartIndex + idx;
+    if (srcIdx >= _SplatCount || dstIdx >= _CopyDstSize)
+        return;
+
+    SplatData src = LoadSplatData(idx);
+
+    // transform the splat
+    src.pos = mul(_CopyTransformMatrix, float4(src.pos,1)).xyz;
+    // note: this only handles axis flips from scale, not any arbitrary scaling
+    if (_CopyTransformScale.x < 0)
+        src.rot.yz = -src.rot.yz;
+    if (_CopyTransformScale.y < 0)
+        src.rot.xz = -src.rot.xz;
+    if (_CopyTransformScale.z < 0)
+        src.rot.xy = -src.rot.xy;
+    src.rot = QuatMul(_CopyTransformRotation, src.rot);
+    src.scale *= abs(_CopyTransformScale);
+
+    float3x3 shRot = CalcSHRotMatrix(_CopyTransformMatrix);
+    RotateSH(src.sh, shRot);
+
+    // output data into destination:
+    // pos
+    uint posStride = 12;
+    _CopyDstPos.Store3(dstIdx * posStride, asuint(src.pos));
+    // rot + scale
+    uint otherStride = 4 + 12;
+    uint rotVal = EncodeQuatToNorm10(PackSmallest3Rotation(src.rot));
+    _CopyDstOther.Store4(dstIdx * otherStride, uint4(
+        rotVal,
+        asuint(src.scale.x),
+        asuint(src.scale.y),
+        asuint(src.scale.z)));
+    // color
+    uint3 pixelIndex = SplatIndexToPixelIndex(dstIdx);
+    _CopyDstColor[pixelIndex.xy] = float4(src.sh.col, src.opacity);
+
+    // SH
+    uint shStride = 192; // 15*3 fp32, rounded up to multiple of 16
+    uint shOffset = dstIdx * shStride;
+    _CopyDstSH.Store3(shOffset + 12 * 0, asuint(src.sh.sh1));
+    _CopyDstSH.Store3(shOffset + 12 * 1, asuint(src.sh.sh2));
+    _CopyDstSH.Store3(shOffset + 12 * 2, asuint(src.sh.sh3));
+    _CopyDstSH.Store3(shOffset + 12 * 3, asuint(src.sh.sh4));
+    _CopyDstSH.Store3(shOffset + 12 * 4, asuint(src.sh.sh5));
+    _CopyDstSH.Store3(shOffset + 12 * 5, asuint(src.sh.sh6));
+    _CopyDstSH.Store3(shOffset + 12 * 6, asuint(src.sh.sh7));
+    _CopyDstSH.Store3(shOffset + 12 * 7, asuint(src.sh.sh8));
+    _CopyDstSH.Store3(shOffset + 12 * 8, asuint(src.sh.sh9));
+    _CopyDstSH.Store3(shOffset + 12 * 9, asuint(src.sh.sh10));
+    _CopyDstSH.Store3(shOffset + 12 * 10, asuint(src.sh.sh11));
+    _CopyDstSH.Store3(shOffset + 12 * 11, asuint(src.sh.sh12));
+    _CopyDstSH.Store3(shOffset + 12 * 12, asuint(src.sh.sh13));
+    _CopyDstSH.Store3(shOffset + 12 * 13, asuint(src.sh.sh14));
+    _CopyDstSH.Store3(shOffset + 12 * 14, asuint(src.sh.sh15));
+
+    //@TODO: deleted bits
 }

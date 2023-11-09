@@ -10,10 +10,12 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
+using GaussianSplatRenderer = GaussianSplatting.Runtime.GaussianSplatRenderer;
 
 namespace GaussianSplatting.Editor
 {
     [CustomEditor(typeof(GaussianSplatRenderer))]
+    [CanEditMultipleObjects]
     public class GaussianSplatRendererEditor : UnityEditor.Editor
     {
         const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
@@ -80,13 +82,16 @@ namespace GaussianSplatting.Editor
 
         public override void OnInspectorGUI()
         {
+            var gs = target as GaussianSplatRenderer;
+            if (!gs)
+                return;
+
             serializedObject.Update();
 
             GUILayout.Label("Data Asset", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(m_PropAsset);
 
-            var gs = target as GaussianSplatRenderer;
-            if (!gs || !gs.HasValidAsset)
+            if (!gs.HasValidAsset)
             {
                 var msg = gs.asset != null && gs.asset.formatVersion != GaussianSplatAsset.kCurrentVersion
                     ? "Gaussian Splat asset version is not compatible, please recreate the asset"
@@ -124,10 +129,14 @@ namespace GaussianSplatting.Editor
                 validAndEnabled = false;
             }
 
-            if (validAndEnabled)
+            if (validAndEnabled && targets.Length == 1)
             {
                 EditCameras(gs);
                 EditGUI(gs);
+            }
+            if (validAndEnabled && targets.Length > 1)
+            {
+                MultiEditGUI();
             }
 
             serializedObject.ApplyModifiedProperties();
@@ -151,13 +160,78 @@ namespace GaussianSplatting.Editor
             }
         }
 
+        void MultiEditGUI()
+        {
+            DrawSeparator();
+            CountTargetSplats(out var totalSplats, out var totalObjects);
+            EditorGUILayout.LabelField("Total Objects", $"{totalObjects}");
+            EditorGUILayout.LabelField("Total Splats", $"{totalSplats:N0}");
+            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+            {
+                EditorGUILayout.HelpBox($"Can't merge, too many splats (max. supported {GaussianSplatAsset.kMaxSplats:N0})", MessageType.Warning);
+                return;
+            }
+
+            var targetGs = (GaussianSplatRenderer) target;
+            if (!targetGs || !targetGs.HasValidAsset || !targetGs.isActiveAndEnabled)
+            {
+                EditorGUILayout.HelpBox($"Can't merge into {target.name} (no asset or disable)", MessageType.Warning);
+                return;
+            }
+
+            if (targetGs.asset.chunkData != null)
+            {
+                EditorGUILayout.HelpBox($"Can't merge into {target.name} (needs to use Very High quality preset)", MessageType.Warning);
+                return;
+            }
+            if (GUILayout.Button($"Merge into {target.name}"))
+            {
+                MergeSplatObjects();
+            }
+        }
+
+        void CountTargetSplats(out int totalSplats, out int totalObjects)
+        {
+            totalObjects = 0;
+            totalSplats = 0;
+            foreach (var obj in targets)
+            {
+                var gs = obj as GaussianSplatRenderer;
+                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                    continue;
+                ++totalObjects;
+                totalSplats += gs.splatCount;
+            }
+        }
+
+        void MergeSplatObjects()
+        {
+            CountTargetSplats(out var totalSplats, out _);
+            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+                return;
+            var targetGs = (GaussianSplatRenderer) target;
+
+            int copyDstOffset = targetGs.splatCount;
+            targetGs.EditSetSplatCount(totalSplats);
+            foreach (var obj in targets)
+            {
+                var gs = obj as GaussianSplatRenderer;
+                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                    continue;
+                if (gs == targetGs)
+                    continue;
+                gs.EditCopySplatsInto(targetGs, 0, copyDstOffset, gs.splatCount);
+                copyDstOffset += gs.splatCount;
+                gs.gameObject.SetActive(false);
+            }
+            Debug.Assert(copyDstOffset == totalSplats, $"Merge count mismatch, {copyDstOffset} vs {totalSplats}");
+        }
+
         void EditGUI(GaussianSplatRenderer gs)
         {
             ++s_EditStatsUpdateCounter;
 
-            EditorGUILayout.Space(12f, true);
-            GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
-            EditorGUILayout.Space();
+            DrawSeparator();
             bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
             if (!wasToolActive && isToolActive)
@@ -248,6 +322,13 @@ namespace GaussianSplatting.Editor
                     }
                 }
             }
+        }
+
+        static void DrawSeparator()
+        {
+            EditorGUILayout.Space(12f, true);
+            GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
+            EditorGUILayout.Space();
         }
 
         bool HasFrameBounds()
