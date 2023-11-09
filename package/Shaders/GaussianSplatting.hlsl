@@ -136,7 +136,7 @@ struct SplatSHData
     half3 col, sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, sh10, sh11, sh12, sh13, sh14, sh15;
 };
 
-half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder)
+half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder, bool onlySH)
 {
     dir *= -1;
 
@@ -144,6 +144,8 @@ half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder)
 
     // ambient band
     half3 res = splat.col; // col = sh0 * SH_C0 + 0.5 is already precomputed
+    if (onlySH)
+        res = 0.5;
     // 1st degree
     if (shOrder >= 1)
     {
