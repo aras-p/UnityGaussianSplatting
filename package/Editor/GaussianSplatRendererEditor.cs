@@ -307,7 +307,7 @@ namespace GaussianSplatting.Editor
             var asset = gs.asset;
             EditorGUILayout.Space();
             EditorGUI.BeginChangeCheck();
-            m_ExportBakeTransform = EditorGUILayout.Toggle("Bake Transform", m_ExportBakeTransform);
+            m_ExportBakeTransform = EditorGUILayout.Toggle("Export in world space", m_ExportBakeTransform);
             if (EditorGUI.EndChangeCheck())
             {
                 EditorPrefs.SetBool(kPrefExportBake, m_ExportBakeTransform);
