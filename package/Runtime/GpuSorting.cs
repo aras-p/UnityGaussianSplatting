@@ -4,19 +4,28 @@ using UnityEngine.Rendering;
 
 namespace GaussianSplatting.Runtime
 {
-    // GPU (uint key, uint payload) radix sort, originally based on code derived from AMD FidelityFX SDK:
-    // Copyright © 2023 Advanced Micro Devices, Inc., MIT license
-    // https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort v1.1.1
+    // GPU (uint key, uint payload) 8 bit-LSD radix sort, using reduce-then-scan
+    // Copyright Thomas Smith 2023, MIT license
+    // https://github.com/b0nes164/ShaderOneSweep this repo will be deprecated soon, see its readme!
+
     public class GpuSorting
     {
-        // These need to match constants in the compute shader
-        const uint FFX_PARALLELSORT_ELEMENTS_PER_THREAD = 4;
-        const uint FFX_PARALLELSORT_THREADGROUP_SIZE = 128;
-        const int FFX_PARALLELSORT_SORT_BITS_PER_PASS = 4;
-        const uint FFX_PARALLELSORT_SORT_BIN_COUNT = 1u << FFX_PARALLELSORT_SORT_BITS_PER_PASS;
-        // The maximum number of thread groups to run in parallel. Modifying this value can help or hurt GPU occupancy,
-        // but is very hardware class specific
-        const uint FFX_PARALLELSORT_MAX_THREADGROUPS_TO_RUN = 800;
+        //The size of a threadblock partition in the sort
+        const uint DEVICE_RADIX_SORT_PARTITION_SIZE = 7680;
+
+        //The size of our radix in bits
+        const uint DEVICE_RADIX_SORT_BITS = 8;
+
+        //Number of digits in our radix, 1 << DEVICE_RADIX_SORT_BITS
+        const uint DEVICE_RADIX_SORT_RADIX = 256;
+
+        //Number of sorting passes required to sort a 32bit key, KEY_BITS / DEVICE_RADIX_SORT_BITS
+        const uint DEVICE_RADIX_SORT_PASSES = 4;
+
+        //The number of scan threadblocks is dependent on the wave size of the hardware,
+        //which we poll a single time in the constructor
+        const uint DEVICE_RADIX_SORT_SCAN_THREADS = 64;
+        private uint scanThreadBlocks;
 
         public struct Args
         {
@@ -29,51 +38,49 @@ namespace GaussianSplatting.Runtime
 
         public struct SupportResources
         {
-            public GraphicsBuffer sortScratchBuffer;
-            public GraphicsBuffer payloadScratchBuffer;
-            public GraphicsBuffer scratchBuffer;
-            public GraphicsBuffer reducedScratchBuffer;
+            public GraphicsBuffer altBuffer;
+            public GraphicsBuffer altPayloadBuffer;
+            public GraphicsBuffer passHistBuffer;
+            public GraphicsBuffer globalHistBuffer;
 
             public static SupportResources Load(uint count)
             {
-                uint BlockSize = FFX_PARALLELSORT_ELEMENTS_PER_THREAD * FFX_PARALLELSORT_THREADGROUP_SIZE;
-                uint NumBlocks = DivRoundUp(count, BlockSize);
-                uint NumReducedBlocks = DivRoundUp(NumBlocks, BlockSize);
-
-                uint scratchBufferSize = FFX_PARALLELSORT_SORT_BIN_COUNT * NumBlocks;
-                uint reduceScratchBufferSize = FFX_PARALLELSORT_SORT_BIN_COUNT * NumReducedBlocks;
+                //This is threadBlocks * DEVICE_RADIX_SORT_RADIX
+                uint scratchBufferSize = DivRoundUp(count, DEVICE_RADIX_SORT_PARTITION_SIZE) * DEVICE_RADIX_SORT_RADIX; 
+                uint reducedScratchBufferSize = DEVICE_RADIX_SORT_RADIX * DEVICE_RADIX_SORT_PASSES;
 
                 var target = GraphicsBuffer.Target.Structured;
                 var resources = new SupportResources
                 {
-                    sortScratchBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "FfxSortSortScratch" },
-                    payloadScratchBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "FfxSortPayloadScratch" },
-                    scratchBuffer = new GraphicsBuffer(target, (int)scratchBufferSize, 4) { name = "FfxSortScratch" },
-                    reducedScratchBuffer = new GraphicsBuffer(target, (int)reduceScratchBufferSize, 4) { name = "FfxSortReducedScratch" },
+                    altBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAlt" },
+                    altPayloadBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAltPayload" },
+                    passHistBuffer = new GraphicsBuffer(target, (int)scratchBufferSize, 4) { name = "DeviceRadixPassHistogram" },
+                    globalHistBuffer = new GraphicsBuffer(target, (int)reducedScratchBufferSize, 4) { name = "DeviceRadixGlobalHistogram" },
                 };
                 return resources;
             }
 
             public void Dispose()
             {
-                sortScratchBuffer?.Dispose();
-                payloadScratchBuffer?.Dispose();
-                scratchBuffer?.Dispose();
-                reducedScratchBuffer?.Dispose();
+                altBuffer?.Dispose();
+                altPayloadBuffer?.Dispose();
+                passHistBuffer?.Dispose();
+                globalHistBuffer?.Dispose();
 
-                sortScratchBuffer = null;
-                payloadScratchBuffer = null;
-                scratchBuffer = null;
-                reducedScratchBuffer = null;
+                altBuffer = null;
+                altPayloadBuffer = null;
+                passHistBuffer = null;
+                globalHistBuffer = null;
             }
         }
 
         readonly ComputeShader m_CS;
-        readonly int m_KernelReduce = -1;
-        readonly int m_KernelScanAdd = -1;
-        readonly int m_KernelScan = -1;
-        readonly int m_KernelScatter = -1;
-        readonly int m_KernelSum = -1;
+        readonly int m_kernelPollWaveSize = -1;
+        readonly int m_kernelInitDeviceRadixSort = -1;
+        readonly int m_kernelUpsweep = -1;
+        readonly int m_kernelScan = -1;
+        readonly int m_kernelDownsweep = -1;
+
         readonly bool m_Valid;
 
         public bool Valid => m_Valid;
@@ -83,43 +90,75 @@ namespace GaussianSplatting.Runtime
             m_CS = cs;
             if (cs)
             {
-                m_KernelReduce = cs.FindKernel("FfxParallelSortReduce");
-                m_KernelScanAdd = cs.FindKernel("FfxParallelSortScanAdd");
-                m_KernelScan = cs.FindKernel("FfxParallelSortScan");
-                m_KernelScatter = cs.FindKernel("FfxParallelSortScatter");
-                m_KernelSum = cs.FindKernel("FfxParallelSortCount");
+                m_kernelPollWaveSize = cs.FindKernel("PollWaveSize");
+                m_kernelInitDeviceRadixSort = cs.FindKernel("InitDeviceRadixSort");
+                m_kernelUpsweep = cs.FindKernel("Upsweep");
+                m_kernelScan = cs.FindKernel("Scan");
+                m_kernelDownsweep = cs.FindKernel("Downsweep");
             }
 
-            m_Valid = m_KernelReduce >= 0 &&
-                      m_KernelScanAdd >= 0 &&
-                      m_KernelScan >= 0 &&
-                      m_KernelScatter >= 0 &&
-                      m_KernelSum >= 0;
+            m_Valid = m_kernelPollWaveSize >= 0 &&
+                      m_kernelInitDeviceRadixSort >= 0 &&
+                      m_kernelUpsweep >= 0 &&
+                      m_kernelScan >= 0 &&
+                      m_kernelDownsweep >= 0;
             if (m_Valid)
             {
-                if (!cs.IsSupported(m_KernelReduce) ||
-                    !cs.IsSupported(m_KernelScanAdd) ||
-                    !cs.IsSupported(m_KernelScan) ||
-                    !cs.IsSupported(m_KernelScatter) ||
-                    !cs.IsSupported(m_KernelSum))
+                if (!cs.IsSupported(m_kernelPollWaveSize) ||
+                    !cs.IsSupported(m_kernelInitDeviceRadixSort) ||
+                    !cs.IsSupported(m_kernelUpsweep) ||
+                    !cs.IsSupported(m_kernelScan) ||
+                    !cs.IsSupported(m_kernelDownsweep))
                 {
                     m_Valid = false;
                 }
+            }
+
+            //poll the wave size
+            if (m_Valid)
+            {
+                m_Valid = PollWaveSize(cs);
+            }
+        }
+
+        private bool PollWaveSize(ComputeShader _cs)
+        {
+            //Create a single element buffer to poll the waveSize
+            ComputeBuffer temp = new ComputeBuffer(1, sizeof(uint));
+            _cs.SetBuffer(m_kernelPollWaveSize, "b_polling", temp);
+            _cs.Dispatch(m_kernelPollWaveSize, 1, 1, 1);
+
+            uint[] waveSize = new uint[1];
+            temp.GetData(waveSize);
+            temp.Dispose();
+
+            if (waveSize[0] > 128)
+            {
+                //WaveActiveBallot will fail
+                return false;
+            }
+            else
+            {
+                //scanThreadBlocks is only depedent on the waveSize, and will never change once initialized
+                scanThreadBlocks = DEVICE_RADIX_SORT_RADIX * waveSize[0] / DEVICE_RADIX_SORT_SCAN_THREADS;
+                scanThreadBlocks = scanThreadBlocks > DEVICE_RADIX_SORT_RADIX ? DEVICE_RADIX_SORT_RADIX : scanThreadBlocks;
+                return true;
             }
         }
 
         static uint DivRoundUp(uint x, uint y) => (x + y - 1) / y;
 
+        //Can we remove the last 4 padding without breaking?
         struct SortConstants
         {
-            public uint numKeys;                              // The number of keys to sort
-            public uint numBlocksPerThreadGroup;              // How many blocks of keys each thread group needs to process
-            public uint numThreadGroups;                      // How many thread groups are being run concurrently for sort
-            public uint numThreadGroupsWithAdditionalBlocks;  // How many thread groups need to process additional block data
-            public uint numReduceThreadgroupPerBin;           // How many thread groups are summed together for each reduced bin entry
-            public uint numScanValues;                        // How many values to perform scan prefix (+ add) on
-            public uint shift;                                // What bits are being sorted (4 bit increments)
-            public uint padding;                              // Padding - unused
+            public uint numKeys;                        // The number of keys to sort
+            public uint radixShift;                     // The radix shift value for the current pass
+            public uint threadBlocks;                   // threadBlocks
+            public uint padding0;                       // Padding - unused
+            public uint padding1;                       // Padding - unused
+            public uint padding2;                       // Padding - unused
+            public uint padding3;                       // Padding - unused
+            public uint padding4;                       // Padding - unused
         }
 
         public void Dispatch(CommandBuffer cmd, Args args)
@@ -128,78 +167,51 @@ namespace GaussianSplatting.Runtime
 
             GraphicsBuffer srcKeyBuffer = args.inputKeys;
             GraphicsBuffer srcPayloadBuffer = args.inputValues;
-            GraphicsBuffer dstKeyBuffer = args.resources.sortScratchBuffer;
-            GraphicsBuffer dstPayloadBuffer = args.resources.payloadScratchBuffer;
+            GraphicsBuffer dstKeyBuffer = args.resources.altBuffer;
+            GraphicsBuffer dstPayloadBuffer = args.resources.altPayloadBuffer;
 
-            // Initialize constants for the sort job
             SortConstants constants = default;
             constants.numKeys = args.count;
-
-            uint BlockSize = FFX_PARALLELSORT_ELEMENTS_PER_THREAD * FFX_PARALLELSORT_THREADGROUP_SIZE;
-            uint NumBlocks = DivRoundUp(args.count, BlockSize);
-
-            // Figure out data distribution
-            uint numThreadGroupsToRun = FFX_PARALLELSORT_MAX_THREADGROUPS_TO_RUN;
-            uint BlocksPerThreadGroup = (NumBlocks / numThreadGroupsToRun);
-            constants.numThreadGroupsWithAdditionalBlocks = NumBlocks % numThreadGroupsToRun;
-
-            if (NumBlocks < numThreadGroupsToRun)
-            {
-                BlocksPerThreadGroup = 1;
-                numThreadGroupsToRun = NumBlocks;
-                constants.numThreadGroupsWithAdditionalBlocks = 0;
-            }
-
-            constants.numThreadGroups = numThreadGroupsToRun;
-            constants.numBlocksPerThreadGroup = BlocksPerThreadGroup;
-
-            // Calculate the number of thread groups to run for reduction (each thread group can process BlockSize number of entries)
-            uint numReducedThreadGroupsToRun = FFX_PARALLELSORT_SORT_BIN_COUNT * ((BlockSize > numThreadGroupsToRun) ? 1 : (numThreadGroupsToRun + BlockSize - 1) / BlockSize);
-            constants.numReduceThreadgroupPerBin = numReducedThreadGroupsToRun / FFX_PARALLELSORT_SORT_BIN_COUNT;
-            constants.numScanValues = numReducedThreadGroupsToRun;	// The number of reduce thread groups becomes our scan count (as each thread group writes out 1 value that needs scan prefix)
+            constants.threadBlocks = DivRoundUp(args.count, DEVICE_RADIX_SORT_PARTITION_SIZE);
 
             // Setup overall constants
-            cmd.SetComputeIntParam(m_CS, "numKeys", (int)constants.numKeys);
-            cmd.SetComputeIntParam(m_CS, "numBlocksPerThreadGroup", (int)constants.numBlocksPerThreadGroup);
-            cmd.SetComputeIntParam(m_CS, "numThreadGroups", (int)constants.numThreadGroups);
-            cmd.SetComputeIntParam(m_CS, "numThreadGroupsWithAdditionalBlocks", (int)constants.numThreadGroupsWithAdditionalBlocks);
-            cmd.SetComputeIntParam(m_CS, "numReduceThreadgroupPerBin", (int)constants.numReduceThreadgroupPerBin);
-            cmd.SetComputeIntParam(m_CS, "numScanValues", (int)constants.numScanValues);
+            cmd.SetComputeIntParam(m_CS, "e_numKeys", (int)constants.numKeys);
+            cmd.SetComputeIntParam(m_CS, "e_threadBlocks", (int)constants.threadBlocks);
 
-            // Execute the sort algorithm in 4-bit increments
-            constants.shift = 0;
-            for (uint i = 0; constants.shift < 32; constants.shift += FFX_PARALLELSORT_SORT_BITS_PER_PASS, ++i)
+            //Set statically located buffers
+            //Upsweep
+            cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_passHist", args.resources.passHistBuffer);
+            cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_globalHist", args.resources.globalHistBuffer);
+
+            //Scan
+            cmd.SetComputeBufferParam(m_CS, m_kernelScan, "b_passHist", args.resources.passHistBuffer);
+
+            //Downsweep
+            cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_passHist", args.resources.passHistBuffer);
+            cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_globalHist", args.resources.globalHistBuffer);
+
+            //Clear the global histogram
+            cmd.SetComputeBufferParam(m_CS, m_kernelInitDeviceRadixSort, "b_globalHist", args.resources.globalHistBuffer);
+            cmd.DispatchCompute(m_CS, m_kernelInitDeviceRadixSort, 1, 1, 1);
+
+            // Execute the sort algorithm in 8-bit increments
+            for (constants.radixShift = 0; constants.radixShift < 32; constants.radixShift += DEVICE_RADIX_SORT_BITS)
             {
-                cmd.SetComputeIntParam(m_CS, "shift", (int)constants.shift);
+                cmd.SetComputeIntParam(m_CS, "e_radixShift", (int)constants.radixShift);
 
-                // Sum
-                cmd.SetComputeBufferParam(m_CS, m_KernelSum, "rw_source_keys", srcKeyBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelSum, "rw_sum_table", args.resources.scratchBuffer);
-                cmd.DispatchCompute(m_CS, m_KernelSum, (int)numThreadGroupsToRun, 1, 1);
-
-                // Reduce
-                cmd.SetComputeBufferParam(m_CS, m_KernelReduce, "rw_sum_table", args.resources.scratchBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelReduce, "rw_reduce_table", args.resources.reducedScratchBuffer);
-                cmd.DispatchCompute(m_CS, m_KernelReduce, (int)numReducedThreadGroupsToRun, 1, 1);
+                //Upsweep
+                cmd.SetComputeBufferParam(m_CS, m_kernelUpsweep, "b_sort", srcKeyBuffer);
+                cmd.DispatchCompute(m_CS, m_kernelUpsweep, (int)constants.threadBlocks, 1, 1);
 
                 // Scan
-                cmd.SetComputeBufferParam(m_CS, m_KernelScan, "rw_scan_source", args.resources.reducedScratchBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScan, "rw_scan_dest", args.resources.reducedScratchBuffer);
-                cmd.DispatchCompute(m_CS, m_KernelScan, 1, 1, 1);
+                cmd.DispatchCompute(m_CS, m_kernelScan, (int)scanThreadBlocks, 1, 1);
 
-                // Scan add
-                cmd.SetComputeBufferParam(m_CS, m_KernelScanAdd, "rw_scan_source", args.resources.scratchBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScanAdd, "rw_scan_dest", args.resources.scratchBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScanAdd, "rw_scan_scratch", args.resources.reducedScratchBuffer);
-                cmd.DispatchCompute(m_CS, m_KernelScanAdd, (int)numReducedThreadGroupsToRun, 1, 1);
-
-                // Scatter
-                cmd.SetComputeBufferParam(m_CS, m_KernelScatter, "rw_source_keys", srcKeyBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScatter, "rw_dest_keys", dstKeyBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScatter, "rw_sum_table", args.resources.scratchBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScatter, "rw_source_payloads", srcPayloadBuffer);
-                cmd.SetComputeBufferParam(m_CS, m_KernelScatter, "rw_dest_payloads", dstPayloadBuffer);
-                cmd.DispatchCompute(m_CS, m_KernelScatter, (int)numThreadGroupsToRun, 1, 1);
+                // Downsweep
+                cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_sort", srcKeyBuffer);
+                cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_sortPayload", srcPayloadBuffer);
+                cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_alt", dstKeyBuffer);
+                cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_altPayload", dstPayloadBuffer);
+                cmd.DispatchCompute(m_CS, m_kernelDownsweep, (int)constants.threadBlocks, 1, 1);
 
                 // Swap
                 (srcKeyBuffer, dstKeyBuffer) = (dstKeyBuffer, srcKeyBuffer);
