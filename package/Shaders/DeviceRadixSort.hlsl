@@ -194,8 +194,10 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 uint bits = 0;
                 for (int wavePart = 0; wavePart < waveParts; ++wavePart)
                 {
-                    const uint shift = WaveGetLaneIndex() >= (wavePart + 1) * 32 ? 0 : WaveGetLaneCount() - WaveGetLaneIndex() - 1;
-                    bits += countbits(waveFlags[wavePart] << shift);
+                    //%lanemask_le, but gross
+                    const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) << 5) - 1 ? 0xffffffff :
+                        WaveGetLaneIndex() >= (wavePart << 5) ? ((1 << (WaveGetLaneIndex() & 31) + 1) - 1) : 0;
+                    bits += countbits(waveFlags[wavePart] & leMask);
                 }
                     
                 const int index = (keys[i] >> e_radixShift & RADIX_MASK) + (WAVE_INDEX * RADIX);
@@ -239,7 +241,6 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 g_localHist[gtid.x] -= g_waveHists[gtid.x];
             }
         }
-        
         GroupMemoryBarrierWithGroupSync();
         
         //Update offsets
@@ -310,8 +311,10 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             uint bits = 0;
             for (int wavePart = 0; wavePart < waveParts; ++wavePart)
             {
-                const uint shift = WaveGetLaneIndex() >= (wavePart + 1) * 32 ? 0 : WaveGetLaneCount() - WaveGetLaneIndex() - 1;
-                bits += countbits(waveFlags[wavePart] << shift);
+                //%lanemask_le, but gross
+                const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) << 5) - 1 ? 0xffffffff :
+                    WaveGetLaneIndex() >= (wavePart << 5) ? ((1 << (WaveGetLaneIndex() & 31) + 1) - 1) : 0;
+                bits += countbits(waveFlags[wavePart] & leMask);
             }
             
             for (int k = 0; k < DS_THREADS / WaveGetLaneCount(); ++k)
