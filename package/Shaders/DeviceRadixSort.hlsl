@@ -38,10 +38,10 @@
 #define DS_THREADS          512     //The number of threads in a Downsweep threadblock
 
 //For the downsweep kernels
-#define DS_HISTS_SIZE       4096    //The total size of all wave histograms in shared memory
-#define DS_WAVE_PART_SIZE   480     //The subpartition size of a single wave in a BinningPass threadblock
-#define DS_KEYS_PER_THREAD  15      //The number of keys per thread in BinningPass threadblock
-#define DS_WAVE_PART_START  (WAVE_INDEX * DS_WAVE_PART_SIZE)     //The starting offset of a subpartition tile
+#define DS_KEYS_PER_THREAD  15                                          //The number of keys per thread in BinningPass threadblock
+#define DS_WAVE_PART_SIZE   480                                         //The subpartition size of a single wave in a BinningPass threadblock
+#define DS_WAVE_PART_START  (WAVE_INDEX * DS_WAVE_PART_SIZE)            //The starting offset of a subpartition tile
+#define DS_HISTS_SIZE       (DS_THREADS / WaveGetLaneCount() * RADIX)   //The total size of all wave histograms in shared memory
 
 //needs to match original cBuffer size?
 cbuffer cbParallelSort : register(b0)
@@ -65,8 +65,6 @@ RWStructuredBuffer<uint> b_globalHist;  //buffer holding device level offsets fo
 RWStructuredBuffer<uint> b_passHist;    //buffer used to store reduced sums of partition tiles
 
 groupshared uint g_upsweepHist[RADIX];  //Shared memory for upsweep
-groupshared uint g_scan[SCAN_THREADS];  //Shared memory for scan
-
 groupshared uint g_localHist[RADIX];    //Threadgroup copy of globalHist during downsweep
 groupshared uint g_waveHists[PARTITION_SIZE];   //Shared memory for the per wave histograms during downsweep
 
@@ -134,19 +132,23 @@ void Upsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
 [numthreads(SCAN_THREADS, 1, 1)]
 void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
 {
-    unsigned int aggregate = 0;
+    uint aggregate = 0;
     const int threadBlocks = e_threadBlocks;
-    const int circularLaneShift = WaveGetLaneIndex() + 1 & WaveGetLaneCount() - 1;
+    const int tBlocksEnd = (threadBlocks + WaveGetLaneCount() - 1) / WaveGetLaneCount() * WaveGetLaneCount();
+    const int laneMask = WaveGetLaneCount() - 1;
+    const int circularLaneShift = WaveGetLaneIndex() + 1 & laneMask;
     const int offset = (gid.x * (SCAN_THREADS / WaveGetLaneCount()) + WAVE_INDEX) * threadBlocks;
-    const int waveOffset = WAVE_INDEX * WaveGetLaneCount();
     
-    for (int i = WaveGetLaneIndex(); i < threadBlocks; i += WaveGetLaneCount())
+    for (int i = WaveGetLaneIndex(); i < tBlocksEnd; i += WaveGetLaneCount())
     {
-        g_scan[WaveGetLaneIndex() + waveOffset] = b_passHist[i + offset];
-        g_scan[circularLaneShift + waveOffset] = g_scan[WaveGetLaneIndex() + waveOffset] +
-            WavePrefixSum(g_scan[WaveGetLaneIndex() + waveOffset]);
-        b_passHist[i + offset] = (WaveGetLaneIndex() ? g_scan[WaveGetLaneIndex() + waveOffset] : 0) + aggregate;
-        aggregate += WaveReadLaneAt(g_scan[WaveGetLaneIndex() + waveOffset], 0);
+        uint t;
+        if (i < threadBlocks)
+            t = b_passHist[i + offset];
+        t += WavePrefixSum(t);
+        const int index = circularLaneShift + (i & ~laneMask);
+        if (index < threadBlocks)
+            b_passHist[index + offset] = (WaveGetLaneIndex() != laneMask ? t : 0) + aggregate;
+        aggregate += WaveReadLaneAt(t, laneMask);
     }
 }
 
@@ -163,6 +165,7 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
         for (int i = WaveGetLaneIndex() + WAVE_INDEX * RADIX; i < waveHistEnd; i += WaveGetLaneCount())
             g_waveHists[i] = 0;
     }
+    GroupMemoryBarrierWithGroupSync();
     
     if (gid.x != e_threadBlocks - 1)
     {
@@ -195,9 +198,12 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 for (int wavePart = 0; wavePart < waveParts; ++wavePart)
                 {
                     //%lanemask_le, but gross
-                    const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) << 5) - 1 ? 0xffffffff :
-                        WaveGetLaneIndex() >= (wavePart << 5) ? ((1 << (WaveGetLaneIndex() & 31) + 1) - 1) : 0;
-                    bits += countbits(waveFlags[wavePart] & leMask);
+                    if (WaveGetLaneIndex() >= (wavePart << 5))
+                    {
+                        const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) << 5) - 1 ? 0xffffffff :
+                            (1 << (WaveGetLaneIndex() & 31) + 1) - 1;
+                        bits += countbits(waveFlags[wavePart] & leMask);
+                    }
                 }
                     
                 const int index = (keys[i] >> e_radixShift & RADIX_MASK) + (WAVE_INDEX * RADIX);
@@ -207,9 +213,9 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                     for (int wavePart = 0; wavePart < waveParts; ++wavePart)
                         g_waveHists[index] += countbits(waveFlags[wavePart]);
                 }
+                GroupMemoryBarrierWithGroupSync();
             }
         }
-        GroupMemoryBarrierWithGroupSync();
         
         //exclusive prefix sum across the histograms
         if (gtid.x < RADIX)
@@ -290,36 +296,40 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
     }
     else
     {
-        GroupMemoryBarrierWithGroupSync();
-        
         //perform the sort on the final partition slightly differently 
         //to handle input sizes not perfect multiples of the partition
         const uint waveParts = WaveGetLaneCount() / 32;
-        for (int i = gtid.x + PARTITION_START; i < e_numKeys; i += DS_THREADS)
+        for (int i = gtid.x + PARTITION_START; i < PARTITION_START + PARTITION_SIZE; i += DS_THREADS)
         {
             const uint key = b_sort[i];
             uint4 waveFlags = 0xffffffff;
-            for (int k = e_radixShift; k < e_radixShift + RADIX_LOG; ++k)
-            {
-                const bool t = key >> k & 1;
-                const uint4 ballot = WaveActiveBallot(t);
-                for (int wavePart = 0; wavePart < waveParts; ++wavePart)
-                    waveFlags[wavePart] &= (t ? 0 : 0xffffffff) ^ ballot[wavePart];
-            }
-            
             uint offset;
             uint bits = 0;
-            for (int wavePart = 0; wavePart < waveParts; ++wavePart)
+            
+            if (i < e_numKeys)
             {
-                //%lanemask_le, but gross
-                const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) << 5) - 1 ? 0xffffffff :
-                    WaveGetLaneIndex() >= (wavePart << 5) ? ((1 << (WaveGetLaneIndex() & 31) + 1) - 1) : 0;
-                bits += countbits(waveFlags[wavePart] & leMask);
+                for (int k = e_radixShift; k < e_radixShift + RADIX_LOG; ++k)
+                {
+                    const bool t = key >> k & 1;
+                    const uint4 ballot = WaveActiveBallot(t);
+                    for (int wavePart = 0; wavePart < waveParts; ++wavePart)
+                        waveFlags[wavePart] &= (t ? 0 : 0xffffffff) ^ ballot[wavePart];
+                }
+            
+                for (int wavePart = 0; wavePart < waveParts; ++wavePart)
+                {
+                    if (WaveGetLaneIndex() >= wavePart * 32)
+                    {
+                        const uint leMask = WaveGetLaneIndex() >= ((wavePart + 1) * 32) - 1 ? 0xffffffff :
+                            (1 << (WaveGetLaneIndex() & 31) + 1) - 1;
+                        bits += countbits(waveFlags[wavePart] & leMask);
+                    }
+                }
             }
             
             for (int k = 0; k < DS_THREADS / WaveGetLaneCount(); ++k)
             {
-                if (WAVE_INDEX == k)
+                if (WAVE_INDEX == k && i < e_numKeys)
                 {
                     offset = g_localHist[key >> e_radixShift & RADIX_MASK] + bits - 1;
                     if (bits == 1)
@@ -331,8 +341,11 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 GroupMemoryBarrierWithGroupSync();
             }
 
-            b_alt[offset] = key;
-            b_altPayload[offset] = b_sortPayload[i];
+            if (i < e_numKeys)
+            {
+                b_alt[offset] = key;
+                b_altPayload[offset] = b_sortPayload[i];
+            }
         }
     }
 }
