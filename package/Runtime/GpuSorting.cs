@@ -22,10 +22,6 @@ namespace GaussianSplatting.Runtime
         //Number of sorting passes required to sort a 32bit key, KEY_BITS / DEVICE_RADIX_SORT_BITS
         const uint DEVICE_RADIX_SORT_PASSES = 4;
 
-        //The number of scan threadblocks is dependent on the wave size of the hardware,
-        //which we poll a single time in the constructor
-        const uint DEVICE_RADIX_SORT_SCAN_THREADS = 64;
-        private uint scanThreadBlocks;
 
         public struct Args
         {
@@ -75,7 +71,6 @@ namespace GaussianSplatting.Runtime
         }
 
         readonly ComputeShader m_CS;
-        readonly int m_kernelPollWaveSize = -1;
         readonly int m_kernelInitDeviceRadixSort = -1;
         readonly int m_kernelUpsweep = -1;
         readonly int m_kernelScan = -1;
@@ -90,59 +85,25 @@ namespace GaussianSplatting.Runtime
             m_CS = cs;
             if (cs)
             {
-                m_kernelPollWaveSize = cs.FindKernel("PollWaveSize");
                 m_kernelInitDeviceRadixSort = cs.FindKernel("InitDeviceRadixSort");
                 m_kernelUpsweep = cs.FindKernel("Upsweep");
                 m_kernelScan = cs.FindKernel("Scan");
                 m_kernelDownsweep = cs.FindKernel("Downsweep");
             }
 
-            m_Valid = m_kernelPollWaveSize >= 0 &&
-                      m_kernelInitDeviceRadixSort >= 0 &&
+            m_Valid = m_kernelInitDeviceRadixSort >= 0 &&
                       m_kernelUpsweep >= 0 &&
                       m_kernelScan >= 0 &&
                       m_kernelDownsweep >= 0;
             if (m_Valid)
             {
-                if (!cs.IsSupported(m_kernelPollWaveSize) ||
-                    !cs.IsSupported(m_kernelInitDeviceRadixSort) ||
+                if (!cs.IsSupported(m_kernelInitDeviceRadixSort) ||
                     !cs.IsSupported(m_kernelUpsweep) ||
                     !cs.IsSupported(m_kernelScan) ||
                     !cs.IsSupported(m_kernelDownsweep))
                 {
                     m_Valid = false;
                 }
-            }
-
-            //poll the wave size
-            if (m_Valid)
-            {
-                m_Valid = PollWaveSize(cs);
-            }
-        }
-
-        private bool PollWaveSize(ComputeShader _cs)
-        {
-            //Create a single element buffer to poll the waveSize
-            ComputeBuffer temp = new ComputeBuffer(1, sizeof(uint));
-            _cs.SetBuffer(m_kernelPollWaveSize, "b_polling", temp);
-            _cs.Dispatch(m_kernelPollWaveSize, 1, 1, 1);
-
-            uint[] waveSize = new uint[1];
-            temp.GetData(waveSize);
-            temp.Dispose();
-
-            if (waveSize[0] > 128)
-            {
-                //WaveActiveBallot will fail
-                return false;
-            }
-            else
-            {
-                //scanThreadBlocks is only depedent on the waveSize, and will never change once initialized
-                scanThreadBlocks = DEVICE_RADIX_SORT_RADIX * waveSize[0] / DEVICE_RADIX_SORT_SCAN_THREADS;
-                scanThreadBlocks = scanThreadBlocks > DEVICE_RADIX_SORT_RADIX ? DEVICE_RADIX_SORT_RADIX : scanThreadBlocks;
-                return true;
             }
         }
 
@@ -204,7 +165,7 @@ namespace GaussianSplatting.Runtime
                 cmd.DispatchCompute(m_CS, m_kernelUpsweep, (int)constants.threadBlocks, 1, 1);
 
                 // Scan
-                cmd.DispatchCompute(m_CS, m_kernelScan, (int)scanThreadBlocks, 1, 1);
+                cmd.DispatchCompute(m_CS, m_kernelScan, (int)DEVICE_RADIX_SORT_RADIX, 1, 1);
 
                 // Downsweep
                 cmd.SetComputeBufferParam(m_CS, m_kernelDownsweep, "b_sort", srcKeyBuffer);

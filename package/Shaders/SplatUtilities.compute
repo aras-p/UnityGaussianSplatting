@@ -19,7 +19,6 @@
 
 // DeviceRadixSort
 #pragma kernel InitDeviceRadixSort
-#pragma kernel PollWaveSize
 #pragma kernel Upsweep
 #pragma kernel Scan
 #pragma kernel Downsweep
