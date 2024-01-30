@@ -24,8 +24,11 @@
  ******************************************************************************/
 
 //General macros 
-#define PARTITION_SIZE      7680U   //size of a partition tile
-#define MAX_DS_SMEM         8192U
+#define PARTITION_SIZE      3840U   //size of a partition tile
+
+#define UPSWEEP_THREADS     128U    //The number of threads in a Upsweep threadblock
+#define SCAN_THREADS        128U    //The number of threads in a Scan threadblock
+#define DS_THREADS          256U    //The number of threads in a Downsweep threadblock
 
 #define RADIX               256U    //Number of digit bins
 #define RADIX_MASK          255U    //Mask of digit bins
@@ -35,18 +38,20 @@
 #define HALF_RADIX          128U    
 #define HALF_MASK           127U
 
-#define WAVE_INDEX          (gtid.x / WaveGetLaneCount())
-#define PARTITION_START     (gid.x * PARTITION_SIZE)
-
-#define UPSWEEP_THREADS     128U    //The number of threads in a Upsweep threadblock
-#define SCAN_THREADS        128U    //The number of threads in a Scan threadblock
-#define DS_THREADS          512U    //The number of threads in a Downsweep threadblock
+#define WAVE_INDEX          (gtid.x / WaveGetLaneCount())                   //The wave that a thread belongs to
+#define PARTITION_START     (gid.x * PARTITION_SIZE)                        //The start of threadblock partition tile
 
 //For the downsweep kernels
-#define DS_KEYS_PER_THREAD  15U                                         //The number of keys per thread in BinningPass threadblock
-#define DS_WAVE_PART_SIZE   480U                                        //The subpartition size of a single wave in a BinningPass threadblock
-#define DS_WAVE_PART_START  (WAVE_INDEX * DS_WAVE_PART_SIZE)            //The starting offset of a subpartition tile
-#define DS_HISTS_SIZE       (DS_THREADS / WaveGetLaneCount() * RADIX)   //The total size of all wave histograms in shared memory //TODO rename this
+#define DS_KEYS_PER_THREAD  15U                                             //The number of keys per thread in a Downsweep Threadblock
+#define MAX_DS_SMEM         4096U                                           //shared memory for downsweep kernel
+#define DS_WGE16_PART_SIZE  (DS_KEYS_PER_THREAD * WaveGetLaneCount())       //The size of a wave partition for wave size 16 or greater
+#define DS_WGE16_PART_START (WAVE_INDEX * DS_WGE16_PART_SIZE)               //The starting offset of a wave partition for wave size 16 or greater
+#define DS_WGE16_HISTS_SIZE (DS_THREADS / WaveGetLaneCount() * RADIX)       //The total size of all wave histograms in shared memory for wave size 16 or greater
+
+#define DS_WLT16_PART_SIZE  (DS_KEYS_PER_THREAD * WaveGetLaneCount() * serialIterations)    //The size of a "combined" wave partition for wave size less than 16
+#define DS_WLT16_PART_START ((WAVE_INDEX / serialIterations * DS_WLT16_PART_SIZE) + \
+                            ((WAVE_INDEX % serialIterations) * WaveGetLaneCount()))         //The starting offset of a "combined" wave partition for wave size less than 16
+#define DS_WLT16_HISTS_SIZE MAX_DS_SMEM                                                     //The total size of all wave histograms in shared memory for wave size less than 16
 
 cbuffer cbParallelSort : register(b0)
 {
@@ -156,7 +161,7 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             {
                 if ((i & ((j << laneLog) - 1)) >= j)
                 {
-                    if (i < (j << laneLog) - 1)
+                    if (i < (j << laneLog))
                     {
                         InterlockedAdd(b_globalHist[i + deviceOffset],
                             WaveReadLaneAt(g_upsweepHist[((i >> offset) << offset) - 1], 0) +
@@ -184,7 +189,7 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 
 //Scan along the spine of the upsweep
 [numthreads(SCAN_THREADS, 1, 1)]
-void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
+void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
     if (WaveGetLaneCount() >= 16)
     {
@@ -207,7 +212,7 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             b_passHist[circularLaneShift + (i & ~laneMask) + offset] = (WaveGetLaneIndex() != laneMask ? g_scanMem[gtid.x] : 0) +
                 (gtid.x >= WaveGetLaneCount() ? WaveReadLaneAt(g_scanMem[gtid.x - 1], 0) : 0) + aggregate;
 
-            aggregate += g_scanMem[UPSWEEP_THREADS - 1];
+            aggregate += g_scanMem[SCAN_THREADS - 1];
             GroupMemoryBarrierWithGroupSync();
         }
         
@@ -225,7 +230,7 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
         if (index < e_threadBlocks)
         {
             b_passHist[index + offset] = (WaveGetLaneIndex() != laneMask ? g_scanMem[gtid.x] : 0) +
-                (gtid.x >= WaveGetLaneCount() ? WaveReadLaneAt(g_scanMem[gtid.x - 1], 0) : 0) + aggregate;
+                (gtid.x >= WaveGetLaneCount() ? g_scanMem[(gtid.x & ~laneMask) - 1] : 0) + aggregate;
         }
     }
 
@@ -258,10 +263,10 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 {
                     if ((i & ((j << laneLog) - 1)) >= j)
                     {
-                        if (i < (j << laneLog) - 1)
+                        if (i < (j << laneLog))
                         {
                             b_passHist[i + k * SCAN_THREADS + deviceOffset] = WaveReadLaneAt(g_scanMem[((i >> offset) << offset) - 1], 0) +
-                            ((i & (j - 1)) ? g_scanMem[i - 1] : 0) + aggregate;
+                                ((i & (j - 1)) ? g_scanMem[i - 1] : 0) + aggregate;
                         }
                         else
                         {
@@ -280,7 +285,7 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                             ((i & (j - 1)) ? g_scanMem[i - 1] : 0) + aggregate;
             }
             
-            aggregate += WaveReadLaneAt(g_scanMem[SCAN_THREADS - 1], 0);
+            aggregate += WaveReadLaneAt(g_scanMem[SCAN_THREADS - 1], 0) + WaveReadLaneAt(g_scanMem[(((SCAN_THREADS - 1) >> offset) << offset) - 1], 0);
             GroupMemoryBarrierWithGroupSync();
         }
         
@@ -307,7 +312,7 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             {
                 if ((i & ((j << laneLog) - 1)) >= j)
                 {
-                    if (i < (j << laneLog) - 1)
+                    if (i < (j << laneLog))
                     {
                         b_passHist[i + k * SCAN_THREADS + deviceOffset] = WaveReadLaneAt(g_scanMem[((i >> offset) << offset) - 1], 0) +
                             ((i & (j - 1)) ? g_scanMem[i - 1] : 0) + aggregate;
@@ -325,30 +330,30 @@ void Scan(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
 }
 
 [numthreads(DS_THREADS, 1, 1)]
-void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
+void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
-    if (gid.x != e_threadBlocks - 1)
+    if (gid.x < e_threadBlocks - 1)
     {
         uint keys[DS_KEYS_PER_THREAD];
         uint offsets[DS_KEYS_PER_THREAD];
         uint exclusiveWaveReduction;
         
-        //Load keys into registers
-        [unroll]
-        for (uint i = 0, t = WaveGetLaneIndex() + DS_WAVE_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
-            keys[i] = b_sort[t];
-        
         if (WaveGetLaneCount() >= 16)
         {
+            //Load keys into registers
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WGE16_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
+                keys[i] = b_sort[t];
+            
             //Clear histogram memory
             {
-                const uint downsweepHists = DS_HISTS_SIZE;
+                const uint downsweepHists = DS_WGE16_HISTS_SIZE;
                 for (uint i = gtid.x; i < downsweepHists; i += DS_THREADS)
                     g_dsMem[i] = 0;
             }
             GroupMemoryBarrierWithGroupSync();
 
-            //Warp Level Multisplit, should support SIMD width up to 128
+            //Warp Level Multisplit
             {
                 const uint waveParts = (WaveGetLaneCount() + 31) / 32;
                 uint4 waveFlags;
@@ -356,7 +361,7 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 [unroll]
                 for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
                 {
-                    waveFlags = 0xffffffff;
+                    waveFlags = (WaveGetLaneCount() & 31) ? (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
 
                     for (uint k = e_radixShift; k < e_radixShift + RADIX_LOG; ++k)
                     {
@@ -398,7 +403,7 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 if (gtid.x < RADIX)
                 {
                     reduction = g_dsMem[gtid.x];
-                    for (uint i = gtid.x + RADIX; i < DS_HISTS_SIZE; i += RADIX)
+                    for (uint i = gtid.x + RADIX; i < DS_WGE16_HISTS_SIZE; i += RADIX)
                     {
                         reduction += g_dsMem[i];
                         g_dsMem[i] = reduction - g_dsMem[i];
@@ -444,40 +449,80 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             //take advantage of barrier
             exclusiveWaveReduction = g_dsMem[gtid.x];
             GroupMemoryBarrierWithGroupSync();
+            
+            //scatter keys into shared memory
+            for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
+                g_dsMem[offsets[i]] = keys[i];
+        
+            if (gtid.x < RADIX)
+                g_dsMem[gtid.x + PARTITION_SIZE] = b_globalHist[gtid.x + (e_radixShift << 5)] + b_passHist[gtid.x * e_threadBlocks + gid.x] - exclusiveWaveReduction;
+            GroupMemoryBarrierWithGroupSync();
+        
+            //scatter runs of keys into device memory, 
+            //store the scatter location in the key register to reuse for the payload
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WGE16_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
+            {
+                keys[i] = g_dsMem[(g_dsMem[t] >> e_radixShift & RADIX_MASK) + PARTITION_SIZE] + t;
+                b_alt[keys[i]] = g_dsMem[t];
+            }
+            GroupMemoryBarrierWithGroupSync();
+        
+            //Scatter payloads directly into shared memory
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WGE16_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
+                g_dsMem[offsets[i]] = b_sortPayload[t];
+            GroupMemoryBarrierWithGroupSync();
+        
+            //Scatter runs of payloads into device memory
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WGE16_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
+                b_altPayload[keys[i]] = g_dsMem[t];
         }
         
         if (WaveGetLaneCount() < 16)
         {
-            //clear shared memory
-            for (uint i = gtid.x; i < MAX_DS_SMEM; i += DS_THREADS)
+            const uint serialIterations = (DS_THREADS / WaveGetLaneCount() + 31) / 32;
+            
+            //Load keys into registers
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WLT16_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount() * serialIterations)
+                keys[i] = b_sort[t];
+            
+            //clear shared memory, max histogram size is divided by two because we are bitpacking
+            for (uint i = gtid.x; i < DS_WLT16_HISTS_SIZE; i += DS_THREADS)
                 g_dsMem[i] = 0;
             GroupMemoryBarrierWithGroupSync();
             
-            uint waveFlag;
-            uint leMask = (1U << (WaveGetLaneIndex() + 1)) - 1; //works because we are guarunteeing that waves < 32, else 1 << 32 breaks
-            leMask = leMask ? leMask : 0xffffffff; //remove this later, safety for when testing with wave width 32+
-            
-            //if wave == 4 this will be serialized, as there is not enough room
-            [unroll]
-            for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
             {
-                waveFlag = 0xffffffff;
-                
-                for (uint k = e_radixShift; k < e_radixShift + RADIX_LOG; ++k)
+                uint waveFlag;
+                uint leMask = (1U << (WaveGetLaneIndex() + 1)) - 1; //for full agnostic add ternary
+            
+                [unroll]
+                for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
                 {
-                    const bool t = keys[i] >> k & 1;
-                    waveFlag &= (t ? 0 : 0xffffffff) ^ WaveActiveBallot(t);
-                }
+                    waveFlag = (1U << WaveGetLaneCount()) - 1; //for full agnostic add ternary and uint4
                 
-                uint bits = countbits(waveFlag & leMask);
-                const uint index = (keys[i] >> (e_radixShift + 1) & HALF_MASK) + (WAVE_INDEX * HALF_RADIX);
+                    for (uint k = e_radixShift; k < e_radixShift + RADIX_LOG; ++k)
+                    {
+                        const bool t = keys[i] >> k & 1;
+                        waveFlag &= (t ? 0 : 0xffffffff) ^ (uint) WaveActiveBallot(t);
+                    }
                 
-                offsets[i] = (g_dsMem[index] >> ((keys[i] >> e_radixShift & 1) ? 16 : 0) & 0xffff) + bits - 1;
+                    uint bits = countbits(waveFlag & leMask);
+                    const uint index = (keys[i] >> (e_radixShift + 1) & HALF_MASK) + (WAVE_INDEX / serialIterations * HALF_RADIX);
                     
-                GroupMemoryBarrierWithGroupSync();
-                if (bits == 1)
-                    InterlockedAdd(g_dsMem[index], countbits(waveFlag) << ((keys[i] >> e_radixShift & 1) ? 16 : 0));
-                GroupMemoryBarrierWithGroupSync();
+                    for (uint k = 0; k < serialIterations; ++k)
+                    {
+                        if ((WAVE_INDEX % serialIterations) == k)
+                            offsets[i] = (g_dsMem[index] >> ((keys[i] >> e_radixShift & 1) ? 16 : 0) & 0xffff) + bits - 1;
+                    
+                        GroupMemoryBarrierWithGroupSync();
+                        if ((WAVE_INDEX % serialIterations) == k && bits == 1)
+                            InterlockedAdd(g_dsMem[index], countbits(waveFlag) << ((keys[i] >> e_radixShift & 1) ? 16 : 0));
+                        GroupMemoryBarrierWithGroupSync();
+                    }
+                }
             }
             
             //inclusive/exclusive prefix sum up the histograms,
@@ -487,17 +532,13 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
                 if (gtid.x < HALF_RADIX)
                 {
                     reduction = g_dsMem[gtid.x];
-                    for (uint i = gtid.x + HALF_RADIX; i < MAX_DS_SMEM; i += HALF_RADIX)
+                    for (uint i = gtid.x + HALF_RADIX; i < DS_WLT16_HISTS_SIZE; i += HALF_RADIX)
                     {
                         reduction += g_dsMem[i];
                         g_dsMem[i] = reduction - g_dsMem[i];
                     }
-                    g_dsMem[gtid.x] = reduction;
+                    g_dsMem[gtid.x] = reduction + (reduction << 16);
                 }
-                GroupMemoryBarrierWithGroupSync();
-
-                if (gtid.x < HALF_RADIX)
-                    g_dsMem[gtid.x] += g_dsMem[gtid.x] << 16;
                 
                 uint shift = 1;
                 for (uint j = RADIX >> 2; j > 0; j >>= 1)
@@ -536,9 +577,9 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             }
             
             //Update offsets
-            if (gtid.x >= WaveGetLaneCount())
+            if (gtid.x >= WaveGetLaneCount() * serialIterations)
             {
-                const uint t = WAVE_INDEX * HALF_RADIX;
+                const uint t = WAVE_INDEX / serialIterations * HALF_RADIX;
                 [unroll]
                 for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
                 {
@@ -556,36 +597,36 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
             if (gtid.x < RADIX)
                 exclusiveWaveReduction = g_dsMem[gtid.x >> 1] >> ((gtid.x & 1) ? 16 : 0) & 0xffff;
             GroupMemoryBarrierWithGroupSync();
+            
+            //scatter keys into shared memory
+            for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
+                g_dsMem[offsets[i]] = keys[i];
+        
+            if (gtid.x < RADIX)
+                g_dsMem[gtid.x + PARTITION_SIZE] = b_globalHist[gtid.x + (e_radixShift << 5)] + b_passHist[gtid.x * e_threadBlocks + gid.x] - exclusiveWaveReduction;
+            GroupMemoryBarrierWithGroupSync();
+        
+            //scatter runs of keys into device memory, 
+            //store the scatter location in the key register to reuse for the payload
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WLT16_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount() * serialIterations)
+            {
+                keys[i] = g_dsMem[(g_dsMem[t] >> e_radixShift & RADIX_MASK) + PARTITION_SIZE] + t;
+                b_alt[keys[i]] = g_dsMem[t];
+            }
+            GroupMemoryBarrierWithGroupSync();
+        
+            //Scatter payloads directly into shared memory
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WLT16_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount() * serialIterations)
+                g_dsMem[offsets[i]] = b_sortPayload[t];
+            GroupMemoryBarrierWithGroupSync();
+        
+            //Scatter runs of payloads into device memory
+            [unroll]
+            for (uint i = 0, t = WaveGetLaneIndex() + DS_WLT16_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount() * serialIterations)
+                b_altPayload[keys[i]] = g_dsMem[t];
         }
-        
-        //scatter keys into shared memory
-        for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
-            g_dsMem[offsets[i]] = keys[i];
-        
-        if (gtid.x < RADIX)
-            g_dsMem[gtid.x + PARTITION_SIZE] = b_globalHist[gtid.x + (e_radixShift << 5)] + b_passHist[gtid.x * e_threadBlocks + gid.x] - exclusiveWaveReduction;
-        GroupMemoryBarrierWithGroupSync();
-        
-        //scatter runs of keys into device memory, 
-        //store the scatter location in the key register to reuse for the payload
-        [unroll]
-        for (uint i = 0, t = WaveGetLaneIndex() + DS_WAVE_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
-        {
-            keys[i] = g_dsMem[(g_dsMem[t] >> e_radixShift & RADIX_MASK) + PARTITION_SIZE] + t;
-            b_alt[keys[i]] = g_dsMem[t];
-        }
-        GroupMemoryBarrierWithGroupSync();
-        
-        //Scatter payloads directly into shared memory
-        [unroll]
-        for (uint i = 0, t = WaveGetLaneIndex() + DS_WAVE_PART_START + PARTITION_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
-            g_dsMem[offsets[i]] = b_sortPayload[t];
-        GroupMemoryBarrierWithGroupSync();
-        
-        //Scatter runs of payloads into device memory
-        [unroll]
-        for (uint i = 0, t = WaveGetLaneIndex() + DS_WAVE_PART_START; i < DS_KEYS_PER_THREAD; ++i, t += WaveGetLaneCount())
-            b_altPayload[keys[i]] = g_dsMem[t];
     }
     
     //perform the sort on the final partition slightly differently 
@@ -600,8 +641,11 @@ void Downsweep(int3 gtid : SV_GroupThreadID, int3 gid : SV_GroupID)
         const uint waveParts = (WaveGetLaneCount() + 31) / 32;
         for (int i = gtid.x + PARTITION_START; i < PARTITION_START + PARTITION_SIZE; i += DS_THREADS)
         {
-            const uint key = b_sort[i];
-            uint4 waveFlags = 0xffffffff;
+            uint key;
+            if (i < e_numKeys)
+                key = b_sort[i];
+            
+            uint4 waveFlags = (WaveGetLaneCount() & 31) ? (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
             uint offset;
             uint bits = 0;
             

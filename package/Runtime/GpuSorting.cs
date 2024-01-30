@@ -11,7 +11,7 @@ namespace GaussianSplatting.Runtime
     public class GpuSorting
     {
         //The size of a threadblock partition in the sort
-        const uint DEVICE_RADIX_SORT_PARTITION_SIZE = 7680;
+        const uint DEVICE_RADIX_SORT_PARTITION_SIZE = 3840;
 
         //The size of our radix in bits
         const uint DEVICE_RADIX_SORT_BITS = 8;
