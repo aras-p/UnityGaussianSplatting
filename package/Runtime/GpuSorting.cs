@@ -6,7 +6,7 @@ namespace GaussianSplatting.Runtime
 {
     // GPU (uint key, uint payload) 8 bit-LSD radix sort, using reduce-then-scan
     // Copyright Thomas Smith 2023, MIT license
-    // https://github.com/b0nes164/ShaderOneSweep this repo will be deprecated soon, see its readme!
+    // https://github.com/b0nes164/GPUSorting
 
     public class GpuSorting
     {
@@ -21,7 +21,6 @@ namespace GaussianSplatting.Runtime
 
         //Number of sorting passes required to sort a 32bit key, KEY_BITS / DEVICE_RADIX_SORT_BITS
         const uint DEVICE_RADIX_SORT_PASSES = 4;
-
 
         public struct Args
         {
@@ -116,10 +115,6 @@ namespace GaussianSplatting.Runtime
             public uint radixShift;                     // The radix shift value for the current pass
             public uint threadBlocks;                   // threadBlocks
             public uint padding0;                       // Padding - unused
-            public uint padding1;                       // Padding - unused
-            public uint padding2;                       // Padding - unused
-            public uint padding3;                       // Padding - unused
-            public uint padding4;                       // Padding - unused
         }
 
         public void Dispatch(CommandBuffer cmd, Args args)
