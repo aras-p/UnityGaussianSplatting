@@ -18,7 +18,8 @@ rotation of spherical harmonics).
 
 <img align="right" src="Images/shotEdit.jpg" width="250px">
 
-By pressing "Edit" button in the inspector, or the splat edit tool in the scene view toolbar,
+By pressing "Edit" button in the inspector, or the splat edit tool in the scene view toolbar ("blob"
+icon atop of editing tools),
 you can go into manual splat selection mode, that works very similar to other rectangle selection
 tools in Unity:
 - Click-drag in the scene view selects the splats in the rectangle.
