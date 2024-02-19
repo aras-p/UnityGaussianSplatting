@@ -67,9 +67,9 @@ at "Medium" asset quality level (282MB asset file):
 
 * Windows (NVIDIA RTX 3080 Ti):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
-  * Unity, DX12 or Vulkan: 8.1ms (123FPS) - 4.55ms rendering, 2.37ms sorting, 0.78ms splat view calc. 1.3GB VRAM usage.
+  * Unity, DX12 or Vulkan: 6.8ms (147FPS) - 4.5ms rendering, 1.1ms sorting, 0.8ms splat view calc. 1.3GB VRAM usage.
 * Mac (Apple M1 Max):
-  * Unity, Metal: 23.6ms (42FPS).
+  * Unity, Metal: 21.5ms (46FPS).
 
 Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 48 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).
@@ -80,9 +80,7 @@ per splat (for sorting, caching view dependent data etc.).
 The code I wrote for this is under MIT license. The project also uses several 3rd party libraries:
 
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
-- "Ffx" GPU sorting code is based on
-  [AMD FidelityFX ParallelSort](https://github.com/GPUOpen-Effects/FidelityFX-ParallelSort), MIT license,
-  (c) 2020-2021 Advanced Micro Devices, Inc. Ported to Unity by me.
+- "DeviceRadixSort" GPU sorting code contributed by Thomas Smith ([#82](https://github.com/aras-p/UnityGaussianSplatting/pull/82)).
 
 However, keep in mind that the [license of the original paper implementation](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/LICENSE.md)
 says that the official _training_ software for the Gaussian Splats is for educational / academic / non-commercial
