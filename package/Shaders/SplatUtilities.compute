@@ -17,19 +17,18 @@
 #pragma kernel CSExportData
 #pragma kernel CSCopySplats
 
-// FidelityFX GPU sorting
-#pragma kernel FfxParallelSortReduce
-#pragma kernel FfxParallelSortScanAdd
-#pragma kernel FfxParallelSortScan
-#pragma kernel FfxParallelSortScatter
-#pragma kernel FfxParallelSortCount
+// DeviceRadixSort
+#pragma kernel InitDeviceRadixSort
+#pragma kernel Upsweep
+#pragma kernel Scan
+#pragma kernel Downsweep
 
 // GPU sorting needs wave ops
 #pragma require wavebasic
 
 #pragma use_dxc
 
-#include "GpuSortFidelityFX.hlsl"
+#include "DeviceRadixSort.hlsl"
 #include "GaussianSplatting.hlsl"
 
 float4x4 _MatrixObjectToWorld;
