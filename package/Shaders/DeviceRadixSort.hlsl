@@ -119,6 +119,11 @@ inline uint DeviceOffsetWLT16(uint gtid, uint gid, uint _serialIterations)
     return SharedOffsetWLT16(gtid, _serialIterations) + gid * PART_SIZE;
 }
 
+inline uint GlobalHistOffset()
+{
+    return e_radixShift << 5;
+}
+
 inline uint WaveHistsSizeWGE16()
 {
     return DS_DIM / WaveGetLaneCount() * RADIX;
@@ -175,13 +180,13 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         GroupMemoryBarrierWithGroupSync();
         
         //atomically add to global histogram
-        const uint deviceOffset = e_radixShift << 5;
+        const uint globalHistOffset = GlobalHistOffset();
         const uint laneMask = WaveGetLaneCount() - 1;
         const uint circularLaneShift = WaveGetLaneIndex() + 1 & laneMask;
         for (uint i = gtid.x; i < RADIX; i += US_DIM)
         {
             const uint index = circularLaneShift + (i & ~laneMask);
-            InterlockedAdd(b_globalHist[index + deviceOffset],
+            InterlockedAdd(b_globalHist[index + globalHistOffset],
                 (WaveGetLaneIndex() != laneMask ? g_us[i] : 0) +
                 (i >= WaveGetLaneCount() ? WaveReadLaneAt(g_us[i - 1], 0) : 0));
         }
@@ -190,14 +195,16 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
     //Exclusive Brent-Kung with fused upsweep downsweep
     if (WaveGetLaneCount() < 16)
     {
-        const uint deviceOffset = e_radixShift << 5;
+        const uint globalHistOffset = GlobalHistOffset();
         for (uint i = gtid.x; i < RADIX; i += US_DIM)
             g_us[i] += WavePrefixSum(g_us[i]);
         
         if (gtid.x < WaveGetLaneCount())
         {
-            InterlockedAdd(b_globalHist[gtid.x + deviceOffset],
-                gtid.x ? g_us[gtid.x - 1] : 0);
+            const uint circularLaneShift = WaveGetLaneIndex() + 1 &
+                WaveGetLaneCount() - 1;
+            InterlockedAdd(b_globalHist[circularLaneShift + globalHistOffset],
+                circularLaneShift ? g_us[gtid.x] : 0);
         }
         GroupMemoryBarrierWithGroupSync();
         
@@ -219,7 +226,7 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
                 {
                     if (i < (j << laneLog))
                     {
-                        InterlockedAdd(b_globalHist[i + deviceOffset],
+                        InterlockedAdd(b_globalHist[i + globalHistOffset],
                             WaveReadLaneAt(g_us[((i >> offset) << offset) - 1], 0) +
                             ((i & (j - 1)) ? g_us[i - 1] : 0));
                     }
@@ -239,7 +246,7 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         
         for (uint i = gtid.x + j; i < RADIX; i += US_DIM)
         {
-            InterlockedAdd(b_globalHist[i + deviceOffset],
+            InterlockedAdd(b_globalHist[i + globalHistOffset],
                 WaveReadLaneAt(g_us[((i >> offset) << offset) - 1], 0) +
                 ((i & (j - 1)) ? g_us[i - 1] : 0));
         }
@@ -308,6 +315,8 @@ void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         const uint partitions = e_threadBlocks / SCAN_DIM;
         const uint deviceOffset = gid.x * e_threadBlocks;
         const uint laneLog = countbits(WaveGetLaneCount() - 1);
+        const uint circularLaneShift = WaveGetLaneIndex() + 1 &
+                    WaveGetLaneCount() - 1;
         
         uint k = 0;
         for (; k < partitions; ++k)
@@ -317,8 +326,8 @@ void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             
             if (gtid.x < WaveGetLaneCount())
             {
-                b_passHist[gtid.x + k * SCAN_DIM + deviceOffset] =
-                    (gtid.x ? g_scan[gtid.x - 1] : 0) + aggregate;
+                b_passHist[circularLaneShift + k * SCAN_DIM + deviceOffset] =
+                    (circularLaneShift ? g_scan[gtid.x] : 0) + aggregate;
             }
             GroupMemoryBarrierWithGroupSync();
             
@@ -372,12 +381,12 @@ void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         {
             g_scan[gtid.x] = b_passHist[gtid.x + k * SCAN_DIM + deviceOffset];
             g_scan[gtid.x] += WavePrefixSum(g_scan[gtid.x]);
-            
-            if (gtid.x < WaveGetLaneCount())
-            {
-                b_passHist[gtid.x + k * SCAN_DIM + deviceOffset] =
-                    (gtid.x ? g_scan[gtid.x - 1] : 0) + aggregate;
-            }
+        }
+        
+        if (gtid.x < WaveGetLaneCount() && circularLaneShift < finalPartSize)
+        {
+            b_passHist[circularLaneShift + k * SCAN_DIM + deviceOffset] =
+                    (circularLaneShift ? g_scan[gtid.x] : 0) + aggregate;
         }
         GroupMemoryBarrierWithGroupSync();
         
@@ -450,7 +459,7 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
                 {
                     const bool t = keys[i] >> (k + e_radixShift) & 1;
                     const uint4 ballot = WaveActiveBallot(t);
-                    for (int wavePart = 0; wavePart < waveParts; ++wavePart)
+                    for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
                         waveFlags[wavePart] &= (t ? 0 : 0xffffffff) ^ ballot[wavePart];
                 }
                     
@@ -476,7 +485,6 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
                 }
                 GroupMemoryBarrierWithGroupSync();
             }
-            GroupMemoryBarrierWithGroupSync();
             
             //inclusive/exclusive prefix sum up the histograms
             //followed by exclusive prefix sum across the reductions
@@ -531,7 +539,7 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
                 g_ds[offsets[i]] = keys[i];
         
-            g_ds[gtid.x + PART_SIZE] = b_globalHist[gtid.x + (e_radixShift << 5)] +
+            g_ds[gtid.x + PART_SIZE] = b_globalHist[gtid.x + GlobalHistOffset()] +
                     b_passHist[gtid.x * e_threadBlocks + gid.x] - exclusiveWaveReduction;
             GroupMemoryBarrierWithGroupSync();
             
@@ -631,7 +639,7 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             for (uint j = RADIX >> 2; j > 0; j >>= 1)
             {
                 GroupMemoryBarrierWithGroupSync();
-                for (int i = gtid.x; i < j; i += DS_DIM)
+                for (uint i = gtid.x; i < j; i += DS_DIM)
                 {
                     g_ds[((((i << 1) + 2) << shift) - 1) >> 1] +=
                             g_ds[((((i << 1) + 1) << shift) - 1) >> 1] & 0xffff0000;
@@ -690,7 +698,7 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
             for (uint i = 0; i < DS_KEYS_PER_THREAD; ++i)
                 g_ds[offsets[i]] = keys[i];
         
-            g_ds[gtid.x + PART_SIZE] = b_globalHist[gtid.x + (e_radixShift << 5)] +
+            g_ds[gtid.x + PART_SIZE] = b_globalHist[gtid.x + GlobalHistOffset()] +
                     b_passHist[gtid.x * e_threadBlocks + gid.x] - exclusiveWaveReduction;
             GroupMemoryBarrierWithGroupSync();
         
@@ -732,13 +740,14 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         //load the global and pass histogram values into shared memory
         if (gtid.x < RADIX)
         {
-            g_ds[gtid.x] = b_globalHist[gtid.x + (e_radixShift << 5)] +
+            g_ds[gtid.x] = b_globalHist[gtid.x + GlobalHistOffset()] +
                 b_passHist[gtid.x * e_threadBlocks + gid.x];
         }
         GroupMemoryBarrierWithGroupSync();
         
         const uint waveParts = (WaveGetLaneCount() + 31) / 32;
-        for (int i = gtid.x + gid.x * PART_SIZE; i < (gid.x + 1) * PART_SIZE; i += DS_DIM)
+        const uint partEnd = (e_numKeys + DS_DIM - 1) / DS_DIM * DS_DIM;
+        for (uint i = gtid.x + gid.x * PART_SIZE; i < partEnd; i += DS_DIM)
         {
             uint key;
             if (i < e_numKeys)
@@ -757,7 +766,7 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
                 {
                     const bool t = key >> (k + e_radixShift) & 1;
                     const uint4 ballot = WaveActiveBallot(t);
-                    for (int wavePart = 0; wavePart < waveParts; ++wavePart)
+                    for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
                         waveFlags[wavePart] &= (t ? 0 : 0xffffffff) ^ ballot[wavePart];
                 }
             
@@ -772,16 +781,16 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
                 }
             }
             
-            for (int k = 0; k < DS_DIM / WaveGetLaneCount(); ++k)
+            for (uint k = 0; k < DS_DIM / WaveGetLaneCount(); ++k)
             {
                 if (getWaveIndex(gtid.x) == k && i < e_numKeys)
-                    offset = g_ds[key >> e_radixShift & RADIX_MASK] + bits;
+                    offset = g_ds[ExtractDigit(key)] + bits;
                 GroupMemoryBarrierWithGroupSync();
                 
                 if (getWaveIndex(gtid.x) == k && i < e_numKeys && bits == 0)
                 {
-                    for (int wavePart = 0; wavePart < waveParts; ++wavePart)
-                        g_ds[key >> e_radixShift & RADIX_MASK] += countbits(waveFlags[wavePart]);
+                    for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
+                        g_ds[ExtractDigit(key)] += countbits(waveFlags[wavePart]);
                 }
                 GroupMemoryBarrierWithGroupSync();
             }
