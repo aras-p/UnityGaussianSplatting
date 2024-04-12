@@ -662,6 +662,12 @@ namespace GaussianSplatting.Editor
                     chunkMaxshs = math.max(chunkMaxshs, s.shF);
                 }
 
+                // make sure bounds are not zero
+                chunkMaxpos = math.max(chunkMaxpos, chunkMinpos + 1.0e-5f);
+                chunkMaxscl = math.max(chunkMaxscl, chunkMinscl + 1.0e-5f);
+                chunkMaxcol = math.max(chunkMaxcol, chunkMincol + 1.0e-5f);
+                chunkMaxshs = math.max(chunkMaxshs, chunkMinshs + 1.0e-5f);
+
                 // store chunk info
                 GaussianSplatAsset.ChunkInfo info = default;
                 info.posX = new float2(chunkMinpos.x, chunkMaxpos.x);
