@@ -18,7 +18,7 @@ namespace GaussianSplatting.Editor
     [CanEditMultipleObjects]
     public class GaussianSplatRendererEditor : UnityEditor.Editor
     {
-        const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
+        const string kPrefExportBake = "irchslu.GaussianSplatting.ExportBakeTransform";
 
         SerializedProperty m_PropAsset;
         SerializedProperty m_PropSplatScale;

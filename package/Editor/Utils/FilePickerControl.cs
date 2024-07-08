@@ -12,7 +12,7 @@ namespace GaussianSplatting.Editor.Utils
 {
     public class FilePickerControl
     {
-        const string kLastPathPref = "nesnausk.utils.FilePickerLastPath";
+        const string kLastPathPref = "irchslu.utils.FilePickerLastPath";
         static Texture2D s_FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
         static Texture2D s_FileIcon => EditorGUIUtility.FindTexture(EditorResources.folderIconName);
         static GUIStyle s_StyleTextFieldText;
