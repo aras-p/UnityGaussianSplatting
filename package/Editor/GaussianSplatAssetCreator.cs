@@ -21,8 +21,8 @@ namespace GaussianSplatting.Editor
     {
         const string kProgressTitle = "Creating Gaussian Splat Asset";
         const string kCamerasJson = "cameras.json";
-        const string kPrefQuality = "nesnausk.GaussianSplatting.CreatorQuality";
-        const string kPrefOutputFolder = "nesnausk.GaussianSplatting.CreatorOutputFolder";
+        const string kPrefQuality = "irchslu.GaussianSplatting.CreatorQuality";
+        const string kPrefOutputFolder = "irchslu.GaussianSplatting.CreatorOutputFolder";
 
         enum DataQuality
         {

@@ -11,7 +11,7 @@ namespace GaussianSplatting.Editor
     [EditorToolContext("GaussianSplats", typeof(GaussianSplatRenderer)), Icon(k_IconPath)]
     class GaussianToolContext : EditorToolContext
     {
-        const string k_IconPath = "Packages/org.nesnausk.gaussian-splatting/Editor/Icons/GaussianContext.png";
+        const string k_IconPath = "Packages/org.irchslu.gaussian-splatting/Editor/Icons/GaussianContext.png";
 
         Vector2 m_MouseStartDragPos;
 
