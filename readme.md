@@ -1,3 +1,7 @@
+# IRC HSLU
+
+This is a customized version of the original Unity plugin by aras-p. The changes that we make are mostly experimental to see what works for us in implementing immersive experiences based on 3D Gaussian Splatting.
+
 # Gaussian Splatting playground in Unity
 
 SIGGRAPH 2023 had a paper "[**3D Gaussian Splatting for Real-Time Radiance Field Rendering**](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis
@@ -15,7 +19,10 @@ Status as of 2023 December is that I'm not planning on any significant further d
 
 :warning: Note: this is all _**a toy**_ that I'm just playing around with. If you file bugs or feature requests, I will most likely just ignore them. I told you so! :warning:
 
-Download or clone this repository, open `projects/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work),
+You can install the package via the Unity package manager by installing it via the URL `https://github.com/irc-hslu/UnityGaussianSplatting.git?path=/package`.
+
+
+As an alternative, you can also clone this repository, open `projects/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work),
 and open `GSTestScene` scene in there.
 
 Note that the project requires DX12 or Vulkan on Windows, i.e. **DX11 will not work**. This is **not tested at all on mobile/web**, and probably
