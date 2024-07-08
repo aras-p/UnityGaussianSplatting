@@ -120,15 +120,16 @@
         "com.unity.render-pipelines.core": "14.0.8"
       }
     },
-    "org.nesnausk.gaussian-splatting": {
-      "version": "file:../../../package",
+    "org.irchslu.gaussian-splatting": {
+      "version": "https://github.com/irc-hslu/UnityGaussianSplatting.git?path=/package",
       "depth": 0,
-      "source": "local",
+      "source": "git",
       "dependencies": {
         "com.unity.burst": "1.8.8",
         "com.unity.collections": "2.1.4",
         "com.unity.mathematics": "1.2.6"
-      }
+      },
+      "hash": "0a2ee21e541874064dd737b63b7b28d46dd37bdc"
     },
     "com.unity.modules.ai": {
       "version": "1.0.0",
