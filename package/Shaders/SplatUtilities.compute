@@ -44,6 +44,7 @@ RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
 
+
 // radix sort etc. friendly, see http://stereopsis.com/radix.html
 uint FloatToSortableUint(float f)
 {
@@ -80,6 +81,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 RWStructuredBuffer<SplatViewData> _SplatViewData;
 
 float _SplatScale;
+float _ContrastFactor;
+float _Hue;
+float _Saturation;
+float _Lightness;
+float3 _WhiteBalance;
 float _SplatOpacityScale;
 uint _SHOrder;
 uint _SHOnly;
@@ -99,6 +105,7 @@ StructuredBuffer<GaussianCutoutShaderData> _SplatCutouts;
 RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
+
 
 void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
 {
@@ -196,6 +203,11 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     float4 centerClipPos = mul(_MatrixVP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
     float splatScale = _SplatScale;
+    float contrastFactor = _ContrastFactor;
+    float hue = _Hue;
+    float saturation = _Saturation;
+    float lightness = _Lightness;
+    float3 whiteBalance = _WhiteBalance;
 
     // deleted?
     if (_SplatBitsValid)
@@ -238,7 +250,8 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         objViewDir = normalize(objViewDir);
 
         half4 col;
-        col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0);
+        col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0, contrastFactor,
+            hue, saturation, lightness, whiteBalance);
         col.a = min(splat.opacity * opacityScale, 65000);
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
