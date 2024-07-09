@@ -2,6 +2,14 @@
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
 
+
+half3 AdjustContrast(half3 color, float contrast)
+{
+    // Apply the contrast formula
+    return ((color - 0.5) * contrast + 0.5);
+}
+
+
 float InvSquareCentered01(float x)
 {
     x -= 0.5;
@@ -136,7 +144,90 @@ struct SplatSHData
     half3 col, sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, sh10, sh11, sh12, sh13, sh14, sh15;
 };
 
-half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder, bool onlySH)
+float Epsilon = 1e-10;
+
+float3 RGBtoHCV(in float3 RGB)
+{
+    // Based on work by Sam Hocevar and Emil Persson
+    float4 P = (RGB.g < RGB.b) ? float4(RGB.bg, -1.0, 2.0/3.0) : float4(RGB.gb, 0.0, -1.0/3.0);
+    float4 Q = (RGB.r < P.x) ? float4(P.xyw, RGB.r) : float4(RGB.r, P.yzx);
+    float C = Q.x - min(Q.w, Q.y);
+    float H = abs((Q.w - Q.y) / (6 * C + Epsilon) + Q.z);
+    return float3(H, C, Q.x);
+}
+
+float3 RGBtoHSL(in float3 RGB)
+{
+    float3 HCV = RGBtoHCV(RGB);
+    float L = HCV.z - HCV.y * 0.5;
+    float S = HCV.y / (1 - abs(L * 2 - 1) + Epsilon);
+    return float3(HCV.x, S, L);
+}
+float3 HUEtoRGB(in float H)
+{
+    float R = abs(H * 6 - 3) - 1;
+    float G = 2 - abs(H * 6 - 2);
+    float B = 2 - abs(H * 6 - 4);
+    return saturate(float3(R,G,B));
+}
+
+float3 HSLtoRGB(in float3 HSL)
+{
+    float3 RGB = HUEtoRGB(HSL.x);
+    float C = (1 - abs(2 * HSL.z - 1)) * HSL.y;
+    return (RGB - 0.5) * C + HSL.z;
+}
+
+float Luminance2(float3 color)
+{
+    float fmin = min(min(color.r, color.g), color.b);
+    float fmax = max(max(color.r, color.g), color.b);
+    return (fmax + fmin) / 2.0;
+}
+
+// Original code from https://www.shadertoy.com/view/lsSXW1
+float3 AdjustWhiteBalance(float3 color, float3 temperatureInKelvinsRgb, float blendFactor, float luminancePreservation)
+{
+    // Calculate original luminance
+    float originalLuminance = Luminance2(color);
+
+    // Blend original color with temperature-adjusted color
+    float3 blended = lerp(color, color * temperatureInKelvinsRgb, blendFactor);
+
+    // Convert blended color to HSL
+    float3 resultHSL = RGBtoHSL(blended);
+
+
+    // Preserve original luminance
+    float3 luminancePreservedRGB = HSLtoRGB(float3(resultHSL.x, resultHSL.y, originalLuminance));
+
+    // Final color with luminance preservation
+    return lerp(blended, luminancePreservedRGB, luminancePreservation);
+}
+
+float3 AdjustHue(float3 hsl, float hue)
+{
+    hsl.x += hue;
+    hsl.x = frac(hsl.x);
+    return hsl;
+}
+
+float3 AdjustSaturation(float3 hsl, float saturation)
+{
+    hsl.y += saturation;
+    hsl.y = saturate(hsl.y);
+    return hsl;
+}
+
+float3 AdjustLightness(float3 hsl, float lightness)
+{
+    hsl.z += lightness;
+    hsl.z = saturate(hsl.z);
+    return hsl;
+}
+
+half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder, bool onlySH, float contrastFactor,
+    float hue, float saturation, float lightness, float3 temperatureInKelvinsRgb)
 {
     dir *= -1;
 
@@ -144,8 +235,25 @@ half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder, bool onlySH)
 
     // ambient band
     half3 res = splat.col; // col = sh0 * SH_C0 + 0.5 is already precomputed
-    if (onlySH)
+
+    if (onlySH) {
         res = 0.5;
+    } else {
+
+        float wbBlendFactor = 0.5;
+        float wbLuminancePreservation = 0.75; 
+        if (temperatureInKelvinsRgb.r >= 0) {   
+            res = AdjustWhiteBalance(res, temperatureInKelvinsRgb, wbBlendFactor, wbLuminancePreservation);
+        }
+        float3 hsl = RGBtoHSL(res);
+        hsl = AdjustHue(hsl, hue);
+        hsl = AdjustSaturation(hsl, saturation);
+        hsl = AdjustLightness(hsl, lightness);
+        float3 hslAdjustedRgb = HSLtoRGB(hsl);
+        res = lerp(res, hslAdjustedRgb, 0.5);
+
+        res = AdjustContrast(res, contrastFactor);
+    }
     // 1st degree
     if (shOrder >= 1)
     {
@@ -175,6 +283,8 @@ half3 ShadeSH(SplatSHData splat, half3 dir, int shOrder, bool onlySH)
             }
         }
     }
+
+    
     return max(res, 0);
 }
 

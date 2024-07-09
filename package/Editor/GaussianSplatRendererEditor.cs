@@ -22,6 +22,12 @@ namespace GaussianSplatting.Editor
 
         SerializedProperty m_PropAsset;
         SerializedProperty m_PropSplatScale;
+        SerializedProperty m_ContrastFactor;
+        SerializedProperty m_Hue;
+        SerializedProperty m_Saturation;
+        SerializedProperty m_Lightness;
+        SerializedProperty m_AdjustWhiteBalance;
+        SerializedProperty m_WhiteBalance;
         SerializedProperty m_PropOpacityScale;
         SerializedProperty m_PropSHOrder;
         SerializedProperty m_PropSHOnly;
@@ -61,6 +67,12 @@ namespace GaussianSplatting.Editor
 
             m_PropAsset = serializedObject.FindProperty("m_Asset");
             m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
+            m_ContrastFactor = serializedObject.FindProperty("m_ContrastFactor");
+            m_Hue = serializedObject.FindProperty("m_Hue");
+            m_Saturation = serializedObject.FindProperty("m_Saturation");
+            m_Lightness = serializedObject.FindProperty("m_Lightness");
+            m_AdjustWhiteBalance = serializedObject.FindProperty("m_AdjustWhiteBalance");
+            m_WhiteBalance = serializedObject.FindProperty("m_WhiteBalance");
             m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
             m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
             m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
@@ -108,6 +120,15 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropSHOrder);
             EditorGUILayout.PropertyField(m_PropSHOnly);
             EditorGUILayout.PropertyField(m_PropSortNthFrame);
+            
+            EditorGUILayout.Space();
+            GUILayout.Label("Color Adjustments", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(m_ContrastFactor);
+            EditorGUILayout.PropertyField(m_Hue);
+            EditorGUILayout.PropertyField(m_Saturation);
+            EditorGUILayout.PropertyField(m_Lightness);
+            EditorGUILayout.PropertyField(m_AdjustWhiteBalance);
+            EditorGUILayout.PropertyField(m_WhiteBalance);
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
