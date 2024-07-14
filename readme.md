@@ -9,11 +9,12 @@ gaussian splat "model" file) in Unity.
 Everything in this repository is based on that "OG" gaussian splatting paper. Towards end of 2023, there's a ton of
 [new gaussian splatting research](https://github.com/MrNeRF/awesome-3D-gaussian-splatting) coming out; _none_ of that is in this project.
 
-Status as of 2023 December is that I'm not planning on any significant further developments.
+:warning: Status as of 2023 December: I'm not planning any significant further developments.
+
+:warning: The only platforms where this is known to work are "PC" (Windows, Mac, Linux) when using either D3D12, Metal or Vulkan graphics APIs.
+Anything else may or migth not work.
 
 ## Usage
-
-:warning: Note: this is all _**a toy**_ that I'm just playing around with. If you file bugs or feature requests, I will most likely just ignore them. I told you so! :warning:
 
 Download or clone this repository, open `projects/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work),
 and open `GSTestScene` scene in there.
