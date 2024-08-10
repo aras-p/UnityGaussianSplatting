@@ -12,7 +12,11 @@ Everything in this repository is based on that "OG" gaussian splatting paper. To
 :warning: Status as of 2023 December: I'm not planning any significant further developments.
 
 :warning: The only platforms where this is known to work are "PC" (Windows, Mac, Linux) when using either D3D12, Metal or Vulkan graphics APIs.
-Anything else may or migth not work.
+Anything else may or migth not work. There are known issues specifically with:
+- Anything related to virtual reality (VR, AR, XR, MR): #17
+- Anything using OpenGL or OpenGL ES: #26
+- WebGPU might work someday, but seems that today it does not quite have all the required graphics features yet: #65
+- Mobile may or might not work. Some iOS devices definitely do not work (#72), some Androids do not work either (#112)
 
 ## Usage
 
