@@ -466,9 +466,12 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
     uint exclusiveHistReduction;
     if (WaveGetLaneCount() >= 16)
     {
+        const uint laneIndex = WaveGetLaneIndex(); //Try grabbing it here
+        const uint waveParts = (WaveGetLaneCount() + 31) / 32;
+        const uint initialFlags = WaveFlagsWGE16();
         GroupMemoryBarrierWithGroupSync();
 
-        offsets = RankKeysWGE16(gtid.x, keys);
+        offsets = RankKeysWGE16(laneIndex, waveParts, initialFlags, getWaveIndex(gtid.x) * RADIX, keys);
         GroupMemoryBarrierWithGroupSync();
         
         uint histReduction;

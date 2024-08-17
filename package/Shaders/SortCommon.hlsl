@@ -309,7 +309,8 @@ inline void WarpLevelMultiSplitWGE16(uint key, uint waveParts, inout uint4 waveF
     [unroll]
     for (uint k = 0; k < RADIX_LOG; ++k)
     {
-        const bool t = key >> (k + e_radixShift) & 1;
+        const uint currentBit = 1 << k + e_radixShift;
+        const bool t = (key & currentBit) != 0;
         const uint4 ballot = WaveActiveBallot(t);
         waveFlags &= t ? ballot : ~ballot;
     }
@@ -325,69 +326,53 @@ inline void WarpLevelMultiSplitWLT16(uint key, inout uint waveFlags)
     }
 }
 
-inline void CountPeerBits(
-    inout uint peerBits,
-    inout uint totalBits,
-    uint4 waveFlags,
-    uint waveParts)
+inline OffsetStruct RankKeysWGE16(
+    uint laneIndex,
+    uint waveParts,
+    uint initialFlags,
+    uint waveOffset,
+    KeyStruct keys)
 {
-    for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
+    const uint ltLower = (1U << (laneIndex & 31)) - 1;
+    uint4 ltMask;
+    uint4 initial;
+    for (uint wavePart = 0; wavePart < 4; ++wavePart)
     {
-        if (WaveGetLaneIndex() >= wavePart * 32)
+        if (wavePart < waveParts)
         {
-            uint ltMask;
-            if (WaveGetLaneIndex() >= (wavePart + 1) * 32)
-                ltMask = 0xffffffff;
-            else
-                ltMask = (1U << (WaveGetLaneIndex() & 31)) - 1;
-            peerBits += countbits(waveFlags[wavePart] & ltMask);
+            const bool t = laneIndex >= wavePart * 32;
+            const bool t2 = laneIndex >= (wavePart + 1) * 32;
+            if (t)
+            {
+                initial[wavePart] = 0xffffffff;
+                if (t2)
+                    ltMask[wavePart] = 0xffffffff;
+                else
+                    ltMask[wavePart] = ltLower;
+            }
         }
-        totalBits += countbits(waveFlags[wavePart]);
-    }
-}
-
-inline uint CountPeerBitsWLT16(
-    uint waveFlags,
-    uint ltMask)
-{
-    return countbits(waveFlags & ltMask);
-}
-
-inline uint FindLowestRankPeer(
-    uint4 waveFlags,
-    uint waveParts)
-{
-    uint lowestRankPeer = 0;
-    for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
-    {
-        uint fbl = firstbitlow(waveFlags[wavePart]);
-        if (fbl == 0xffffffff)
-            lowestRankPeer += 32;
         else
-            return lowestRankPeer + fbl;
+        {
+            ltMask[wavePart] = 0;
+            initial[wavePart] = 0;
+        }
     }
-    return 0; //will never happen
-}
-
-inline OffsetStruct RankKeysWGE16(uint gtid, KeyStruct keys)
-{
+    
     OffsetStruct offsets;
-    const uint waveParts = (WaveGetLaneCount() + 31) / 32;
     [unroll]
     for (uint i = 0; i < KEYS_PER_THREAD; ++i)
     {
-        const uint t = WaveFlagsWGE16();
-        uint4 waveFlags = uint4(t, t, t, t);
+        uint4 waveFlags = initial;
         WarpLevelMultiSplitWGE16(keys.k[i], waveParts, waveFlags);
         
-        const uint index = ExtractDigit(keys.k[i]) + (getWaveIndex(gtid.x) * RADIX);
+        const uint index = ExtractDigit(keys.k[i]) + waveOffset;
         
-        uint peerBits = 0;
-        uint totalBits = 0;
-        CountPeerBits(peerBits, totalBits, waveFlags, waveParts);
+        uint totalBits = dot(countbits(waveFlags), uint4(1, 1, 1, 1));
+        waveFlags &= ltMask;
+        uint peerBits = dot(countbits(waveFlags), uint4(1, 1, 1, 1));
         offsets.o[i] = g_d[index] + peerBits;
         GroupMemoryBarrierWithGroupSync();
-        if(peerBits == 0)
+        if (peerBits == 0)
             g_d[index] += totalBits;
         GroupMemoryBarrierWithGroupSync();
     }
@@ -409,7 +394,7 @@ inline OffsetStruct RankKeysWLT16(uint gtid, KeyStruct keys, uint serialIteratio
         const uint index = ExtractPackedIndex(keys.k[i]) +
                 (getWaveIndex(gtid.x) / serialIterations * HALF_RADIX);
         
-        const uint peerBits = CountPeerBitsWLT16(waveFlags, ltMask);
+        const uint peerBits = countbits(waveFlags & ltMask);
         for (uint k = 0; k < serialIterations; ++k)
         {
             if (getWaveIndex(gtid) % serialIterations == k)
