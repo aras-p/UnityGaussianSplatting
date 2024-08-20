@@ -266,8 +266,8 @@ inline KeyStruct LoadKeysPartialWGE16(uint gtid, uint partIndex)
     KeyStruct keys;
     [unroll]
     for (uint i = 0, t = DeviceOffsetWGE16(gtid, partIndex);
-                 i < KEYS_PER_THREAD;
-                 ++i, t += WaveGetLaneCount())
+        i < KEYS_PER_THREAD;
+        ++i, t += WaveGetLaneCount())
     {
         if (t < e_numKeys)
             LoadKey(keys.k[i], t);
@@ -311,8 +311,13 @@ inline void WarpLevelMultiSplitWGE16(uint key, uint waveParts, inout uint4 waveF
     {
         const uint currentBit = 1 << k + e_radixShift;
         const bool t = (key & currentBit) != 0;
+        GroupMemoryBarrierWithGroupSync();
         const uint4 ballot = WaveActiveBallot(t);
-        waveFlags &= t ? ballot : ~ballot;
+        GroupMemoryBarrierWithGroupSync();  //possible independent thread scheduling issue?
+        if(t)
+            waveFlags &= ballot;
+        else
+            waveFlags &= (~ballot);
     }
 }
 
