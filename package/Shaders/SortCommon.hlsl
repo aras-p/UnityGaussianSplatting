@@ -94,9 +94,20 @@ struct DigitStruct
 //*****************************************************************************
 //HELPER FUNCTIONS
 //*****************************************************************************
-inline uint getWaveIndex(uint gtid)
+//Due to a bug with SPIRV pre 1.6, we cannot use WaveGetLaneCount() to get the currently active wavesize 
+inline uint getWaveSize()
 {
-    return gtid / WaveGetLaneCount();
+#if defined(VULKAN)
+    GroupMemoryBarrierWithGroupSync(); //Make absolutely sure the wave is not diverged here
+    return dot(countbits(WaveActiveBallot(true)), uint4(1, 1, 1, 1));
+#else
+    return WaveGetLaneCount();
+#endif
+}
+
+inline uint getWaveIndex(uint gtid, uint waveSize)
+{
+    return gtid / waveSize;
 }
 
 //Radix Tricks by Michael Herf
@@ -123,9 +134,9 @@ inline int UintToInt(uint u)
     return asint(u ^ 0x80000000);
 }
 
-inline uint getWaveCountPass()
+inline uint getWaveCountPass(uint waveSize)
 {
-    return D_DIM / WaveGetLaneCount();
+    return D_DIM / waveSize;
 }
 
 inline uint ExtractDigit(uint key)
@@ -153,36 +164,36 @@ inline uint ExtractPackedValue(uint packed, uint key)
     return packed >> ExtractPackedShift(key) & 0xffff;
 }
 
-inline uint SubPartSizeWGE16()
+inline uint SubPartSizeWGE16(uint waveSize)
 {
-    return KEYS_PER_THREAD * WaveGetLaneCount();
+    return KEYS_PER_THREAD * waveSize;
 }
 
-inline uint SharedOffsetWGE16(uint gtid)
+inline uint SharedOffsetWGE16(uint gtid, uint waveSize)
 {
-    return WaveGetLaneIndex() + getWaveIndex(gtid) * SubPartSizeWGE16();
+    return WaveGetLaneIndex() + getWaveIndex(gtid, waveSize) * SubPartSizeWGE16(waveSize);
 }
 
-inline uint SubPartSizeWLT16(uint _serialIterations)
+inline uint SubPartSizeWLT16(uint waveSize, uint _serialIterations)
 {
-    return KEYS_PER_THREAD * WaveGetLaneCount() * _serialIterations;
+    return KEYS_PER_THREAD * waveSize * _serialIterations;
 }
 
-inline uint SharedOffsetWLT16(uint gtid, uint _serialIterations)
+inline uint SharedOffsetWLT16(uint gtid, uint waveSize, uint _serialIterations)
 {
     return WaveGetLaneIndex() +
-        (getWaveIndex(gtid) / _serialIterations * SubPartSizeWLT16(_serialIterations)) +
-        (getWaveIndex(gtid) % _serialIterations * WaveGetLaneCount());
+        (getWaveIndex(gtid, waveSize) / _serialIterations * SubPartSizeWLT16(waveSize, _serialIterations)) +
+        (getWaveIndex(gtid, waveSize) % _serialIterations * waveSize);
 }
 
-inline uint DeviceOffsetWGE16(uint gtid, uint partIndex)
+inline uint DeviceOffsetWGE16(uint gtid, uint waveSize, uint partIndex)
 {
-    return SharedOffsetWGE16(gtid) + partIndex * PART_SIZE;
+    return SharedOffsetWGE16(gtid, waveSize) + partIndex * PART_SIZE;
 }
 
-inline uint DeviceOffsetWLT16(uint gtid, uint partIndex, uint serialIterations)
+inline uint DeviceOffsetWLT16(uint gtid, uint waveSize, uint partIndex, uint serialIterations)
 {
-    return SharedOffsetWLT16(gtid, serialIterations) + partIndex * PART_SIZE;
+    return SharedOffsetWLT16(gtid, waveSize, serialIterations) + partIndex * PART_SIZE;
 }
 
 inline uint GlobalHistOffset()
@@ -190,9 +201,9 @@ inline uint GlobalHistOffset()
     return e_radixShift << 5;
 }
 
-inline uint WaveHistsSizeWGE16()
+inline uint WaveHistsSizeWGE16(uint waveSize)
 {
-    return D_DIM / WaveGetLaneCount() * RADIX;
+    return D_DIM / waveSize * RADIX;
 }
 
 inline uint WaveHistsSizeWLT16()
@@ -206,15 +217,15 @@ inline uint WaveHistsSizeWLT16()
 //If the size of  a wave is too small, we do not have enough space in
 //shared memory to assign a histogram to each wave, so instead,
 //some operations are peformed serially.
-inline uint SerialIterations()
+inline uint SerialIterations(uint waveSize)
 {
-    return (D_DIM / WaveGetLaneCount() + 31) >> 5;
+    return (D_DIM / waveSize + 31) >> 5;
 }
 
-inline void ClearWaveHists(uint gtid)
+inline void ClearWaveHists(uint gtid, uint waveSize)
 {
-    const uint histsEnd = WaveGetLaneCount() >= 16 ?
-        WaveHistsSizeWGE16() : WaveHistsSizeWLT16();
+    const uint histsEnd = waveSize >= 16 ?
+        WaveHistsSizeWGE16(waveSize) : WaveHistsSizeWLT16();
     for (uint i = gtid; i < histsEnd; i += D_DIM)
         g_d[i] = 0;
 }
@@ -235,39 +246,39 @@ inline void LoadDummyKey(inout uint key)
     key = 0xffffffff;
 }
 
-inline KeyStruct LoadKeysWGE16(uint gtid, uint partIndex)
+inline KeyStruct LoadKeysWGE16(uint gtid, uint waveSize, uint partIndex)
 {
     KeyStruct keys;
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWGE16(gtid, partIndex);
+    for (uint i = 0, t = DeviceOffsetWGE16(gtid, waveSize, partIndex);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount())
+        ++i, t += waveSize)
     {
         LoadKey(keys.k[i], t);
     }
     return keys;
 }
 
-inline KeyStruct LoadKeysWLT16(uint gtid, uint partIndex, uint serialIterations)
+inline KeyStruct LoadKeysWLT16(uint gtid, uint waveSize, uint partIndex, uint serialIterations)
 {
     KeyStruct keys;
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWLT16(gtid, partIndex, serialIterations);
+    for (uint i = 0, t = DeviceOffsetWLT16(gtid, waveSize, partIndex, serialIterations);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount() * serialIterations)
+        ++i, t += waveSize * serialIterations)
     {
         LoadKey(keys.k[i], t);
     }
     return keys;
 }
 
-inline KeyStruct LoadKeysPartialWGE16(uint gtid, uint partIndex)
+inline KeyStruct LoadKeysPartialWGE16(uint gtid, uint waveSize, uint partIndex)
 {
     KeyStruct keys;
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWGE16(gtid, partIndex);
+    for (uint i = 0, t = DeviceOffsetWGE16(gtid, waveSize, partIndex);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount())
+        ++i, t += waveSize)
     {
         if (t < e_numKeys)
             LoadKey(keys.k[i], t);
@@ -277,13 +288,13 @@ inline KeyStruct LoadKeysPartialWGE16(uint gtid, uint partIndex)
     return keys;
 }
 
-inline KeyStruct LoadKeysPartialWLT16(uint gtid, uint partIndex, uint serialIterations)
+inline KeyStruct LoadKeysPartialWLT16(uint gtid, uint waveSize, uint partIndex, uint serialIterations)
 {
     KeyStruct keys;
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWLT16(gtid, partIndex, serialIterations);
+    for (uint i = 0, t = DeviceOffsetWLT16(gtid, waveSize, partIndex, serialIterations);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount() * serialIterations)
+        ++i, t += waveSize * serialIterations)
     {
         if (t < e_numKeys)
             LoadKey(keys.k[i], t);
@@ -293,32 +304,50 @@ inline KeyStruct LoadKeysPartialWLT16(uint gtid, uint partIndex, uint serialIter
     return keys;
 }
 
-inline uint WaveFlagsWGE16()
+inline uint WaveFlagsWGE16(uint waveSize)
 {
-    return (WaveGetLaneCount() & 31) ?
-        (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
+    return (waveSize & 31) ? (1U << waveSize) - 1 : 0xffffffff;
 }
 
-inline uint WaveFlagsWLT16()
+inline uint WaveFlagsWLT16(uint waveSize)
 {
-    return (1U << WaveGetLaneCount()) - 1;;
+    return (1U << waveSize) - 1;;
 }
 
-inline void WarpLevelMultiSplitWGE16(uint key, uint waveParts, inout uint4 waveFlags)
+inline void WarpLevelMultiSplitWGE16(uint key, inout uint4 waveFlags)
 {
     [unroll]
     for (uint k = 0; k < RADIX_LOG; ++k)
     {
         const uint currentBit = 1 << k + e_radixShift;
         const bool t = (key & currentBit) != 0;
-        GroupMemoryBarrierWithGroupSync();
+        GroupMemoryBarrierWithGroupSync();  //Play on the safe side, throw in a barrier for convergence
         const uint4 ballot = WaveActiveBallot(t);
-        GroupMemoryBarrierWithGroupSync();  //possible independent thread scheduling issue?
         if(t)
             waveFlags &= ballot;
         else
             waveFlags &= (~ballot);
     }
+}
+
+inline uint2 CountBitsWGE16(uint waveSize, uint ltMask, uint4 waveFlags)
+{
+    uint2 count = uint2(0, 0);
+    
+    for(uint wavePart = 0; wavePart < waveSize; wavePart += 32)
+    {
+        if (WaveGetLaneIndex() >= wavePart)
+        {
+            uint t = countbits(waveFlags[wavePart >> 5]);
+            if (WaveGetLaneIndex() >= wavePart + 32)
+                count.x += t;
+            else
+                count.x += countbits(waveFlags[wavePart >> 5] & ltMask);
+            count.y += t;
+        }
+    }
+    
+    return count;
 }
 
 inline void WarpLevelMultiSplitWLT16(uint key, inout uint waveFlags)
@@ -332,81 +361,56 @@ inline void WarpLevelMultiSplitWLT16(uint key, inout uint waveFlags)
 }
 
 inline OffsetStruct RankKeysWGE16(
-    uint laneIndex,
-    uint waveParts,
-    uint initialFlags,
+    uint waveSize,
     uint waveOffset,
     KeyStruct keys)
 {
-    const uint ltLower = (1U << (laneIndex & 31)) - 1;
-    uint4 ltMask;
-    uint4 initial;
-    for (uint wavePart = 0; wavePart < 4; ++wavePart)
-    {
-        if (wavePart < waveParts)
-        {
-            const bool t = laneIndex >= wavePart * 32;
-            const bool t2 = laneIndex >= (wavePart + 1) * 32;
-            if (t)
-            {
-                initial[wavePart] = 0xffffffff;
-                if (t2)
-                    ltMask[wavePart] = 0xffffffff;
-                else
-                    ltMask[wavePart] = ltLower;
-            }
-        }
-        else
-        {
-            ltMask[wavePart] = 0;
-            initial[wavePart] = 0;
-        }
-    }
-    
     OffsetStruct offsets;
+    const uint initialFlags = WaveFlagsWGE16(waveSize);
+    const uint ltMask = (1U << (WaveGetLaneIndex() & 31)) - 1;
+    
     [unroll]
     for (uint i = 0; i < KEYS_PER_THREAD; ++i)
     {
-        uint4 waveFlags = initial;
-        WarpLevelMultiSplitWGE16(keys.k[i], waveParts, waveFlags);
+        uint4 waveFlags = initialFlags;
+        WarpLevelMultiSplitWGE16(keys.k[i], waveFlags);
         
         const uint index = ExtractDigit(keys.k[i]) + waveOffset;
+        const uint2 bitCount = CountBitsWGE16(waveSize, ltMask, waveFlags);
         
-        uint totalBits = dot(countbits(waveFlags), uint4(1, 1, 1, 1));
-        waveFlags &= ltMask;
-        uint peerBits = dot(countbits(waveFlags), uint4(1, 1, 1, 1));
-        offsets.o[i] = g_d[index] + peerBits;
+        offsets.o[i] = g_d[index] + bitCount.x;
         GroupMemoryBarrierWithGroupSync();
-        if (peerBits == 0)
-            g_d[index] += totalBits;
+        if (bitCount.x == 0)
+            g_d[index] += bitCount.y;
         GroupMemoryBarrierWithGroupSync();
     }
     
     return offsets;
 }
 
-inline OffsetStruct RankKeysWLT16(uint gtid, KeyStruct keys, uint serialIterations)
+inline OffsetStruct RankKeysWLT16(uint waveSize, uint waveIndex, KeyStruct keys, uint serialIterations)
 {
     OffsetStruct offsets;
     const uint ltMask = (1U << WaveGetLaneIndex()) - 1;
+    const uint initialFlags = WaveFlagsWLT16(waveSize);
     
     [unroll]
     for (uint i = 0; i < KEYS_PER_THREAD; ++i)
     {
-        uint waveFlags = WaveFlagsWLT16();
+        uint waveFlags = initialFlags;
         WarpLevelMultiSplitWLT16(keys.k[i], waveFlags);
         
         const uint index = ExtractPackedIndex(keys.k[i]) +
-                (getWaveIndex(gtid.x) / serialIterations * HALF_RADIX);
+                (waveIndex / serialIterations * HALF_RADIX);
         
         const uint peerBits = countbits(waveFlags & ltMask);
         for (uint k = 0; k < serialIterations; ++k)
         {
-            if (getWaveIndex(gtid) % serialIterations == k)
+            if (waveIndex % serialIterations == k)
                 offsets.o[i] = ExtractPackedValue(g_d[index], keys.k[i]) + peerBits;
             
             GroupMemoryBarrierWithGroupSync();
-            if (getWaveIndex(gtid) % serialIterations == k && peerBits == 0)
+            if (waveIndex % serialIterations == k && peerBits == 0)
             {
                 InterlockedAdd(g_d[index],
                     countbits(waveFlags) << ExtractPackedShift(keys.k[i]));
@@ -418,10 +422,10 @@ inline OffsetStruct RankKeysWLT16(uint gtid, KeyStruct keys, uint serialIteratio
     return offsets;
 }
 
-inline uint WaveHistInclusiveScanCircularShiftWGE16(uint gtid)
+inline uint WaveHistInclusiveScanCircularShiftWGE16(uint gtid, uint waveSize)
 {
     uint histReduction = g_d[gtid];
-    for (uint i = gtid + RADIX; i < WaveHistsSizeWGE16(); i += RADIX)
+    for (uint i = gtid + RADIX; i < WaveHistsSizeWGE16(waveSize); i += RADIX)
     {
         histReduction += g_d[i];
         g_d[i] = histReduction - g_d[i];
@@ -440,19 +444,19 @@ inline uint WaveHistInclusiveScanCircularShiftWLT16(uint gtid)
     return histReduction;
 }
 
-inline void WaveHistReductionExclusiveScanWGE16(uint gtid, uint histReduction)
+inline void WaveHistReductionExclusiveScanWGE16(uint gtid, uint waveSize, uint histReduction)
 {
     if (gtid < RADIX)
     {
-        const uint laneMask = WaveGetLaneCount() - 1;
+        const uint laneMask = waveSize - 1;
         g_d[((WaveGetLaneIndex() + 1) & laneMask) + (gtid & ~laneMask)] = histReduction;
     }
     GroupMemoryBarrierWithGroupSync();
                 
-    if (gtid < RADIX / WaveGetLaneCount())
+    if (gtid < RADIX / waveSize)
     {
-        g_d[gtid * WaveGetLaneCount()] =
-            WavePrefixSum(g_d[gtid * WaveGetLaneCount()]);
+        g_d[gtid * waveSize] =
+            WavePrefixSum(g_d[gtid * waveSize]);
     }
     GroupMemoryBarrierWithGroupSync();
     
@@ -503,11 +507,15 @@ inline void WaveHistReductionExclusiveScanWLT16(uint gtid)
     }
 }
 
-inline void UpdateOffsetsWGE16(uint gtid, inout OffsetStruct offsets, KeyStruct keys)
+inline void UpdateOffsetsWGE16(
+    uint gtid,
+    uint waveSize,
+    inout OffsetStruct offsets,
+    KeyStruct keys)
 {
-    if (gtid >= WaveGetLaneCount())
+    if (gtid >= waveSize)
     {
-        const uint t = getWaveIndex(gtid) * RADIX;
+        const uint t = getWaveIndex(gtid, waveSize) * RADIX;
         [unroll]
         for (uint i = 0; i < KEYS_PER_THREAD; ++i)
         {
@@ -525,13 +533,14 @@ inline void UpdateOffsetsWGE16(uint gtid, inout OffsetStruct offsets, KeyStruct 
 
 inline void UpdateOffsetsWLT16(
     uint gtid,
+    uint waveSize,
     uint serialIterations,
     inout OffsetStruct offsets,
     KeyStruct keys)
 {
-    if (gtid >= WaveGetLaneCount() * serialIterations)
+    if (gtid >= waveSize * serialIterations)
     {
-        const uint t = getWaveIndex(gtid) / serialIterations * HALF_RADIX;
+        const uint t = getWaveIndex(gtid, waveSize) / serialIterations * HALF_RADIX;
         [unroll]
         for (uint i = 0; i < KEYS_PER_THREAD; ++i)
         {
@@ -661,13 +670,14 @@ inline void ScatterPairsKeyPhaseDescending(
 
 inline void LoadPayloadsWGE16(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     inout KeyStruct payloads)
 {
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWGE16(gtid, partIndex);
+    for (uint i = 0, t = DeviceOffsetWGE16(gtid, waveSize, partIndex);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount())
+        ++i, t += waveSize)
     {
         LoadPayload(payloads.k[i], t);
     }
@@ -675,14 +685,15 @@ inline void LoadPayloadsWGE16(
 
 inline void LoadPayloadsWLT16(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     uint serialIterations,
     inout KeyStruct payloads)
 {
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWLT16(gtid, partIndex, serialIterations);
+    for (uint i = 0, t = DeviceOffsetWLT16(gtid, waveSize, partIndex, serialIterations);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount() * serialIterations)
+        ++i, t += waveSize * serialIterations)
     {
         LoadPayload(payloads.k[i], t);
     }
@@ -711,6 +722,7 @@ inline void ScatterPayloadsDescending(uint gtid, DigitStruct digits)
 
 inline void ScatterPairsDevice(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     OffsetStruct offsets)
 {
@@ -723,10 +735,10 @@ inline void ScatterPairsDevice(
     GroupMemoryBarrierWithGroupSync();
     
     KeyStruct payloads;
-    if (WaveGetLaneCount() >= 16)
-        LoadPayloadsWGE16(gtid, partIndex, payloads);
+    if (waveSize >= 16)
+        LoadPayloadsWGE16(gtid, waveSize, partIndex, payloads);
     else
-        LoadPayloadsWLT16(gtid, partIndex, SerialIterations(), payloads);
+        LoadPayloadsWLT16(gtid, waveSize, partIndex, SerialIterations(waveSize), payloads);
     ScatterPayloadsShared(offsets, payloads);
     GroupMemoryBarrierWithGroupSync();
     
@@ -739,12 +751,14 @@ inline void ScatterPairsDevice(
 
 inline void ScatterDevice(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     OffsetStruct offsets)
 {
 #if defined(SORT_PAIRS)
     ScatterPairsDevice(
         gtid,
+        waveSize,
         partIndex,
         offsets);
 #else
@@ -833,13 +847,14 @@ inline void ScatterPairsKeyPhaseDescendingPartial(
 
 inline void LoadPayloadsPartialWGE16(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     inout KeyStruct payloads)
 {
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWGE16(gtid, partIndex);
+    for (uint i = 0, t = DeviceOffsetWGE16(gtid, waveSize, partIndex);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount())
+        ++i, t += waveSize)
     {
         if (t < e_numKeys)
             LoadPayload(payloads.k[i], t);
@@ -848,14 +863,15 @@ inline void LoadPayloadsPartialWGE16(
 
 inline void LoadPayloadsPartialWLT16(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     uint serialIterations,
     inout KeyStruct payloads)
 {
     [unroll]
-    for (uint i = 0, t = DeviceOffsetWLT16(gtid, partIndex, serialIterations);
+    for (uint i = 0, t = DeviceOffsetWLT16(gtid, waveSize, partIndex, serialIterations);
         i < KEYS_PER_THREAD;
-        ++i, t += WaveGetLaneCount() * serialIterations)
+        ++i, t += waveSize * serialIterations)
     {
         if (t < e_numKeys)
             LoadPayload(payloads.k[i], t);
@@ -897,6 +913,7 @@ inline void ScatterPayloadsDescendingPartial(
 
 inline void ScatterPairsDevicePartial(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     OffsetStruct offsets)
 {
@@ -910,10 +927,10 @@ inline void ScatterPairsDevicePartial(
     GroupMemoryBarrierWithGroupSync();
     
     KeyStruct payloads;
-    if (WaveGetLaneCount() >= 16)
-        LoadPayloadsPartialWGE16(gtid, partIndex, payloads);
+    if (waveSize >= 16)
+        LoadPayloadsPartialWGE16(gtid, waveSize, partIndex, payloads);
     else
-        LoadPayloadsPartialWLT16(gtid, partIndex, SerialIterations(), payloads);
+        LoadPayloadsPartialWLT16(gtid, waveSize, partIndex, SerialIterations(waveSize), payloads);
     ScatterPayloadsShared(offsets, payloads);
     GroupMemoryBarrierWithGroupSync();
     
@@ -926,12 +943,14 @@ inline void ScatterPairsDevicePartial(
 
 inline void ScatterDevicePartial(
     uint gtid,
+    uint waveSize,
     uint partIndex,
     OffsetStruct offsets)
 {
 #if defined(SORT_PAIRS)
     ScatterPairsDevicePartial(
         gtid,
+        waveSize,
         partIndex,
         offsets);
 #else

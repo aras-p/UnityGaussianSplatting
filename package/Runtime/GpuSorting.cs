@@ -27,6 +27,7 @@ namespace GaussianSplatting.Runtime
         private LocalKeyword m_payloadUintKeyword;
         private LocalKeyword m_ascendKeyword;
         private LocalKeyword m_sortPairKeyword;
+        private LocalKeyword m_vulkanKeyword;
 
         public struct Args
         {
@@ -115,11 +116,16 @@ namespace GaussianSplatting.Runtime
             m_payloadUintKeyword = new LocalKeyword(cs, "PAYLOAD_UINT");
             m_ascendKeyword = new LocalKeyword(cs, "SHOULD_ASCEND");
             m_sortPairKeyword = new LocalKeyword(cs, "SORT_PAIRS");
+            m_vulkanKeyword = new LocalKeyword(cs, "VULKAN");
 
             cs.EnableKeyword(m_keyUintKeyword);
             cs.EnableKeyword(m_payloadUintKeyword);
             cs.EnableKeyword(m_ascendKeyword);
             cs.EnableKeyword(m_sortPairKeyword);
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
+                cs.EnableKeyword(m_vulkanKeyword);
+            else
+                cs.DisableKeyword(m_vulkanKeyword);
         }
 
         static uint DivRoundUp(uint x, uint y) => (x + y - 1) / y;
