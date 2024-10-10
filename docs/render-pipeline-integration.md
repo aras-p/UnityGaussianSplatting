@@ -10,6 +10,9 @@
   or after postprocess. Doing it after postprocess often produces better results, since before transparencies does not play well
   with HDRP auto-exposure thingamabobs.
 
+Note that the project requires DX12 or Vulkan on Windows, i.e. **DX11 will not work**. Go to player settings graphics APIs
+section and change Windows to use DX12.
+
 ### How do gaussians interact with regular rendering?
 
 GaussianSplatRenderer objects are rendered after all opaque objects and skybox is rendered, and are tested against Z buffer.
