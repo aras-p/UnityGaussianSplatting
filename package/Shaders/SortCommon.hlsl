@@ -336,15 +336,15 @@ inline uint2 CountBitsWGE16(uint waveSize, uint ltMask, uint4 waveFlags)
     
     for(uint wavePart = 0; wavePart < waveSize; wavePart += 32)
     {
+        uint t = countbits(waveFlags[wavePart >> 5]);
         if (WaveGetLaneIndex() >= wavePart)
         {
-            uint t = countbits(waveFlags[wavePart >> 5]);
             if (WaveGetLaneIndex() >= wavePart + 32)
                 count.x += t;
             else
                 count.x += countbits(waveFlags[wavePart >> 5] & ltMask);
-            count.y += t;
         }
+        count.y += t;
     }
     
     return count;
