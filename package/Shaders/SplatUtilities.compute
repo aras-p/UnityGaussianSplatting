@@ -18,6 +18,11 @@
 #pragma kernel CSCopySplats
 
 // DeviceRadixSort
+#pragma multi_compile __ KEY_UINT KEY_INT KEY_FLOAT
+#pragma multi_compile __ PAYLOAD_UINT PAYLOAD_INT PAYLOAD_FLOAT
+#pragma multi_compile __ SHOULD_ASCEND
+#pragma multi_compile __ SORT_PAIRS
+#pragma multi_compile __ VULKAN
 #pragma kernel InitDeviceRadixSort
 #pragma kernel Upsweep
 #pragma kernel Scan
@@ -25,7 +30,7 @@
 
 // GPU sorting needs wave ops
 #pragma require wavebasic
-
+#pragma require waveballot
 #pragma use_dxc
 
 #include "DeviceRadixSort.hlsl"
