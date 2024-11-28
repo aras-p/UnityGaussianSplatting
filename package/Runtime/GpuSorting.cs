@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 namespace GaussianSplatting.Runtime
 {
     // GPU (uint key, uint payload) 8 bit-LSD radix sort, using reduce-then-scan
-    // Copyright Thomas Smith 2023, MIT license
+    // Copyright Thomas Smith 2024, MIT license
     // https://github.com/b0nes164/GPUSorting
 
     public class GpuSorting
@@ -21,6 +21,13 @@ namespace GaussianSplatting.Runtime
 
         //Number of sorting passes required to sort a 32bit key, KEY_BITS / DEVICE_RADIX_SORT_BITS
         const uint DEVICE_RADIX_SORT_PASSES = 4;
+
+        //Keywords to enable for the shader
+        private LocalKeyword m_keyUintKeyword;
+        private LocalKeyword m_payloadUintKeyword;
+        private LocalKeyword m_ascendKeyword;
+        private LocalKeyword m_sortPairKeyword;
+        private LocalKeyword m_vulkanKeyword;
 
         public struct Args
         {
@@ -104,6 +111,21 @@ namespace GaussianSplatting.Runtime
                     m_Valid = false;
                 }
             }
+
+            m_keyUintKeyword = new LocalKeyword(cs, "KEY_UINT");
+            m_payloadUintKeyword = new LocalKeyword(cs, "PAYLOAD_UINT");
+            m_ascendKeyword = new LocalKeyword(cs, "SHOULD_ASCEND");
+            m_sortPairKeyword = new LocalKeyword(cs, "SORT_PAIRS");
+            m_vulkanKeyword = new LocalKeyword(cs, "VULKAN");
+
+            cs.EnableKeyword(m_keyUintKeyword);
+            cs.EnableKeyword(m_payloadUintKeyword);
+            cs.EnableKeyword(m_ascendKeyword);
+            cs.EnableKeyword(m_sortPairKeyword);
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
+                cs.EnableKeyword(m_vulkanKeyword);
+            else
+                cs.DisableKeyword(m_vulkanKeyword);
         }
 
         static uint DivRoundUp(uint x, uint y) => (x + y - 1) / y;
