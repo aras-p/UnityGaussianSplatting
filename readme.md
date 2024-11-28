@@ -11,9 +11,11 @@ Everything in this repository is based on that "OG" gaussian splatting paper. To
 
 :warning: Status as of 2023 December: I'm not planning any significant further developments.
 
-:warning: The only platforms where this is known to work are "PC" (Windows, Mac, Linux) when using either D3D12, Metal or Vulkan graphics APIs.
-Anything else may or migth not work. There are known issues specifically with:
-- Anything related to virtual reality (VR, AR, XR, MR): [#17](https://github.com/aras-p/UnityGaussianSplatting/issues/17)
+:warning: The only platforms where this is known to work are the ones that use D3D12, Metal or Vulkan graphics APIs.
+PC (Windows on D3D12 or Vulkan), Mac (Metal), Linux (Vulkan) should work. Anything else I have not actually tested;
+it might work or it might not.
+- Some virtual reality devices work (reportedly HTC Vive, Varjo Aero, Quest 3 and Quest Pro). Some others might not
+  work, e.g. Apple Vision Pro. See [#17](https://github.com/aras-p/UnityGaussianSplatting/issues/17)
 - Anything using OpenGL or OpenGL ES: [#26](https://github.com/aras-p/UnityGaussianSplatting/issues/26)
 - WebGPU might work someday, but seems that today it does not quite have all the required graphics features yet: [#65](https://github.com/aras-p/UnityGaussianSplatting/issues/65)
 - Mobile may or might not work. Some iOS devices definitely do not work ([#72](https://github.com/aras-p/UnityGaussianSplatting/issues/72)),
@@ -89,6 +91,8 @@ The code I wrote for this is under MIT license. The project also uses several 3r
 
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
 - "DeviceRadixSort" GPU sorting code contributed by Thomas Smith ([#82](https://github.com/aras-p/UnityGaussianSplatting/pull/82)).
+- Virtual Reality fixes contributed by [@ninjamode](https://github.com/ninjamode) based on
+  [Unity-VR-Gaussian-Splatting](https://github.com/ninjamode/Unity-VR-Gaussian-Splatting).
 
 However, keep in mind that the [license of the original paper implementation](https://github.com/graphdeco-inria/gaussian-splatting/blob/main/LICENSE.md)
 says that the official _training_ software for the Gaussian Splats is for educational / academic / non-commercial
