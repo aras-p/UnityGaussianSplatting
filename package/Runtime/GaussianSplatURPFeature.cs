@@ -5,6 +5,9 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if UNITY_6000
+using UnityEngine.Rendering.RenderGraphModule;
+#endif
 
 namespace GaussianSplatting.Runtime
 {
@@ -17,6 +20,7 @@ namespace GaussianSplatting.Runtime
     {
         class GSRenderPass : ScriptableRenderPass
         {
+            const string GaussianSplatRTName = "_GaussianSplatRT";
             RTHandle m_RenderTarget;
             internal ScriptableRenderer m_Renderer = null;
             internal CommandBuffer m_Cmb = null;
@@ -32,7 +36,7 @@ namespace GaussianSplatting.Runtime
                 rtDesc.depthBufferBits = 0;
                 rtDesc.msaaSamples = 1;
                 rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, rtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: "_GaussianSplatRT");
+                RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, rtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: GaussianSplatRTName);
                 cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
 
                 ConfigureTarget(m_RenderTarget, m_Renderer.cameraDepthTargetHandle);
@@ -53,6 +57,51 @@ namespace GaussianSplatting.Runtime
                 m_Cmb.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
                 context.ExecuteCommandBuffer(m_Cmb);
             }
+
+#if UNITY_6000
+            private const string ProfilerTag = "GaussianSplatRenderGraph";
+            private static readonly ProfilingSampler s_profilingSampler = new(ProfilerTag);
+            private static readonly int s_gaussianSplatRT = Shader.PropertyToID(GaussianSplatRTName);
+
+            private class PassData
+            {
+                internal UniversalCameraData CameraData;
+                internal TextureHandle SourceTexture;
+                internal TextureHandle GaussianSplatRT;
+            }
+
+            public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+            {
+                using var builder = renderGraph.AddUnsafePass<PassData>(ProfilerTag, out PassData passData);
+
+                var cameraData = frameData.Get<UniversalCameraData>();
+                var resourceData = frameData.Get<UniversalResourceData>();
+
+                RenderTextureDescriptor rtDesc = cameraData.cameraTargetDescriptor;
+                rtDesc.depthBufferBits = 0;
+                rtDesc.msaaSamples = 1;
+                rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
+                var textureHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
+
+                passData.CameraData = cameraData;
+                passData.SourceTexture = resourceData.activeColorTexture;
+                passData.GaussianSplatRT = textureHandle;
+
+                builder.UseTexture(textureHandle, AccessFlags.Write);
+                builder.AllowPassCulling(false);
+                builder.SetRenderFunc(static (PassData data, UnsafeGraphContext context) =>
+                {
+                    var commandBuffer = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
+                    using var _ = new ProfilingScope(commandBuffer, s_profilingSampler);
+                    commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                    CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear);
+                    Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer);
+                    commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
+                    Blitter.BlitCameraTexture(commandBuffer, data.GaussianSplatRT, data.SourceTexture, matComposite, 0);
+                    commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+                });
+            }
+#endif
         }
 
         GSRenderPass m_Pass;
