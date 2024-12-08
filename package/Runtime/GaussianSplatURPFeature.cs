@@ -20,6 +20,7 @@ namespace GaussianSplatting.Runtime
     {
         class GSRenderPass : ScriptableRenderPass
         {
+            const string GaussianSplatRTName = "_GaussianSplatRT";
             RTHandle m_RenderTarget;
             internal ScriptableRenderer m_Renderer = null;
             internal CommandBuffer m_Cmb = null;
@@ -35,7 +36,7 @@ namespace GaussianSplatting.Runtime
                 rtDesc.depthBufferBits = 0;
                 rtDesc.msaaSamples = 1;
                 rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, rtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: "_GaussianSplatRT");
+                RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, rtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: GaussianSplatRTName);
                 cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
 
                 ConfigureTarget(m_RenderTarget, m_Renderer.cameraDepthTargetHandle);
@@ -59,7 +60,6 @@ namespace GaussianSplatting.Runtime
 
 #if UNITY_6000
             private const string ProfilerTag = "GaussianSplatRenderGraph";
-            private const string GaussianSplatRTName = "_GaussianSplatRT";
             private static readonly ProfilingSampler s_profilingSampler = new(ProfilerTag);
             private static readonly int s_gaussianSplatRT = Shader.PropertyToID(GaussianSplatRTName);
 
