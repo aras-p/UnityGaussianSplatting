@@ -429,12 +429,13 @@ namespace GaussianSplatting.Runtime
                 m_SorterArgs.resources = GpuSorting.SupportResources.Load((uint)count);
         }
 
+        bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
+                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
+
         public void OnEnable()
         {
             m_FrameCounter = 0;
-            if (m_ShaderSplats == null || m_ShaderComposite == null || m_ShaderDebugPoints == null || m_ShaderDebugBoxes == null || m_CSSplatUtilities == null)
-                return;
-            if (!SystemInfo.supportsComputeShaders)
+            if (!resourcesAreSetUp)
                 return;
 
             m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
@@ -608,8 +609,15 @@ namespace GaussianSplatting.Runtime
             {
                 m_PrevAsset = m_Asset;
                 m_PrevHash = curHash;
-                DisposeResourcesForAsset();
-                CreateResourcesForAsset();
+                if (resourcesAreSetUp)
+                {
+                    DisposeResourcesForAsset();
+                    CreateResourcesForAsset();
+                }
+                else
+                {
+                    Debug.LogError($"{nameof(GaussianSplatRenderer)} component is not set up correctly (Resource references are missing), or platform does not support compute shaders");
+                }
             }
         }
 
