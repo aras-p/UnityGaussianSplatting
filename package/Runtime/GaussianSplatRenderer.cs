@@ -107,6 +107,7 @@ namespace GaussianSplatting.Runtime
             foreach (var kvp in m_ActiveSplats)
             {
                 var gs = kvp.Item1;
+                gs.EnsureMaterials();
                 matComposite = gs.m_MatComposite;
                 var mpb = kvp.Item2;
 
@@ -413,6 +414,8 @@ namespace GaussianSplatting.Runtime
             m_GpuSortKeys?.Dispose();
             m_SorterArgs.resources.Dispose();
 
+            EnsureSorterAndRegister();
+
             m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, 4) { name = "GaussianSplatSortDistances" };
             m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, 4) { name = "GaussianSplatSortIndices" };
 
@@ -432,19 +435,34 @@ namespace GaussianSplatting.Runtime
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
                                   m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
 
+        public void EnsureMaterials()
+        {
+            if (m_MatSplats == null && resourcesAreSetUp)
+            {
+                m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
+                m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
+                m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
+                m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
+            }
+        }
+
+        public void EnsureSorterAndRegister()
+        {
+            if (m_Sorter == null && resourcesAreSetUp)
+            {
+                m_Sorter = new GpuSorting(m_CSSplatUtilities);
+                GaussianSplatRenderSystem.instance.RegisterSplat(this);
+            }
+        }
+
         public void OnEnable()
         {
             m_FrameCounter = 0;
             if (!resourcesAreSetUp)
                 return;
 
-            m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
-            m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
-            m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
-            m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
-
-            m_Sorter = new GpuSorting(m_CSSplatUtilities);
-            GaussianSplatRenderSystem.instance.RegisterSplat(this);
+            EnsureMaterials();
+            EnsureSorterAndRegister();
 
             CreateResourcesForAsset();
         }
@@ -598,6 +616,7 @@ namespace GaussianSplatting.Runtime
             cmd.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, (m_GpuSortDistances.count + (int)gsX - 1)/(int)gsX, 1, 1);
 
             // sort the splats
+            EnsureSorterAndRegister();
             m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
         }
