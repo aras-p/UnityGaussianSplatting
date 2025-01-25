@@ -145,7 +145,7 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
-                gs.CalcViewData(cmb, cam, matrix);
+                gs.CalcViewData(cmb, cam);
                 cmb.EndSample(s_ProfCalcView);
 
                 // draw
@@ -190,6 +190,10 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
             m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
             m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+
+            // We only need this to determine whether we're rendering into backbuffer or not. However, detection this
+            // way only works in BiRP so only do it here.
+            m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture, BuiltinRenderTextureType.CameraTarget);
 
             // add sorting, view calc and drawing commands for each splat object
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
@@ -309,6 +313,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
+            public static readonly int CameraTargetTexture = Shader.PropertyToID("_CameraTargetTexture");
             public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
             public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
             public static readonly int SelectionDeltaRot = Shader.PropertyToID("_SelectionDeltaRot");
@@ -565,7 +570,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatDebugBoxes);
         }
 
-        internal void CalcViewData(CommandBuffer cmb, Camera cam, Matrix4x4 matrix)
+        internal void CalcViewData(CommandBuffer cmb, Camera cam)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
@@ -573,7 +578,6 @@ namespace GaussianSplatting.Runtime
             var tr = transform;
 
             Matrix4x4 matView = cam.worldToCameraMatrix;
-            Matrix4x4 matProj = GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
@@ -806,7 +810,6 @@ namespace GaussianSplatting.Runtime
 
             var tr = transform;
             Matrix4x4 matView = cam.worldToCameraMatrix;
-            Matrix4x4 matProj = GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;

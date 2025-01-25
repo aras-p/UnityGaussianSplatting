@@ -614,4 +614,22 @@ struct SplatViewData
     uint2 color; // 4xFP16
 };
 
+// If we are rendering into backbuffer directly (e.g. HDR off, no postprocessing),
+// the color target texture is a render target (so projection is upside down),
+// but the depth buffer we get is not upside down. We want to flip
+// our rendering upside down manually for this case.
+//
+// There does not seem to be a good way to detect this situation in Unity; work around it
+// by setting _CameraTargetTexture global texture to BuiltinRenderTextureType.CameraTarget
+// from the command buffer. When CameraTarget will be null (i.e. backbuffer), the _TexeSize
+// property of the texture will get set to (1,1,1,1).
+//
+// One could hope someday Unity will fix all this upside-down thingy...
+float4 _CameraTargetTexture_TexelSize;
+void FlipProjectionIfBackbuffer(inout float4 vpos)
+{
+    if (_CameraTargetTexture_TexelSize.z == 1.0)
+        vpos.y = -vpos.y;
+}
+
 #endif // GAUSSIAN_SPLATTING_HLSL

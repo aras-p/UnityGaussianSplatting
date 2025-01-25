@@ -72,6 +72,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 			}
 		}
 	}
+	FlipProjectionIfBackbuffer(o.vertex);
     return o;
 }
 

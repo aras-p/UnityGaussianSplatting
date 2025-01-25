@@ -87,7 +87,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
     float3 worldPos = centerWorldPos + localPos;
     o.vertex = UnityWorldToClipPos(worldPos);
-
+    FlipProjectionIfBackbuffer(o.vertex);
     return o;
 }
 

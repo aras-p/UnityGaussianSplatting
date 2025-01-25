@@ -24,3 +24,4 @@
 /projects/**/Temp/*
 /projects/**/UserSettings/*
 /projects/**/obj/*
+*.sln.DotSettings.user
