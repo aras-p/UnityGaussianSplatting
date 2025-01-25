@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 #if GS_ENABLE_URP
 
+#if !UNITY_6000_0_OR_NEWER
+#error Unity Gaussian Splatting URP support only works in Unity 6 or later
+#endif
+
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-#if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
-#endif
 
 namespace GaussianSplatting.Runtime
 {
@@ -21,20 +23,7 @@ namespace GaussianSplatting.Runtime
         class GSRenderPass : ScriptableRenderPass
         {
             const string GaussianSplatRTName = "_GaussianSplatRT";
-#if !UNITY_6000_0_OR_NEWER
-            RTHandle m_RenderTarget;
-            internal ScriptableRenderer m_Renderer;
-            internal CommandBuffer m_Cmb;
-#endif
 
-            public void Dispose()
-            {
-#if !UNITY_6000_0_OR_NEWER
-                m_RenderTarget?.Release();
-#endif
-            }
-
-#if UNITY_6000_0_OR_NEWER
             const string ProfilerTag = "GaussianSplatRenderGraph";
             static readonly ProfilingSampler s_profilingSampler = new(ProfilerTag);
             static readonly int s_gaussianSplatRT = Shader.PropertyToID(GaussianSplatRTName);
@@ -81,35 +70,6 @@ namespace GaussianSplatting.Runtime
                     commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
                 });
             }
-#else
-            public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
-            {
-                RenderTextureDescriptor rtDesc = renderingData.cameraData.cameraTargetDescriptor;
-                rtDesc.depthBufferBits = 0;
-                rtDesc.msaaSamples = 1;
-                rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, rtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: GaussianSplatRTName);
-                cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
-
-                ConfigureTarget(m_RenderTarget, m_Renderer.cameraDepthTargetHandle);
-                ConfigureClear(ClearFlag.Color, new Color(0,0,0,0));
-            }
-
-            public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-            {
-                if (m_Cmb == null)
-                    return;
-
-                // add sorting, view calc and drawing commands for each splat object
-                Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(renderingData.cameraData.camera, m_Cmb);
-
-                // compose
-                m_Cmb.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
-                Blitter.BlitCameraTexture(m_Cmb, m_RenderTarget, m_Renderer.cameraColorTargetHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, matComposite, 0);
-                m_Cmb.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
-                context.ExecuteCommandBuffer(m_Cmb);
-            }
-#endif
         }
 
         GSRenderPass m_Pass;
@@ -130,10 +90,6 @@ namespace GaussianSplatting.Runtime
             if (!system.GatherSplatsForCamera(cameraData.camera))
                 return;
 
-#if !UNITY_6000_0_OR_NEWER
-            CommandBuffer cmb = system.InitialClearCmdBuffer(cameraData.camera);
-            m_Pass.m_Cmb = cmb;
-#endif
             m_HasCamera = true;
         }
 
@@ -141,15 +97,11 @@ namespace GaussianSplatting.Runtime
         {
             if (!m_HasCamera)
                 return;
-#if !UNITY_6000_0_OR_NEWER
-            m_Pass.m_Renderer = renderer;
-#endif
             renderer.EnqueuePass(m_Pass);
         }
 
         protected override void Dispose(bool disposing)
         {
-            m_Pass?.Dispose();
             m_Pass = null;
         }
     }

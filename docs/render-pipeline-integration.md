@@ -6,6 +6,7 @@
 - I am mostly developing and testing with the built-in render pipeline (BiRP). This one does not need any extra setup;
   just have `GaussianSplatRenderer` components.
 - URP: add `GaussianSplatURPFeature` to the URP renderer settings.
+  - Requires Unity 6 or later, and Render Graph "Compatibility Mode" in URP settings must be turned off!
 - HDRP: add CustomPass volume object and a `GaussianSplatHDRPPass` entry to it. It can be setup to render before transparencies,
   or after postprocess. Doing it after postprocess often produces better results, since before transparencies does not play well
   with HDRP auto-exposure thingamabobs.
@@ -34,3 +35,9 @@ get incorrect rendering results.
 
 This is very much the same issue as you'd have with overlapping particle systems, or overlapping semitransparent objects in "regular"
 rendering. It's hard to solve properly!
+
+### Known issues where things do not work
+
+- Any kind of MSAA anti-aliasing usage does not work.
+- In URP, turning off both HDR _and_ changing Intermediate Texture setting
+  from default "Always" to "Auto" makes stuff render upside down.
