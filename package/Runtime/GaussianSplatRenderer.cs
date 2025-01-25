@@ -272,6 +272,7 @@ namespace GaussianSplatting.Runtime
         internal int m_FrameCounter;
         GaussianSplatAsset m_PrevAsset;
         Hash128 m_PrevHash;
+        bool m_Registered;
 
         static readonly ProfilerMarker s_ProfSort = new(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
 
@@ -451,7 +452,12 @@ namespace GaussianSplatting.Runtime
             if (m_Sorter == null && resourcesAreSetUp)
             {
                 m_Sorter = new GpuSorting(m_CSSplatUtilities);
+            }
+
+            if (!m_Registered && resourcesAreSetUp)
+            {
                 GaussianSplatRenderSystem.instance.RegisterSplat(this);
+                m_Registered = true;
             }
         }
 
@@ -551,6 +557,7 @@ namespace GaussianSplatting.Runtime
         {
             DisposeResourcesForAsset();
             GaussianSplatRenderSystem.instance.UnregisterSplat(this);
+            m_Registered = false;
 
             DestroyImmediate(m_MatSplats);
             DestroyImmediate(m_MatComposite);
