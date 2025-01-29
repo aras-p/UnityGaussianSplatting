@@ -36,6 +36,10 @@ get incorrect rendering results.
 This is very much the same issue as you'd have with overlapping particle systems, or overlapping semitransparent objects in "regular"
 rendering. It's hard to solve properly!
 
+Splat objects have a `Render Order` setting that could be tweaked to manually improve this in some situations. Objects within
+the same order are sorted by their relative distance, but objects with higher order setting are always rendered "on top" ("in front")
+of objects with lower order setting.
+
 ### Known issues where things do not work
 
 - Any kind of MSAA anti-aliasing usage does not work.
