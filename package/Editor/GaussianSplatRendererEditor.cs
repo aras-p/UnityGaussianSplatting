@@ -21,6 +21,7 @@ namespace GaussianSplatting.Editor
         const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
 
         SerializedProperty m_PropAsset;
+        SerializedProperty m_PropRenderOrder;
         SerializedProperty m_PropSplatScale;
         SerializedProperty m_PropOpacityScale;
         SerializedProperty m_PropSHOrder;
@@ -60,6 +61,7 @@ namespace GaussianSplatting.Editor
             m_ExportBakeTransform = EditorPrefs.GetBool(kPrefExportBake, false);
 
             m_PropAsset = serializedObject.FindProperty("m_Asset");
+            m_PropRenderOrder = serializedObject.FindProperty("m_RenderOrder");
             m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
             m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
             m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
@@ -103,6 +105,7 @@ namespace GaussianSplatting.Editor
 
             EditorGUILayout.Space();
             GUILayout.Label("Render Options", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(m_PropRenderOrder);
             EditorGUILayout.PropertyField(m_PropSplatScale);
             EditorGUILayout.PropertyField(m_PropOpacityScale);
             EditorGUILayout.PropertyField(m_PropSHOrder);

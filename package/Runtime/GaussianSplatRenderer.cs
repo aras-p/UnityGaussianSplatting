@@ -86,10 +86,14 @@ namespace GaussianSplatting.Runtime
             if (m_ActiveSplats.Count == 0)
                 return false;
 
-            // sort them by depth from camera
+            // sort them by order and depth from camera
             var camTr = cam.transform;
             m_ActiveSplats.Sort((a, b) =>
             {
+                var orderA = a.Item1.m_RenderOrder;
+                var orderB = b.Item1.m_RenderOrder;
+                if (orderA != orderB)
+                    return orderB.CompareTo(orderA);
                 var trA = a.Item1.transform;
                 var trB = b.Item1.transform;
                 var posA = camTr.InverseTransformPoint(trA.position);
@@ -220,6 +224,8 @@ namespace GaussianSplatting.Runtime
         }
         public GaussianSplatAsset m_Asset;
 
+        [Tooltip("Rendering order compared to other splats. Within same order splats are sorted by distance. Higher order splats render 'on top of' lower order splats.")]
+        public int m_RenderOrder;
         [Range(0.1f, 2.0f)] [Tooltip("Additional scaling factor for the splats")]
         public float m_SplatScale = 1.0f;
         [Range(0.05f, 20.0f)]
