@@ -47,7 +47,7 @@ namespace GaussianSplatting.Editor
         [SerializeField] GaussianSplatAsset.SHFormat m_FormatSH;
 
         string m_ErrorMessage;
-        string m_PrevPlyPath;
+        string m_PrevFilePath;
         int m_PrevVertexCount;
         long m_PrevFileSize;
 
@@ -82,14 +82,14 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.Space();
             GUILayout.Label("Input data", EditorStyles.boldLabel);
             var rect = EditorGUILayout.GetControlRect(true);
-            m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY File"), m_InputFile, "ply", "PointCloudFile");
+            m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY/SPZ File"), m_InputFile, "ply,spz", "PointCloudFile");
             m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
 
-            if (m_InputFile != m_PrevPlyPath && !string.IsNullOrWhiteSpace(m_InputFile))
+            if (m_InputFile != m_PrevFilePath && !string.IsNullOrWhiteSpace(m_InputFile))
             {
-                PLYFileReader.ReadFileHeader(m_InputFile, out m_PrevVertexCount, out var _, out var _);
+                m_PrevVertexCount = GaussianFileReader.ReadFileHeader(m_InputFile);
                 m_PrevFileSize = File.Exists(m_InputFile) ? new FileInfo(m_InputFile).Length : 0;
-                m_PrevPlyPath = m_InputFile;
+                m_PrevFilePath = m_InputFile;
             }
 
             if (m_PrevVertexCount > 0)
@@ -217,17 +217,6 @@ namespace GaussianSplatting.Editor
             }
         }
 
-        // input file splat data is expected to be in this format
-        public struct InputSplatData
-        {
-            public Vector3 pos;
-            public Vector3 nor;
-            public Vector3 dc0;
-            public Vector3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-            public float opacity;
-            public Vector3 scale;
-            public Quaternion rot;
-        }
 
         static T CreateOrReplaceAsset<T>(T asset, string path) where T : UnityEngine.Object
         {
@@ -250,7 +239,7 @@ namespace GaussianSplatting.Editor
             m_ErrorMessage = null;
             if (string.IsNullOrWhiteSpace(m_InputFile))
             {
-                m_ErrorMessage = $"Select input PLY file";
+                m_ErrorMessage = $"Select input PLY/SPZ file";
                 return;
             }
 
@@ -263,7 +252,7 @@ namespace GaussianSplatting.Editor
 
             EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
             GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFile, m_ImportCameras);
-            using NativeArray<InputSplatData> inputSplats = LoadPLYSplatFile(m_InputFile);
+            using NativeArray<InputSplatData> inputSplats = LoadInputSplatFile(m_InputFile);
             if (inputSplats.Length == 0)
             {
                 EditorUtility.ClearProgressBar();
@@ -304,7 +293,6 @@ namespace GaussianSplatting.Editor
             string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
             string pathCol = $"{m_OutputFolder}/{baseName}_col.bytes";
             string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
-            LinearizeData(inputSplats);
 
             // if we are using full lossless (FP32) data, then do not use any chunking, and keep data as-is
             bool useChunks = isUsingChunks;
@@ -341,64 +329,23 @@ namespace GaussianSplatting.Editor
             Selection.activeObject = savedAsset;
         }
 
-        unsafe NativeArray<InputSplatData> LoadPLYSplatFile(string plyPath)
+        NativeArray<InputSplatData> LoadInputSplatFile(string filePath)
         {
             NativeArray<InputSplatData> data = default;
-            if (!File.Exists(plyPath))
+            if (!File.Exists(filePath))
             {
-                m_ErrorMessage = $"Did not find {plyPath} file";
+                m_ErrorMessage = $"Did not find {filePath} file";
                 return data;
             }
-
-            int splatCount;
-            int vertexStride;
-            NativeArray<byte> verticesRawData;
             try
             {
-                PLYFileReader.ReadFile(plyPath, out splatCount, out vertexStride, out _, out verticesRawData);
+                GaussianFileReader.ReadFile(filePath, out data);
             }
             catch (Exception ex)
             {
                 m_ErrorMessage = ex.Message;
-                return data;
             }
-
-            if (UnsafeUtility.SizeOf<InputSplatData>() != vertexStride)
-            {
-                m_ErrorMessage = $"PLY vertex size mismatch, expected {UnsafeUtility.SizeOf<InputSplatData>()} but file has {vertexStride}";
-                return data;
-            }
-
-            // reorder SHs
-            NativeArray<float> floatData = verticesRawData.Reinterpret<float>(1);
-            ReorderSHs(splatCount, (float*)floatData.GetUnsafePtr());
-
-            return verticesRawData.Reinterpret<InputSplatData>(1);
-        }
-
-        [BurstCompile]
-        static unsafe void ReorderSHs(int splatCount, float* data)
-        {
-            int splatStride = UnsafeUtility.SizeOf<InputSplatData>() / 4;
-            int shStartOffset = 9, shCount = 15;
-            float* tmp = stackalloc float[shCount * 3];
-            int idx = shStartOffset;
-            for (int i = 0; i < splatCount; ++i)
-            {
-                for (int j = 0; j < shCount; ++j)
-                {
-                    tmp[j * 3 + 0] = data[idx + j];
-                    tmp[j * 3 + 1] = data[idx + j + shCount];
-                    tmp[j * 3 + 2] = data[idx + j + shCount * 2];
-                }
-
-                for (int j = 0; j < shCount * 3; ++j)
-                {
-                    data[idx + j] = tmp[j];
-                }
-
-                idx += splatStride;
-            }
+            return data;
         }
 
         [BurstCompile]
@@ -558,38 +505,6 @@ namespace GaussianSplatting.Editor
             shMeans.Dispose();
             float t1 = Time.realtimeSinceStartup;
             Debug.Log($"GS: clustered {splatData.Length/1000000.0:F2}M SHs into {shCount/1024}K ({passesOverData:F1}pass/{kBatchSize}batch) in {t1-t0:F0}s");
-        }
-
-        [BurstCompile]
-        struct LinearizeDataJob : IJobParallelFor
-        {
-            public NativeArray<InputSplatData> splatData;
-            public void Execute(int index)
-            {
-                var splat = splatData[index];
-
-                // rot
-                var q = splat.rot;
-                var qq = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
-                qq = GaussianUtils.PackSmallest3Rotation(qq);
-                splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
-
-                // scale
-                splat.scale = GaussianUtils.LinearScale(splat.scale);
-
-                // color
-                splat.dc0 = GaussianUtils.SH0ToColor(splat.dc0);
-                splat.opacity = GaussianUtils.Sigmoid(splat.opacity);
-
-                splatData[index] = splat;
-            }
-        }
-
-        static void LinearizeData(NativeArray<InputSplatData> splatData)
-        {
-            LinearizeDataJob job = new LinearizeDataJob();
-            job.splatData = splatData;
-            job.Schedule(splatData.Length, 4096).Complete();
         }
 
         [BurstCompile]
