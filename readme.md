@@ -32,8 +32,12 @@ does not work there.
 <img align="right" src="docs/Images/shotAssetCreator.png" width="250px">
 
 Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
-In the dialog, point `Input PLY File` to your Gaussian Splat file (note that it has to be a gaussian splat PLY file, not some 
-other PLY file. E.g. in the official paper models, the correct files are under `point_cloud/iteration_*/point_cloud.ply`).
+In the dialog, point `Input PLY/SPZ File` to your Gaussian Splat file. Currently two
+file formats are supported:
+- PLY format from the original 3DGS paper (in the official paper models, the correct files
+  are under `point_cloud/iteration_*/point_cloud.ply`).
+- [Scaniverse SPZ](https://scaniverse.com/spz) format.
+
 Optionally there can be `cameras.json` next to it or somewhere in parent folders.
 
 Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
