@@ -148,7 +148,7 @@ namespace GaussianSplatting.Editor.Utils
                 Vector3 xyz = new Vector3(packedRot[index * 3 + 0], packedRot[index * 3 + 1], packedRot[index * 3 + 2]) * (1.0f / 127.5f) - new Vector3(1, 1, 1);
                 float w = math.sqrt(math.max(0.0f, 1.0f - xyz.sqrMagnitude));
                 var q = new float4(xyz.x, xyz.y, xyz.z, w);
-                var qq = GaussianUtils.NormalizeSwizzleRotation(new float4(q.x, q.y, q.z, q.w));
+                var qq = math.normalize(q);
                 qq = GaussianUtils.PackSmallest3Rotation(qq);
                 splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
 
