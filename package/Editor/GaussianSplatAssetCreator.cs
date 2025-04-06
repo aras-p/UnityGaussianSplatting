@@ -87,7 +87,17 @@ namespace GaussianSplatting.Editor
 
             if (m_InputFile != m_PrevFilePath && !string.IsNullOrWhiteSpace(m_InputFile))
             {
-                m_PrevVertexCount = GaussianFileReader.ReadFileHeader(m_InputFile);
+                m_PrevVertexCount = 0;
+                m_ErrorMessage = null;
+                try
+                {
+                    m_PrevVertexCount = GaussianFileReader.ReadFileHeader(m_InputFile);
+                }
+                catch (Exception ex)
+                {
+                    m_ErrorMessage = ex.Message;
+                }
+
                 m_PrevFileSize = File.Exists(m_InputFile) ? new FileInfo(m_InputFile).Length : 0;
                 m_PrevFilePath = m_InputFile;
             }

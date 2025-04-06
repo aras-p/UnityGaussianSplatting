@@ -33,12 +33,15 @@ namespace GaussianSplatting.Editor.Utils
             vertexStride = 0;
             attrs = new List<(string, ElementType)>();
             const int kMaxHeaderLines = 9000;
+            bool got_binary_le = false;
             for (int lineIdx = 0; lineIdx < kMaxHeaderLines; ++lineIdx)
             {
                 var line = ReadLine(fs);
                 if (line == "end_header" || line.Length == 0)
                     break;
                 var tokens = line.Split(' ');
+                if (tokens.Length == 3 && tokens[0] == "format" && tokens[1] == "binary_little_endian" && tokens[2] == "1.0")
+                    got_binary_le = true;
                 if (tokens.Length == 3 && tokens[0] == "element" && tokens[1] == "vertex")
                     vertexCount = int.Parse(tokens[2]);
                 if (tokens.Length == 3 && tokens[0] == "property")
@@ -53,6 +56,11 @@ namespace GaussianSplatting.Editor.Utils
                     vertexStride += TypeToSize(type);
                     attrs.Add((tokens[2], type));
                 }
+            }
+
+            if (!got_binary_le)
+            {
+                throw new IOException($"PLY {filePath} not supported: needs to be binary, little endian PLY format");
             }
         }
 
