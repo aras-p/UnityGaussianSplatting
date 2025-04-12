@@ -403,6 +403,7 @@ void CSSelectionUpdate (uint3 id : SV_DispatchThreadID)
 
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
+    centerClipPos.y *= -1;
     bool behindCam = centerClipPos.w <= 0;
     if (behindCam)
         return;
