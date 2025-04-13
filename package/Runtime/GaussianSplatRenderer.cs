@@ -31,6 +31,15 @@ namespace GaussianSplatting.Runtime
 
         CommandBuffer m_CommandBuffer;
 
+        // Keep track of the prepared splats for stereo rendering
+        public class PreparedRenderData
+        {
+            public Material matComposite;
+            public List<(GaussianSplatRenderer gs, Material displayMat, MaterialPropertyBlock mpb, int indexCount, int instanceCount, MeshTopology topology)> renderItems = new();
+        }
+        
+        private PreparedRenderData m_LastPreparedData;
+
         public void RegisterSplat(GaussianSplatRenderer r)
         {
             if (m_Splats.Count == 0)
@@ -104,10 +113,18 @@ namespace GaussianSplatting.Runtime
             return true;
         }
 
+        // New optimized method that prepares everything once for stereo rendering
+        // This does the sorting and calculates view data, but doesn't actually render
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, int eyeIndex = -1)
+        public PreparedRenderData PrepareSplats(Camera cam, CommandBuffer cmb)
         {
+            if (m_LastPreparedData == null)
+                m_LastPreparedData = new PreparedRenderData();
+            else
+                m_LastPreparedData.renderItems.Clear();
+            
             Material matComposite = null;
+
             foreach (var kvp in m_ActiveSplats)
             {
                 var gs = kvp.Item1;
@@ -115,13 +132,13 @@ namespace GaussianSplatting.Runtime
                 matComposite = gs.m_MatComposite;
                 var mpb = kvp.Item2;
 
-                // sort
+                // Sort the splats
                 var matrix = gs.transform.localToWorldMatrix;
                 if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
                     gs.SortPoints(cmb, cam, matrix);
                 ++gs.m_FrameCounter;
 
-                // cache view
+                // Prepare material and view data
                 kvp.Item2.Clear();
                 Material displayMat = gs.m_RenderMode switch
                 {
@@ -134,11 +151,10 @@ namespace GaussianSplatting.Runtime
                 if (displayMat == null)
                     continue;
 
-                gs.SetAssetDataOnMaterial(mpb, eyeIndex);
+                // Set up everything except eye-specific parameters
+                gs.SetAssetDataOnMaterial(mpb, -1); // -1 for initial setup without eye index
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
-
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
-
                 mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatScale, gs.m_SplatScale);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatOpacityScale, gs.m_OpacityScale);
@@ -148,11 +164,12 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
+                // Calculate view data once for stereo (will calculate for both eyes)
                 cmb.BeginSample(s_ProfCalcView);
                 gs.CalcViewData(cmb, cam);
                 cmb.EndSample(s_ProfCalcView);
 
-                // draw
+                // Set up draw parameters
                 int indexCount = 6;
                 int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
@@ -161,11 +178,45 @@ namespace GaussianSplatting.Runtime
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
+                // Store the prepared data for rendering later
+                m_LastPreparedData.renderItems.Add((gs, displayMat, mpb, indexCount, instanceCount, topology));
+            }
+
+            m_LastPreparedData.matComposite = matComposite;
+            return m_LastPreparedData;
+        }
+
+        // New optimized method that just draws the prepared splats for a specific eye
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public void RenderPreparedSplats(CommandBuffer cmb, int eyeIndex)
+        {
+            if (m_LastPreparedData == null || m_LastPreparedData.renderItems.Count == 0)
+                return;
+
+            foreach (var (gs, displayMat, mpb, indexCount, instanceCount, topology) in m_LastPreparedData.renderItems)
+            {
+                // Set the eye index for this specific render
+                mpb.SetInteger(GaussianSplatRenderer.Props.EyeIndex, eyeIndex);
+                mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, 1);
+
+                // Draw
                 cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+                cmb.DrawProcedural(gs.m_GpuIndexBuffer, gs.transform.localToWorldMatrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
             }
-            return matComposite;
+        }
+
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        {
+            // Prepare the splats (sort and calculate view data)
+            var renderData = PrepareSplats(cam, cmb);
+            
+            // Render the prepared splats
+            RenderPreparedSplats(cmb, -1);
+            
+            // Return the composite material
+            return renderData.matComposite;
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
@@ -200,7 +251,7 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture, BuiltinRenderTextureType.CameraTarget);
 
             // add sorting, view calc and drawing commands for each splat object
-            Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer, -1);
+            Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);

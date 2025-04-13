@@ -80,26 +80,32 @@ namespace GaussianSplatting.Runtime
                     
                     if (data.IsStereo)
                     {
-                        // Left eye rendering
-                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 0);
-                        Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer, 0);
+                        // Clear the render target for both eyes
+                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear);
 
-                        // Right eye rendering
-                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 1);
-                        GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer, 1);
-
-                        matComposite.SetTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                        // Prepare the splats once - sort them and calculate view data
+                        var renderData = GaussianSplatRenderSystem.instance.PrepareSplats(data.CameraData.camera, commandBuffer);
                         
+                        // Render to left eye
+                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 0);
+                        GaussianSplatRenderSystem.instance.RenderPreparedSplats(commandBuffer, 0);
+
+                        // Render to right eye
+                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 1);
+                        GaussianSplatRenderSystem.instance.RenderPreparedSplats(commandBuffer, 1);
+
                         // Composite to the final target
                         commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
                         commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                        renderData.matComposite.SetTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                        
                         commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 0);
                         commandBuffer.SetGlobalInt("_CustomStereoEyeIndex", 0); // emulate left
-                        commandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                        commandBuffer.DrawProcedural(Matrix4x4.identity, renderData.matComposite, 0, MeshTopology.Triangles, 3, 1);
 
                         commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 1);
                         commandBuffer.SetGlobalInt("_CustomStereoEyeIndex", 1); // emulate right
-                        commandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                        commandBuffer.DrawProcedural(Matrix4x4.identity, renderData.matComposite, 0, MeshTopology.Triangles, 3, 1);
                         commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
                     }
                     else
