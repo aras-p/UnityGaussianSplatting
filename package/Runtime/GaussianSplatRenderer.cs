@@ -207,13 +207,13 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, int eyeIndex = -1)
         {
             // Prepare the splats (sort and calculate view data)
             var renderData = PrepareSplats(cam, cmb);
             
             // Render the prepared splats
-            RenderPreparedSplats(cmb, -1);
+            RenderPreparedSplats(cmb, eyeIndex);
             
             // Return the composite material
             return renderData.matComposite;
@@ -260,6 +260,17 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
+        
+        // Checks if any active splats require per-eye sorting
+        public bool RequiresPerEyeSorting()
+        {
+            foreach (var item in m_ActiveSplats)
+            {
+                if (item.Item1.m_SortPerEye)
+                    return true;
+            }
+            return false;
+        }
     }
 
     [ExecuteInEditMode]
@@ -288,6 +299,8 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
+        [Tooltip("When in VR, sort splats separately for each eye. This increases accuracy but reduces performance.")]
+        public bool m_SortPerEye = false;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;

@@ -35,10 +35,10 @@ uint _EyeIndex;
 uint _IsStereo;
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
-    v2f o = (v2f)0;
-    instID = _OrderBuffer[instID];
-    uint eyeIndex = _EyeIndex;
-    uint viewIndex = _IsStereo ? instID * 2 + eyeIndex : instID;
+	v2f o = (v2f)0;
+	instID = _OrderBuffer[instID];
+	uint eyeIndex = _EyeIndex;
+	uint viewIndex = _IsStereo ? instID * 2 + eyeIndex : instID;
 	SplatViewData view = _SplatViewData[viewIndex];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
