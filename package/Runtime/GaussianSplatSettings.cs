@@ -4,7 +4,14 @@ using UnityEngine;
 
 namespace GaussianSplatting.Runtime
 {
-    public enum RenderMode
+    public enum TransparencyMode
+    {
+        // sort splats within each gaussian point cloud, blend back to front
+        SortedBlended,
+        // no sorting, transparency is stochastic (random) and noisy
+        Stochastic,
+    }
+    public enum DebugRenderMode
     {
         Splats,
         DebugPoints,
@@ -13,37 +20,47 @@ namespace GaussianSplatting.Runtime
         DebugChunkBounds,
     }
 
+    // If an object with this script exists in the scene, then global 3DGS rendering options
+    // are used from that script. Otherwise, defaults are used.
+    //
     [ExecuteInEditMode] // so that Awake is called in edit mode
     [DefaultExecutionOrder(-100)]
-    public class GaussianSplatRenderOptions : MonoBehaviour
+    public class GaussianSplatSettings : MonoBehaviour
     {
-        public static GaussianSplatRenderOptions instance
+        public static GaussianSplatSettings instance
         {
             get
             {
                 if (ms_Instance == null)
-                    ms_Instance = FindAnyObjectByType<GaussianSplatRenderOptions>();
+                    ms_Instance = FindAnyObjectByType<GaussianSplatSettings>();
                 if (ms_Instance == null)
                 {
-                    var go = new GameObject($"{nameof(GaussianSplatRenderOptions)} (Defaults)")
+                    var go = new GameObject($"{nameof(GaussianSplatSettings)} (Defaults)")
                     {
                         hideFlags = HideFlags.HideAndDontSave
                     };
-                    ms_Instance = go.AddComponent<GaussianSplatRenderOptions>();
+                    ms_Instance = go.AddComponent<GaussianSplatSettings>();
                     ms_Instance.EnsureResources();
                 }
                 return ms_Instance;
             }
         }
-        static GaussianSplatRenderOptions ms_Instance;
+        static GaussianSplatSettings ms_Instance;
+
+        [Header("Options")]
+        [Tooltip("Gaussian splat transparency rendering algorithm")]
+        public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
 
         [Header("Debugging Tweaks")]
-        public RenderMode m_RenderMode = RenderMode.Splats;
+        public DebugRenderMode m_DebugRenderMode = DebugRenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
+
+        internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended ||
+                                     m_DebugRenderMode == DebugRenderMode.DebugBoxes;
 
         internal bool resourcesFound { get; private set; }
         bool resourcesLoadAttempted;
@@ -73,8 +90,10 @@ namespace GaussianSplatting.Runtime
             shaderDebugBoxes = Resources.Load<Shader>("GaussianDebugRenderBoxes");
             csUtilities = Resources.Load<ComputeShader>("GaussianSplatUtilities");
 
-            resourcesFound = shaderSplats != null && shaderComposite != null && shaderDebugPoints != null &&
-                             shaderDebugBoxes != null && csUtilities != null && SystemInfo.supportsComputeShaders;
+            resourcesFound =
+                shaderSplats != null && shaderComposite != null && shaderDebugPoints != null && shaderDebugBoxes != null &&
+                csUtilities != null &&
+                SystemInfo.supportsComputeShaders;
             UpdateGlobalOptions();
         }
 
