@@ -32,10 +32,20 @@ namespace GaussianSplatting.Runtime
         CommandBuffer m_CommandBuffer;
 
         // Keep track of the prepared splats for stereo rendering
+        public struct RenderItem
+        {
+            public GaussianSplatRenderer gs;
+            public Material displayMat;
+            public MaterialPropertyBlock mpb;
+            public int indexCount;
+            public int instanceCount;
+            public MeshTopology topology;
+        }
+        
         public class PreparedRenderData
         {
             public Material matComposite;
-            public List<(GaussianSplatRenderer gs, Material displayMat, MaterialPropertyBlock mpb, int indexCount, int instanceCount, MeshTopology topology)> renderItems = new();
+            public List<RenderItem> renderItems = new();
         }
         
         private PreparedRenderData m_LastPreparedData;
@@ -119,9 +129,13 @@ namespace GaussianSplatting.Runtime
         public PreparedRenderData PrepareSplats(Camera cam, CommandBuffer cmb)
         {
             if (m_LastPreparedData == null)
+            {
                 m_LastPreparedData = new PreparedRenderData();
+            }
             else
+            {
                 m_LastPreparedData.renderItems.Clear();
+            }
             
             Material matComposite = null;
 
@@ -179,7 +193,7 @@ namespace GaussianSplatting.Runtime
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
                 // Store the prepared data for rendering later
-                m_LastPreparedData.renderItems.Add((gs, displayMat, mpb, indexCount, instanceCount, topology));
+                m_LastPreparedData.renderItems.Add(new RenderItem { gs = gs, displayMat = displayMat, mpb = mpb, indexCount = indexCount, instanceCount = instanceCount, topology = topology });
             }
 
             m_LastPreparedData.matComposite = matComposite;
@@ -193,15 +207,15 @@ namespace GaussianSplatting.Runtime
             if (m_LastPreparedData == null || m_LastPreparedData.renderItems.Count == 0)
                 return;
 
-            foreach (var (gs, displayMat, mpb, indexCount, instanceCount, topology) in m_LastPreparedData.renderItems)
+            foreach (var item in m_LastPreparedData.renderItems)
             {
                 // Set the eye index for this specific render
-                mpb.SetInteger(GaussianSplatRenderer.Props.EyeIndex, eyeIndex);
-                mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, 1);
+                item.mpb.SetInteger(GaussianSplatRenderer.Props.EyeIndex, eyeIndex);
+                item.mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, 1);
 
                 // Draw
                 cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, gs.transform.localToWorldMatrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+                cmb.DrawProcedural(item.gs.m_GpuIndexBuffer, item.gs.transform.localToWorldMatrix, item.displayMat, 0, item.topology, item.indexCount, item.instanceCount, item.mpb);
                 cmb.EndSample(s_ProfDraw);
             }
         }
