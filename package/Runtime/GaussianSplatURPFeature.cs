@@ -52,13 +52,6 @@ namespace GaussianSplatting.Runtime
                 rtDesc.depthBufferBits = 0;
                 rtDesc.msaaSamples = 1;
                 rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                Debug.Log($"isStereo: {isStereo}");
-                Debug.Log($"Dimension: {rtDesc.dimension}");
-                Debug.Log($"Volume: {rtDesc.volumeDepth}");
-                Debug.Log($"stereoRenderingMode: {XRSettings.stereoRenderingMode}");
-                TextureDesc desc = resourceData.activeColorTexture.GetDescriptor(renderGraph);
-                Debug.Log($"xrReady: {desc.dimension}");
-                Debug.Log($"rtDesc vrUsage: {rtDesc.vrUsage}");
                 
                 // Create render texture
                 var gaussianSplatRT = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
@@ -110,7 +103,7 @@ namespace GaussianSplatting.Runtime
                     }
                     else
                     {
-                        // Legacy single-eye rendering for backward compatibility
+                        // Single-eye rendering
                         commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
                         CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth, ClearFlag.Color, Color.clear);
                         Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer);
