@@ -111,7 +111,6 @@ namespace GaussianSplatting.Runtime
 
                         // Composite to the final target
                         commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
-                        commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
                         matComposite.SetTexture(s_gaussianSplatRT, data.GaussianSplatRT);
                         
                         commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 0);
