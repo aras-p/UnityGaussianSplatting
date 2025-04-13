@@ -211,7 +211,7 @@ namespace GaussianSplatting.Runtime
             {
                 // Set the eye index for this specific render
                 item.mpb.SetInteger(GaussianSplatRenderer.Props.EyeIndex, eyeIndex);
-                item.mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, 1);
+                item.mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, (eyeIndex == -1) ? 0 : 1);
 
                 // Draw
                 cmb.BeginSample(s_ProfDraw);
