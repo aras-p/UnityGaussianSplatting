@@ -25,20 +25,17 @@ CGPROGRAM
 struct v2f
 {
     float4 vertex : SV_POSITION;
-    float2 uv : TEXCOORD0;
 };
 
 struct appdata
 {
     float4 vertex : POSITION;
-    float2 uv : TEXCOORD0;
     uint vtxID : SV_VertexID;
 };
 
-v2f vert (appdata v)
+v2f vert (uint vtxID : SV_VertexID)
 {
     v2f o;
-    uint vtxID = v.vtxID;
     
     float2 quadPos = float2(vtxID&1, (vtxID>>1)&1) * 4.0 - 1.0;
     o.vertex = UnityObjectToClipPos(float4(quadPos, 1, 1));
@@ -55,16 +52,14 @@ Texture2D _GaussianSplatRT;
 int _CustomStereoEyeIndex;
 half4 frag (v2f i) : SV_Target
 {
-    uint eyeIndex = _CustomStereoEyeIndex;
-    // Normalize the pixel coordinates to [0,1] range
-    float2 normalizedUV = float2(i.vertex.x / _ScreenParams.x, i.vertex.y / _ScreenParams.y);
-    half4 col;
-    
+    half4 col;    
     // Check if using separate eye textures
     #if defined(UNITY_SINGLE_PASS_STEREO) || defined(STEREO_INSTANCING_ON) || defined(STEREO_MULTIVIEW_ON)
-        col = UNITY_SAMPLE_TEX2DARRAY(_GaussianSplatRT, float3(normalizedUV, eyeIndex));
+        // Normalize the pixel coordinates to [0,1] range
+        float2 normalizedUV = float2(i.vertex.x / _ScreenParams.x, i.vertex.y / _ScreenParams.y);
+        col = UNITY_SAMPLE_TEX2DARRAY(_GaussianSplatRT, float3(normalizedUV, _CustomStereoEyeIndex));
     #else
-        // Fallback to legacy single-texture approach for backward compatibility
+        // single-texture for non-stereo
         col = _GaussianSplatRT.Load(int3(i.vertex.xy, 0));
     #endif
 
