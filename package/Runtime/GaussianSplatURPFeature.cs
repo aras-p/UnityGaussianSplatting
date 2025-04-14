@@ -99,6 +99,10 @@ namespace GaussianSplatting.Runtime
                             // Prepare the splats once - sort them and calculate view data
                             var renderData = GaussianSplatRenderSystem.instance.PrepareSplats(data.CameraData.camera, commandBuffer);
                             
+                            // [Quest3] Workaround for stereo rendering. Unity is not able to correctly set unity_stereoEyeIndex when drawing to
+                            // a render texture array, so we need to do it manually. Also, we need to draw the same material twice,
+                            // once for each eye. TODO: Revisit this when Unity fixes the issue.
+
                             // Render to left eye
                             CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 0);
                             GaussianSplatRenderSystem.instance.RenderPreparedSplats(commandBuffer, 0);
@@ -112,7 +116,10 @@ namespace GaussianSplatting.Runtime
                         // Composite to the final target
                         commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
                         matComposite.SetTexture(s_gaussianSplatRT, data.GaussianSplatRT);
-                        
+
+                        // [Quest3] Workaround for stereo rendering. Unity is not able to correctly set unity_stereoEyeIndex when drawing to
+                        // a render texture array, so we need to do it manually. Also, we need to draw the same material twice,
+                        // once for each eye. TODO: Revisit this when Unity fixes the issue.
                         commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 0);
                         commandBuffer.SetGlobalInt("_CustomStereoEyeIndex", 0); // emulate left
                         commandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
