@@ -123,26 +123,44 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public void SortAllSplats(Camera cam, CommandBuffer cmb)
+        {
+            if (cam.cameraType == CameraType.Preview)
+                return;
+            GaussianSplatSettings options = GaussianSplatSettings.instance;
+            if (!options.needSorting)
+                return; // no need to sort
+
+            foreach (var kvp in m_ActiveSplats)
+            {
+                var gs = kvp.Item1;
+                var matrix = gs.transform.localToWorldMatrix;
+                if (gs.m_FrameCounter % options.m_SortNthFrame == 0)
+                    gs.SortPoints(cmb, cam, matrix);
+                ++gs.m_FrameCounter;
+            }
+        }
+
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public void CacheViewDataForAllSplats(Camera cam, CommandBuffer cmb)
+        {
+            foreach (var kvp in m_ActiveSplats)
+            {
+                var gs = kvp.Item1;
+                cmb.BeginSample(s_ProfCalcView);
+                gs.CalcViewData(cmb, cam);
+                cmb.EndSample(s_ProfCalcView);
+            }
+        }
+
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public Material RenderAllSplats(Camera cam, CommandBuffer cmb)
         {
             Material matComposite = null;
             GaussianSplatSettings options = GaussianSplatSettings.instance;
             bool stochastic = options.m_Transparency == TransparencyMode.Stochastic;
 
-            if (m_CubeIndexBuffer == null)
-            {
-                // cube indices, most often we use only the first quad
-                m_CubeIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
-                m_CubeIndexBuffer.SetData(new ushort[]
-                {
-                    0, 1, 2, 1, 3, 2,
-                    4, 6, 5, 5, 6, 7,
-                    0, 2, 4, 4, 2, 6,
-                    1, 5, 3, 5, 7, 3,
-                    0, 4, 1, 4, 5, 1,
-                    2, 3, 6, 3, 7, 6
-                });
-            }
+            EnsureCubeIndexBuffer();
 
             m_GlobalUniforms ??= new GraphicsBuffer(GraphicsBuffer.Target.Constant, 1, UnsafeUtility.SizeOf<SplatGlobalUniforms>());
             NativeArray<SplatGlobalUniforms> sgu = new(1, Allocator.Temp);
@@ -156,13 +174,8 @@ namespace GaussianSplatting.Runtime
                 gs.EnsureMaterials();
                 matComposite = gs.m_MatComposite;
 
-                // sort
                 var matrix = gs.transform.localToWorldMatrix;
-                if (gs.m_FrameCounter % options.m_SortNthFrame == 0)
-                    gs.SortPoints(cmb, cam, matrix);
-                ++gs.m_FrameCounter;
 
-                // cache view
                 var mpb = kvp.Item2;
                 mpb.Clear();
                 Material displayMat = options.m_DebugRenderMode switch
@@ -196,11 +209,6 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, options.m_DebugRenderMode == DebugRenderMode.DebugChunkBounds ? 1 : 0);
                 mpb.SetConstantBuffer(GaussianSplatRenderer.Props.SplatGlobalUniforms, m_GlobalUniforms, 0, m_GlobalUniforms.stride);
 
-                cmb.BeginSample(s_ProfCalcView);
-                gs.CalcViewData(cmb, cam);
-                cmb.EndSample(s_ProfCalcView);
-
-                // draw
                 int indexCount = 6;
                 int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
@@ -214,6 +222,23 @@ namespace GaussianSplatting.Runtime
                 cmb.EndSample(s_ProfDraw);
             }
             return matComposite;
+        }
+
+        // cube indices, most often we use only the first quad
+        void EnsureCubeIndexBuffer()
+        {
+            if (m_CubeIndexBuffer != null)
+                return;
+            m_CubeIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
+            m_CubeIndexBuffer.SetData(new ushort[]
+            {
+                0, 1, 2, 1, 3, 2,
+                4, 6, 5, 5, 6, 7,
+                0, 2, 4, 4, 2, 6,
+                1, 5, 3, 5, 7, 3,
+                0, 4, 1, 4, 5, 1,
+                2, 3, 6, 3, 7, 6
+            });
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
@@ -239,16 +264,19 @@ namespace GaussianSplatting.Runtime
 
             InitialClearCmdBuffer(cam);
 
+            // We only need this to determine whether we're rendering into backbuffer or not. However, detection this
+            // way only works in BiRP so only do it here.
+            m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture,
+                BuiltinRenderTextureType.CameraTarget);
+
             m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
             m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
             m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
 
-            // We only need this to determine whether we're rendering into backbuffer or not. However, detection this
-            // way only works in BiRP so only do it here.
-            m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture, BuiltinRenderTextureType.CameraTarget);
-
-            // add sorting, view calc and drawing commands for each splat object
-            Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
+            // add sorting, view calc and drawing commands for all splat objects
+            SortAllSplats(cam, m_CommandBuffer);
+            CacheViewDataForAllSplats(cam, m_CommandBuffer);
+            Material matComposite = RenderAllSplats(cam, m_CommandBuffer);
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
@@ -631,13 +659,6 @@ namespace GaussianSplatting.Runtime
 
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
         {
-            if (cam.cameraType == CameraType.Preview)
-                return;
-
-            GaussianSplatSettings options = GaussianSplatSettings.instance;
-            if (!options.needSorting)
-                return; // no need to sort
-
             Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
             worldToCamMatrix.m20 *= -1;
             worldToCamMatrix.m21 *= -1;
@@ -645,6 +666,7 @@ namespace GaussianSplatting.Runtime
 
             // calculate distance to the camera for each splat
             cmd.BeginSample(s_ProfSort);
+            GaussianSplatSettings options = GaussianSplatSettings.instance;
             ComputeShader cs = options.csUtilities;
             cmd.SetComputeBufferParam(cs, (int)KernelIndices.CalcDistances, Props.SplatSortDistances, m_GpuSortDistances);
             cmd.SetComputeBufferParam(cs, (int)KernelIndices.CalcDistances, Props.SplatSortKeys, m_GpuSortKeys);

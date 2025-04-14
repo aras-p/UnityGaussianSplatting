@@ -56,6 +56,7 @@ namespace GaussianSplatting.Runtime
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
         public bool m_SHOnly;
+        [Header("Sorted Blended transparency:")]
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
 
