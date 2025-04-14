@@ -153,6 +153,7 @@ half4 frag (v2f i) : SV_Target
 		half cutoff = (hash.x & 0xFFFF) / 65535.0;
 		if (alpha <= cutoff)
 			discard;
+		//alpha = i.vertex.z / i.vertex.w; //@TODO: write depth to alpha for when we'll start doing motion
 		alpha = 1;
 	}
     half4 res = half4(i.col.rgb, alpha);

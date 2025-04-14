@@ -38,6 +38,7 @@ namespace GaussianSplatting.Runtime
         Material m_MatDebugPoints;
         Material m_MatDebugBoxes;
         uint m_FrameOffset;
+        GaussianSplatTemporalFilter m_TemporalFilter;
 
         struct SplatGlobalUniforms // match cbuffer SplatGlobalUniforms in shaders
         {
@@ -93,6 +94,8 @@ namespace GaussianSplatting.Runtime
             Object.DestroyImmediate(m_MatComposite);
             Object.DestroyImmediate(m_MatDebugPoints);
             Object.DestroyImmediate(m_MatDebugBoxes);
+            m_TemporalFilter?.Dispose();
+            m_TemporalFilter = null;
             Camera.onPreCull -= OnPreCullCamera;
         }
 
@@ -280,6 +283,11 @@ namespace GaussianSplatting.Runtime
             if (!GatherSplatsForCamera(cam))
                 return;
 
+            EnsureMaterials();
+            var matComposite = m_MatComposite;
+            if (!matComposite)
+                return;
+
             InitialClearCmdBuffer(cam);
 
             // We only need this to determine whether we're rendering into backbuffer or not. However, detection this
@@ -294,18 +302,27 @@ namespace GaussianSplatting.Runtime
             // add sorting, view calc and drawing commands for all splat objects
             SortAllSplats(cam, m_CommandBuffer);
             CacheViewDataForAllSplats(cam, m_CommandBuffer);
+            GaussianSplatSettings settings = GaussianSplatSettings.instance;
             RenderAllSplats(cam, m_CommandBuffer);
 
             // compose
-            var matComposite = m_MatComposite;
-            if (matComposite)
+            m_CommandBuffer.BeginSample(s_ProfCompose);
+            if (settings.m_Transparency == TransparencyMode.Stochastic)
             {
-                m_CommandBuffer.BeginSample(s_ProfCompose);
+                m_TemporalFilter ??= new GaussianSplatTemporalFilter();
+                m_TemporalFilter.Render(m_CommandBuffer, cam, matComposite, 1,
+                    GaussianSplatRenderer.Props.GaussianSplatRT,
+                    BuiltinRenderTextureType.CameraTarget,
+                    settings.m_TemporalFrameInfluence,
+                    settings.m_TemporalVarianceClampScale);
+            }
+            else
+            {
                 m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
                 m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
-                m_CommandBuffer.EndSample(s_ProfCompose);
-                m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
             }
+            m_CommandBuffer.EndSample(s_ProfCompose);
+            m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
     }
 
