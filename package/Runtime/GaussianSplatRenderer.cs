@@ -312,14 +312,14 @@ namespace GaussianSplatting.Runtime
             if (!settings.isDebugRender)
             {
                 m_CommandBuffer.BeginSample(s_ProfCompose);
-                if (settings.m_Transparency == TransparencyMode.Stochastic)
+                if (settings.m_Transparency == TransparencyMode.Stochastic && settings.m_TemporalFilter != TemporalFilter.None)
                 {
                     m_TemporalFilter ??= new GaussianSplatTemporalFilter();
                     m_TemporalFilter.Render(m_CommandBuffer, cam, matComposite, 1,
                         GaussianSplatRenderer.Props.GaussianSplatRT,
                         BuiltinRenderTextureType.CameraTarget,
-                        settings.m_TemporalFrameInfluence,
-                        settings.m_TemporalVarianceClampScale);
+                        settings.m_FrameInfluence,
+                        settings.m_VarianceClampScale);
                 }
                 else
                 {

@@ -261,10 +261,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Transparency: 0
-  m_DebugRenderMode: 0
+  m_SortNthFrame: 1
+  m_TemporalFilter: 0
+  m_FrameInfluence: 0.05
+  m_VarianceClampScale: 1.5
+  m_RenderMode: 0
   m_PointDisplaySize: 3
   m_SHOnly: 0
-  m_SortNthFrame: 1
 --- !u!1 &1462254335
 GameObject:
   m_ObjectHideFlags: 0

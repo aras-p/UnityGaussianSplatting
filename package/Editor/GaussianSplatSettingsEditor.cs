@@ -12,8 +12,9 @@ namespace GaussianSplatting.Editor
     {
         SerializedProperty m_Transparency;
         SerializedProperty m_SortNthFrame;
-        SerializedProperty m_TemporalFrameInfluence;
-        SerializedProperty m_TemporalVarianceClampScale;
+        SerializedProperty m_TemporalFilter;
+        SerializedProperty m_FrameInfluence;
+        SerializedProperty m_VarianceClampScale;
         SerializedProperty m_RenderMode;
         SerializedProperty m_PointDisplaySize;
         SerializedProperty m_SHOnly;
@@ -22,8 +23,9 @@ namespace GaussianSplatting.Editor
         {
             m_Transparency = serializedObject.FindProperty("m_Transparency");
             m_SortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
-            m_TemporalFrameInfluence = serializedObject.FindProperty("m_TemporalFrameInfluence");
-            m_TemporalVarianceClampScale = serializedObject.FindProperty("m_TemporalVarianceClampScale");
+            m_TemporalFilter = serializedObject.FindProperty("m_TemporalFilter");
+            m_FrameInfluence = serializedObject.FindProperty("m_FrameInfluence");
+            m_VarianceClampScale = serializedObject.FindProperty("m_VarianceClampScale");
             m_RenderMode = serializedObject.FindProperty("m_RenderMode");
             m_PointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
             m_SHOnly = serializedObject.FindProperty("m_SHOnly");
@@ -39,10 +41,14 @@ namespace GaussianSplatting.Editor
             {
                 EditorGUILayout.PropertyField(m_SortNthFrame);
             }
-            if (m_Transparency.intValue is (int) TransparencyMode.Stochastic)
+            if (m_Transparency.intValue == (int) TransparencyMode.Stochastic)
             {
-                EditorGUILayout.PropertyField(m_TemporalFrameInfluence);
-                EditorGUILayout.PropertyField(m_TemporalVarianceClampScale);
+                EditorGUILayout.PropertyField(m_TemporalFilter);
+                if (m_TemporalFilter.intValue != (int)TemporalFilter.None)
+                {
+                    EditorGUILayout.PropertyField(m_FrameInfluence);
+                    EditorGUILayout.PropertyField(m_VarianceClampScale);
+                }
             }
 
             EditorGUILayout.Space();

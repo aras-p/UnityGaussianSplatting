@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;

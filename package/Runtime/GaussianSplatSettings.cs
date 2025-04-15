@@ -11,6 +11,13 @@ namespace GaussianSplatting.Runtime
         // no sorting, transparency is stochastic (random) and noisy
         Stochastic,
     }
+
+    public enum TemporalFilter
+    {
+        None,
+        TemporalNoMotion,
+    }
+
     public enum DebugRenderMode
     {
         Splats,
@@ -53,10 +60,12 @@ namespace GaussianSplatting.Runtime
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
 
+        [Tooltip("How to filter temporal transparency")]
+        public TemporalFilter m_TemporalFilter = TemporalFilter.TemporalNoMotion;
         [Tooltip("How much of new frame to blend in. Higher: more noise, lower: more ghosting.")]
-        [Range(0.001f, 1.0f)] public float m_TemporalFrameInfluence = 0.05f;
+        [Range(0.001f, 1.0f)] public float m_FrameInfluence = 0.05f;
         [Tooltip("Strength of history color rectification clamp. Lower: more flickering, higher: more blur/ghosting.")]
-        [Range(0.001f, 10.0f)] public float m_TemporalVarianceClampScale = 1.5f;
+        [Range(0.001f, 10.0f)] public float m_VarianceClampScale = 1.5f;
 
         public DebugRenderMode m_RenderMode = DebugRenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
