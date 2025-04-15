@@ -40,34 +40,61 @@ namespace GaussianSplatting.Runtime
             {
                 using var builder = renderGraph.AddUnsafePass(ProfilerTag, out PassData passData);
 
+                var settings = GaussianSplatSettings.instance;
+                var usingRT = !settings.isDebugRender;
                 var cameraData = frameData.Get<UniversalCameraData>();
                 var resourceData = frameData.Get<UniversalResourceData>();
 
-                RenderTextureDescriptor rtDesc = cameraData.cameraTargetDescriptor;
-                rtDesc.depthBufferBits = 0;
-                rtDesc.msaaSamples = 1;
-                rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                var textureHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
-
                 passData.CameraData = cameraData;
+
+                if (usingRT)
+                {
+                    RenderTextureDescriptor rtDesc = cameraData.cameraTargetDescriptor;
+                    rtDesc.depthBufferBits = 0;
+                    rtDesc.msaaSamples = 1;
+                    rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
+                    var textureHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
+                    passData.GaussianSplatRT = textureHandle;
+                    builder.UseTexture(textureHandle, AccessFlags.Write);
+                }
                 passData.SourceTexture = resourceData.activeColorTexture;
                 passData.SourceDepth = resourceData.activeDepthTexture;
-                passData.GaussianSplatRT = textureHandle;
-
                 builder.UseTexture(resourceData.activeColorTexture, AccessFlags.ReadWrite);
                 builder.UseTexture(resourceData.activeDepthTexture);
-                builder.UseTexture(textureHandle, AccessFlags.Write);
+
                 builder.AllowPassCulling(false);
                 builder.SetRenderFunc(static (PassData data, UnsafeGraphContext context) =>
                 {
+                    var system = GaussianSplatRenderSystem.instance;
+                    system.EnsureMaterials();
+                    var matComposite = system.m_MatComposite;
+                    if (matComposite == null)
+                        return;
+
+                    var settings = GaussianSplatSettings.instance;
+                    var usingRT = !settings.isDebugRender;
+
                     var commandBuffer = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
                     using var _ = new ProfilingScope(commandBuffer, s_profilingSampler);
-                    commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
-                    CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth, ClearFlag.Color, Color.clear);
-                    Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer);
-                    commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
-                    Blitter.BlitCameraTexture(commandBuffer, data.GaussianSplatRT, data.SourceTexture, matComposite, 0);
-                    commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+
+                    if (usingRT)
+                    {
+                        commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth, ClearFlag.Color, Color.clear);
+                    }
+                    else
+                    {
+                        CoreUtils.SetRenderTarget(commandBuffer, data.SourceTexture, data.SourceDepth, ClearFlag.None);
+                    }
+                    system.SortAllSplats(data.CameraData.camera, commandBuffer);
+                    system.CacheViewDataForAllSplats(data.CameraData.camera, commandBuffer);
+                    system.RenderAllSplats(data.CameraData.camera, commandBuffer);
+                    if (usingRT)
+                    {
+                        commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
+                        Blitter.BlitCameraTexture(commandBuffer, data.GaussianSplatRT, data.SourceTexture, matComposite, 0);
+                        commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+                    }
                 });
             }
         }

@@ -34,7 +34,8 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_CubeIndexBuffer;
         GraphicsBuffer m_GlobalUniforms;
         Material m_MatSplats;
-        Material m_MatComposite;
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        internal Material m_MatComposite;
         Material m_MatDebugPoints;
         Material m_MatDebugBoxes;
         uint m_FrameOffset;
@@ -250,7 +251,8 @@ namespace GaussianSplatting.Runtime
             });
         }
 
-        void EnsureMaterials()
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        internal void EnsureMaterials()
         {
             GaussianSplatSettings settings = GaussianSplatSettings.instance;
             if (m_MatSplats == null && settings.resourcesFound)
