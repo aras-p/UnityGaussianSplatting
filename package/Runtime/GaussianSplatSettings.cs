@@ -47,33 +47,27 @@ namespace GaussianSplatting.Runtime
         }
         static GaussianSplatSettings ms_Instance;
 
-        [Header("Options")]
         [Tooltip("Gaussian splat transparency rendering algorithm")]
         public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
 
-        [Header("Sorted Blended transparency:")]
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
 
-        [Header("Stochastic transparency:")]
-        // Determines how much the history buffer is blended together with current frame result.
-        // Lower values means more history contribution, which leads to better anti aliasing,
-        // but also more prone to ghosting
+        [Tooltip("How much of new frame to blend in. Higher: more noise, lower: more ghosting.")]
         [Range(0.001f, 1.0f)] public float m_TemporalFrameInfluence = 0.05f;
-        // Determines the strength of the history color rectification clamp. Lower values can reduce ghosting, but
-        // produce more flickering. Higher values reduce flickering, but are prone to blur and ghosting.
-        // Between 0.001 - 10.0.
-        // Good values around 1.0.
+        [Tooltip("Strength of history color rectification clamp. Lower: more flickering, higher: more blur/ghosting.")]
         [Range(0.001f, 10.0f)] public float m_TemporalVarianceClampScale = 1.5f;
 
-        [Header("Debugging Tweaks")]
-        public DebugRenderMode m_DebugRenderMode = DebugRenderMode.Splats;
+        public DebugRenderMode m_RenderMode = DebugRenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
         public bool m_SHOnly;
 
-        internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended ||
-                                     m_DebugRenderMode == DebugRenderMode.DebugBoxes;
+        internal bool isDebugRender => m_RenderMode != DebugRenderMode.Splats;
+
+        internal bool needSorting =>
+            (!isDebugRender && m_Transparency == TransparencyMode.SortedBlended) ||
+            m_RenderMode == DebugRenderMode.DebugBoxes;
 
         internal bool resourcesFound { get; private set; }
         bool resourcesLoadAttempted;

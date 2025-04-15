@@ -170,7 +170,7 @@ namespace GaussianSplatting.Runtime
         {
             EnsureMaterials();
             GaussianSplatSettings settings = GaussianSplatSettings.instance;
-            Material displayMat = settings.m_DebugRenderMode switch
+            Material displayMat = settings.m_RenderMode switch
             {
                 DebugRenderMode.DebugPoints => m_MatDebugPoints,
                 DebugRenderMode.DebugPointIndices => m_MatDebugPoints,
@@ -189,7 +189,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetBufferData(m_GlobalUniforms, sgu);
             m_FrameOffset++;
 
-            bool stochastic = settings.m_Transparency == TransparencyMode.Stochastic;
+            bool stochastic = !settings.isDebugRender && settings.m_Transparency == TransparencyMode.Stochastic;
             displayMat.SetInt(GaussianSplatRenderer.Props.SrcBlend, (int)(stochastic ? BlendMode.One : BlendMode.OneMinusDstAlpha));
             displayMat.SetInt(GaussianSplatRenderer.Props.DstBlend, (int)(stochastic ? BlendMode.Zero : BlendMode.One));
             displayMat.SetInt(GaussianSplatRenderer.Props.ZWrite, stochastic ? 1 : 0);
@@ -215,16 +215,16 @@ namespace GaussianSplatting.Runtime
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, settings.m_PointDisplaySize);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, settings.m_SHOnly ? 1 : 0);
-                mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, settings.m_DebugRenderMode == DebugRenderMode.DebugPointIndices ? 1 : 0);
-                mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, settings.m_DebugRenderMode == DebugRenderMode.DebugChunkBounds ? 1 : 0);
+                mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, settings.m_RenderMode == DebugRenderMode.DebugPointIndices ? 1 : 0);
+                mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, settings.m_RenderMode == DebugRenderMode.DebugChunkBounds ? 1 : 0);
                 mpb.SetConstantBuffer(GaussianSplatRenderer.Props.SplatGlobalUniforms, m_GlobalUniforms, 0, m_GlobalUniforms.stride);
 
                 int indexCount = 6;
                 int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
-                if (settings.m_DebugRenderMode is DebugRenderMode.DebugBoxes or DebugRenderMode.DebugChunkBounds)
+                if (settings.m_RenderMode is DebugRenderMode.DebugBoxes or DebugRenderMode.DebugChunkBounds)
                     indexCount = 36;
-                if (settings.m_DebugRenderMode == DebugRenderMode.DebugChunkBounds)
+                if (settings.m_RenderMode == DebugRenderMode.DebugChunkBounds)
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
                 cmb.BeginSample(s_ProfDraw);
@@ -295,34 +295,40 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.CameraTargetTexture,
                 BuiltinRenderTextureType.CameraTarget);
 
-            m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
-            m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
-            m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+            GaussianSplatSettings settings = GaussianSplatSettings.instance;
+            if (!settings.isDebugRender) // Debug visualizations modes just render directly onto screen
+            {
+                m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
+                m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
+                m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+            }
 
             // add sorting, view calc and drawing commands for all splat objects
             SortAllSplats(cam, m_CommandBuffer);
             CacheViewDataForAllSplats(cam, m_CommandBuffer);
-            GaussianSplatSettings settings = GaussianSplatSettings.instance;
             RenderAllSplats(cam, m_CommandBuffer);
 
             // compose
-            m_CommandBuffer.BeginSample(s_ProfCompose);
-            if (settings.m_Transparency == TransparencyMode.Stochastic)
+            if (!settings.isDebugRender)
             {
-                m_TemporalFilter ??= new GaussianSplatTemporalFilter();
-                m_TemporalFilter.Render(m_CommandBuffer, cam, matComposite, 1,
-                    GaussianSplatRenderer.Props.GaussianSplatRT,
-                    BuiltinRenderTextureType.CameraTarget,
-                    settings.m_TemporalFrameInfluence,
-                    settings.m_TemporalVarianceClampScale);
+                m_CommandBuffer.BeginSample(s_ProfCompose);
+                if (settings.m_Transparency == TransparencyMode.Stochastic)
+                {
+                    m_TemporalFilter ??= new GaussianSplatTemporalFilter();
+                    m_TemporalFilter.Render(m_CommandBuffer, cam, matComposite, 1,
+                        GaussianSplatRenderer.Props.GaussianSplatRT,
+                        BuiltinRenderTextureType.CameraTarget,
+                        settings.m_TemporalFrameInfluence,
+                        settings.m_TemporalVarianceClampScale);
+                }
+                else
+                {
+                    m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                    m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                }
+                m_CommandBuffer.EndSample(s_ProfCompose);
+                m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
             }
-            else
-            {
-                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
-            }
-            m_CommandBuffer.EndSample(s_ProfCompose);
-            m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
     }
 
