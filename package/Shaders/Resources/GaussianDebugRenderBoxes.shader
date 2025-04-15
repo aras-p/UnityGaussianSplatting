@@ -93,6 +93,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
+    i.col.rgb = GammaToLinearSpace(i.col.rgb);
     half4 res = half4(i.col.rgb * i.col.a, i.col.a);
     return res;
 }
