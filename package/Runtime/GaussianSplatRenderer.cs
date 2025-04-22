@@ -31,6 +31,25 @@ namespace GaussianSplatting.Runtime
 
         CommandBuffer m_CommandBuffer;
 
+        // Keep track of the prepared splats for stereo rendering
+        public struct RenderItem
+        {
+            public GaussianSplatRenderer gs;
+            public Material displayMat;
+            public MaterialPropertyBlock mpb;
+            public int indexCount;
+            public int instanceCount;
+            public MeshTopology topology;
+        }
+        
+        public class PreparedRenderData
+        {
+            public Material matComposite;
+            public List<RenderItem> renderItems = new();
+        }
+        
+        private PreparedRenderData m_LastPreparedData;
+
         public void RegisterSplat(GaussianSplatRenderer r)
         {
             if (m_Splats.Count == 0)
@@ -104,10 +123,22 @@ namespace GaussianSplatting.Runtime
             return true;
         }
 
+        // New optimized method that prepares everything once for stereo rendering
+        // This does the sorting and calculates view data, but doesn't actually render
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public PreparedRenderData PrepareSplats(Camera cam, CommandBuffer cmb)
         {
+            if (m_LastPreparedData == null)
+            {
+                m_LastPreparedData = new PreparedRenderData();
+            }
+            else
+            {
+                m_LastPreparedData.renderItems.Clear();
+            }
+            
             Material matComposite = null;
+
             foreach (var kvp in m_ActiveSplats)
             {
                 var gs = kvp.Item1;
@@ -115,13 +146,13 @@ namespace GaussianSplatting.Runtime
                 matComposite = gs.m_MatComposite;
                 var mpb = kvp.Item2;
 
-                // sort
+                // Sort the splats
                 var matrix = gs.transform.localToWorldMatrix;
                 if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
                     gs.SortPoints(cmb, cam, matrix);
                 ++gs.m_FrameCounter;
 
-                // cache view
+                // Prepare material and view data
                 kvp.Item2.Clear();
                 Material displayMat = gs.m_RenderMode switch
                 {
@@ -134,11 +165,10 @@ namespace GaussianSplatting.Runtime
                 if (displayMat == null)
                     continue;
 
-                gs.SetAssetDataOnMaterial(mpb);
+                // Set up everything except eye-specific parameters
+                gs.SetAssetDataOnMaterial(mpb, -1); // -1 for initial setup without eye index
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatChunks, gs.m_GpuChunks);
-
                 mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, gs.m_GpuView);
-
                 mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, gs.m_GpuSortKeys);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatScale, gs.m_SplatScale);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatOpacityScale, gs.m_OpacityScale);
@@ -148,11 +178,12 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
+                // Calculate view data once for stereo (will calculate for both eyes)
                 cmb.BeginSample(s_ProfCalcView);
                 gs.CalcViewData(cmb, cam);
                 cmb.EndSample(s_ProfCalcView);
 
-                // draw
+                // Set up draw parameters
                 int indexCount = 6;
                 int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
@@ -161,11 +192,45 @@ namespace GaussianSplatting.Runtime
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
+                // Store the prepared data for rendering later
+                m_LastPreparedData.renderItems.Add(new RenderItem { gs = gs, displayMat = displayMat, mpb = mpb, indexCount = indexCount, instanceCount = instanceCount, topology = topology });
+            }
+
+            m_LastPreparedData.matComposite = matComposite;
+            return m_LastPreparedData;
+        }
+
+        // New optimized method that just draws the prepared splats for a specific eye
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public void RenderPreparedSplats(CommandBuffer cmb, int eyeIndex)
+        {
+            if (m_LastPreparedData == null || m_LastPreparedData.renderItems.Count == 0)
+                return;
+
+            foreach (var item in m_LastPreparedData.renderItems)
+            {
+                // Set the eye index for this specific render
+                item.mpb.SetInteger(GaussianSplatRenderer.Props.EyeIndex, eyeIndex);
+                item.mpb.SetInteger(GaussianSplatRenderer.Props.IsStereo, (eyeIndex == -1) ? 0 : 1);
+
+                // Draw
                 cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+                cmb.DrawProcedural(item.gs.m_GpuIndexBuffer, item.gs.transform.localToWorldMatrix, item.displayMat, 0, item.topology, item.indexCount, item.instanceCount, item.mpb);
                 cmb.EndSample(s_ProfDraw);
             }
-            return matComposite;
+        }
+
+        // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, int eyeIndex = -1)
+        {
+            // Prepare the splats (sort and calculate view data)
+            var renderData = PrepareSplats(cam, cmb);
+            
+            // Render the prepared splats
+            RenderPreparedSplats(cmb, eyeIndex);
+            
+            // Return the composite material
+            return renderData.matComposite;
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
@@ -209,6 +274,17 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
+        
+        // Checks if any active splats require per-eye sorting
+        public bool RequiresPerEyeSorting()
+        {
+            foreach (var item in m_ActiveSplats)
+            {
+                if (item.Item1.m_SortPerEye)
+                    return true;
+            }
+            return false;
+        }
     }
 
     [ExecuteInEditMode]
@@ -237,6 +313,8 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
+        [Tooltip("When in VR, sort splats separately for each eye. This increases accuracy but reduces performance.")]
+        public bool m_SortPerEye = false;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
@@ -297,6 +375,8 @@ namespace GaussianSplatting.Runtime
             public static readonly int SplatBitsValid = Shader.PropertyToID("_SplatBitsValid");
             public static readonly int SplatFormat = Shader.PropertyToID("_SplatFormat");
             public static readonly int SplatChunks = Shader.PropertyToID("_SplatChunks");
+            public static readonly int EyeIndex = Shader.PropertyToID("_EyeIndex");
+            public static readonly int IsStereo = Shader.PropertyToID("_IsStereo");
             public static readonly int SplatChunkCount = Shader.PropertyToID("_SplatChunkCount");
             public static readonly int SplatViewData = Shader.PropertyToID("_SplatViewData");
             public static readonly int OrderBuffer = Shader.PropertyToID("_OrderBuffer");
@@ -328,6 +408,8 @@ namespace GaussianSplatting.Runtime
             public static readonly int SelectionMode = Shader.PropertyToID("_SelectionMode");
             public static readonly int SplatPosMouseDown = Shader.PropertyToID("_SplatPosMouseDown");
             public static readonly int SplatOtherMouseDown = Shader.PropertyToID("_SplatOtherMouseDown");
+            public static readonly int ViewProjMatrixLeft = Shader.PropertyToID("_ViewProjMatrixLeft");
+            public static readonly int ViewProjMatrixRight = Shader.PropertyToID("_ViewProjMatrixRight");
         }
 
         [field: NonSerialized] public bool editModified { get; private set; }
@@ -404,7 +486,8 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
-            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
+            // Double the size to hold both left and right eye data for stereo rendering
+            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount * 2, kGpuViewDataSize);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
             // cube indices, most often we use only the first quad
             m_GpuIndexBuffer.SetData(new ushort[]
@@ -509,7 +592,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatCutouts, m_GpuEditCutouts);
         }
 
-        internal void SetAssetDataOnMaterial(MaterialPropertyBlock mat)
+        internal void SetAssetDataOnMaterial(MaterialPropertyBlock mat, int eyeIndex)
         {
             mat.SetBuffer(Props.SplatPos, m_GpuPosData);
             mat.SetBuffer(Props.SplatOther, m_GpuOtherData);
@@ -517,6 +600,15 @@ namespace GaussianSplatting.Runtime
             mat.SetTexture(Props.SplatColor, m_GpuColorData);
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
+            if (eyeIndex != -1)
+            {
+                mat.SetInteger(Props.EyeIndex, eyeIndex);
+                mat.SetInteger(Props.IsStereo, 1);
+            }
+            else
+            {
+                mat.SetInteger(Props.IsStereo, 0);
+            }
             mat.SetInt(Props.SplatBitsValid, m_GpuEditSelected != null && m_GpuEditDeleted != null ? 1 : 0);
             uint format = (uint)m_Asset.posFormat | ((uint)m_Asset.scaleFormat << 8) | ((uint)m_Asset.shFormat << 16);
             mat.SetInteger(Props.SplatFormat, (int)format);
@@ -597,6 +689,29 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, matO2W);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, matW2O);
+            bool isStereo = XRSettings.enabled && cam.stereoEnabled && 
+                            (XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassInstanced || 
+                             XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview) &&
+                            !Application.isEditor;
+            
+            if (isStereo)
+            {
+                // Get correct stereo matrices for each eye
+                Matrix4x4 stereoViewLeft = cam.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
+                Matrix4x4 stereoProjLeft = GL.GetGPUProjectionMatrix(cam.GetStereoProjectionMatrix(Camera.StereoscopicEye.Left), true);
+                Matrix4x4 matVPLeft = stereoProjLeft * stereoViewLeft;
+                cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.ViewProjMatrixLeft, matVPLeft);
+
+                Matrix4x4 stereoViewRight = cam.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
+                Matrix4x4 stereoProjRight = GL.GetGPUProjectionMatrix(cam.GetStereoProjectionMatrix(Camera.StereoscopicEye.Right), true);
+                Matrix4x4 matVPRight = stereoProjRight * stereoViewRight;
+                cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.ViewProjMatrixRight, matVPRight);
+                cmb.SetComputeIntParam(m_CSSplatUtilities, Props.IsStereo, 1);
+            }
+            else
+            {
+                cmb.SetComputeIntParam(m_CSSplatUtilities, Props.IsStereo, 0);
+            }
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecScreenParams, screenPar);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
@@ -606,7 +721,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
 
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
-            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
+            cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_SplatCount + (int)gsX - 1)/(int)gsX, 1, 1);
         }
 
         internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
@@ -997,7 +1112,8 @@ namespace GaussianSplatting.Runtime
             ClearGraphicsBuffer(newEditSelectedMouseDown);
             ClearGraphicsBuffer(newEditDeleted);
 
-            var newGpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, newSplatCount, kGpuViewDataSize);
+            // Double the size to hold both left and right eye data
+            var newGpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, newSplatCount * 2, kGpuViewDataSize);
             InitSortBuffers(newSplatCount);
 
             // copy existing data over into new buffers
