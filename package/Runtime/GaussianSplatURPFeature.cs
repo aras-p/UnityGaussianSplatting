@@ -47,7 +47,8 @@ namespace GaussianSplatting.Runtime
 
                 bool isStereo = XRSettings.enabled && cameraData.camera.stereoEnabled && 
                                 (XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassInstanced || 
-                                 XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview);
+                                 XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview) &&
+                                !Application.isEditor;
                 RenderTextureDescriptor rtDesc = isStereo? XRSettings.eyeTextureDesc: cameraData.cameraTargetDescriptor;
                 rtDesc.depthBufferBits = 0;
                 rtDesc.msaaSamples = 1;

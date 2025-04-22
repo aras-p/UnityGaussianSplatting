@@ -691,7 +691,8 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, matW2O);
             bool isStereo = XRSettings.enabled && cam.stereoEnabled && 
                             (XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassInstanced || 
-                             XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview);
+                             XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview) &&
+                            !Application.isEditor;
             
             if (isStereo)
             {
