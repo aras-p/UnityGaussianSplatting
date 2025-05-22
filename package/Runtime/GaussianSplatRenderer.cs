@@ -153,17 +153,21 @@ namespace GaussianSplatting.Runtime
                 cmb.EndSample(s_ProfCalcView);
 
                 // draw
-                int indexCount = 6;
                 int instanceCount = gs.splatCount;
                 MeshTopology topology = MeshTopology.Triangles;
-                if (gs.m_RenderMode is GaussianSplatRenderer.RenderMode.DebugBoxes or GaussianSplatRenderer.RenderMode.DebugChunkBounds)
-                    indexCount = 36;
-                if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
-                    instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
+                if (gs.m_RenderMode is GaussianSplatRenderer.RenderMode.DebugBoxes or GaussianSplatRenderer.RenderMode.DebugChunkBounds) {
+                    if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
+                        instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
-                cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
-                cmb.EndSample(s_ProfDraw);
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, 36, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+                } else {
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(matrix, displayMat, 0, topology, 3, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+                }
+
             }
             return matComposite;
         }
