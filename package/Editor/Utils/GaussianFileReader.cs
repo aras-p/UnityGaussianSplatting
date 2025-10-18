@@ -53,7 +53,12 @@ namespace GaussianSplatting.Editor.Utils
                 if (!string.IsNullOrEmpty(attrError))
                     throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
                 splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
-                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
+                
+                int shCount = 15;   //default 15
+                // Count how many f_rest_* attributes are present
+                int restCount = attributes.Count(a => a.Item1.StartsWith("f_rest_") && a.Item2 == PLYFileReader.ElementType.Float);
+                shCount = restCount / 3; // Each SH band per channel (R,G,B)
+                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr(), shCount);
                 LinearizeData(splats);
                 return;
             }
@@ -164,6 +169,7 @@ namespace GaussianSplatting.Editor.Utils
             
             NativeArray<InputSplatData> dst = new NativeArray<InputSplatData>(count, Allocator.Persistent);
             ReorderPLYData(count, (byte*)input.GetUnsafeReadOnlyPtr(), stride, (byte*)dst.GetUnsafePtr(), UnsafeUtility.SizeOf<InputSplatData>(), (int*)srcOffsets.GetUnsafeReadOnlyPtr());
+
             return dst;
         }
 
@@ -183,10 +189,10 @@ namespace GaussianSplatting.Editor.Utils
         }
 
         [BurstCompile]
-        static unsafe void ReorderSHs(int splatCount, float* data)
+        static unsafe void ReorderSHs(int splatCount, float* data, int shCount)
         {
             int splatStride = UnsafeUtility.SizeOf<InputSplatData>() / 4;
-            int shStartOffset = 9, shCount = 15;
+            int shStartOffset = 9;
             float* tmp = stackalloc float[shCount * 3];
             int idx = shStartOffset;
             for (int i = 0; i < splatCount; ++i)
