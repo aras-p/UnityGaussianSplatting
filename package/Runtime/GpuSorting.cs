@@ -120,7 +120,8 @@ namespace GaussianSplatting.Runtime
 
             cs.EnableKeyword(m_keyUintKeyword);
             cs.EnableKeyword(m_payloadUintKeyword);
-            cs.EnableKeyword(m_ascendKeyword);
+            //cs.EnableKeyword(m_ascendKeyword);
+            cs.DisableKeyword(m_ascendKeyword);
             cs.EnableKeyword(m_sortPairKeyword);
             if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
                 cs.EnableKeyword(m_vulkanKeyword);

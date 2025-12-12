@@ -93,12 +93,12 @@ namespace GaussianSplatting.Runtime
                 var orderA = a.Item1.m_RenderOrder;
                 var orderB = b.Item1.m_RenderOrder;
                 if (orderA != orderB)
-                    return orderB.CompareTo(orderA);
+                    return orderA.CompareTo(orderB);
                 var trA = a.Item1.transform;
                 var trB = b.Item1.transform;
                 var posA = camTr.InverseTransformPoint(trA.position);
                 var posB = camTr.InverseTransformPoint(trB.position);
-                return posA.z.CompareTo(posB.z);
+                return posB.z.CompareTo(posA.z);
             });
 
             return true;
