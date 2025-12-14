@@ -35,7 +35,10 @@ Texture2D _GaussianSplatRT;
 half4 frag (v2f i) : SV_Target
 {
     half4 col = _GaussianSplatRT.Load(int3(i.vertex.xy, 0));
-    return float4(GammaToLinearSpace(col.rgb/col.a),col.a);
+    if(col.a>0)
+        return float4(GammaToLinearSpace(col.rgb/col.a),col.a);
+    else
+        return float4(GammaToLinearSpace(col.rgb),col.a);
 }
 ENDCG
         }
