@@ -7,8 +7,8 @@ Shader "Gaussian Splatting/Render Splats"
 
         Pass
         {
-            ZWrite On
-            Blend One OneMinusSrcAlpha
+            ZWrite Off
+            Blend OneMinusDstAlpha One
             Cull Off
             
 CGPROGRAM

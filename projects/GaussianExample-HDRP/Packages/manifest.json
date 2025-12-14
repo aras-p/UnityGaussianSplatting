@@ -1,10 +1,8 @@
 {
   "dependencies": {
-    "com.unity.ide.rider": "3.0.36",
-    "com.unity.multiplayer.center": "1.0.0",
-    "com.unity.render-pipelines.high-definition": "17.0.4",
+    "com.unity.ide.rider": "3.0.31",
+    "com.unity.render-pipelines.high-definition": "14.0.11",
     "org.nesnausk.gaussian-splatting": "file:../../../package",
-    "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",
     "com.unity.modules.animation": "1.0.0",
