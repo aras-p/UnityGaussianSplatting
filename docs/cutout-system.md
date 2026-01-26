@@ -60,33 +60,38 @@ To support Cone and Elliptic Cone cutouts, the following changes are proposed.
 ### Defining a Unit Cone
 We define a "unit cone" in local space that can be scaled and rotated via the Cutout's Transform.
 - **Apex**: `(0, 0, 0)` (The Pivot)
-- **Base**: `y = 1`
+- **Base**: `z = -1`
 - **Base Radius**: `1`
-- **Axis**: Positive Y-axis.
+- **Axis**: Negative Z-axis.
 
 **Shader implementation of `inside` check:**
 ```hlsl
 if (type == SPLAT_CUTOUT_TYPE_CONE)
 {
-    // Height h = 1 (from 0 to 1)
-    // Radius at height y: r = y
-    bool withinHeight = cutoutPos.y >= 0 && cutoutPos.y <= 1;
-    float r = cutoutPos.y;
-    inside = withinHeight && (dot(cutoutPos.xz, cutoutPos.xz) <= r * r);
+    // Height h = 1 (from 0 to -1 along Z)
+    // Radius at height z: r = -z
+    bool withinHeight = cutoutPos.z <= 0 && cutoutPos.z >= -1;
+    float r = -cutoutPos.z;
+    inside = withinHeight && (dot(cutoutPos.xy, cutoutPos.xy) <= r * r);
 }
 ```
 
 ### Elliptic Cone
 An "Elliptic Cone" does not require a new type. Since the cutout logic operates in local space after applying the `worldToLocalMatrix`, any non-uniform scaling on the Transform will automatically result in an elliptical cross-section.
-- To create an elliptic cone, simply scale the `GaussianCutout` GameObject differently along the X and Z axes.
+- To create an elliptic cone, simply scale the `GaussianCutout` GameObject differently along the X and Y axes.
 
 ### Application: Camera Direction Cutout
 To "pluck out" a certain direction seen from the camera:
 1. Attach a `GaussianCutout` (type: Cone) to the Camera or place it at the camera position.
-2. Align the rotation so the Cone's local Y axis points in the camera's forward direction (rotate Cone 90 degrees around X).
+2. Rotate the Cone so its negative Z axis points in the camera's view direction (if attached to a camera looking down +Z, rotate 180 degrees Y).
 3. Adjust the scale:
-   - **Scale Y**: Controls the **length** (far clip distance) of the cutout. Changing Y does **not** affect the Field of View (FOV).
-   - **Scale X / Z**: Controls the **FOV** (opening angle). X and Z can be different to create an elliptical FOV.
+   - **Scale Z**: Controls the **length** (far clip distance) of the cutout. Changing Z does **not** affect the Field of View (FOV).
+   - **Scale X / Y**: Controls the **FOV** (opening angle). X and Y can be different to create an elliptical FOV.
+     - **Formula**: `Scale = tan(FOV / 2)`
+     - **Example**: 
+       - Scale 1.0 = 90° FOV (`2 * atan(1)`)
+       - Scale 0.58 = ~60° FOV (`2 * atan(0.577)`)
+       - Scale 0.27 = ~30° FOV (`2 * atan(0.268)`)
 4. If `Invert` is off, only splats within this "flashlight" volume will be visible.
 
 ## Proposed Code Changes

@@ -33,12 +33,12 @@ namespace GaussianSplatting.Runtime
                 sd.matrix = tr.worldToLocalMatrix * rendererMatrix;
                 if (self.m_Type == Type.Cone)
                 {
-                    float sy = Mathf.Abs(tr.lossyScale.y);
-                    if (sy > 0.0001f)
+                    float sz = Mathf.Abs(tr.lossyScale.z);
+                    if (sz > 0.0001f)
                     {
-                        // Scale X and Z by 1/sy to decouple FOV from Length (Y)
-                        float invSy = 1.0f / sy;
-                        Matrix4x4 coneScale = Matrix4x4.Scale(new Vector3(invSy, 1.0f, invSy));
+                        // Scale X and Y by 1/sz to decouple FOV from Length (Z)
+                        float invSz = 1.0f / sz;
+                        Matrix4x4 coneScale = Matrix4x4.Scale(new Vector3(invSz, invSz, 1.0f));
                         sd.matrix = coneScale * sd.matrix;
                     }
                 }
@@ -86,25 +86,25 @@ namespace GaussianSplatting.Runtime
             if (m_Type == Type.Cone)
             {
                 float h = 1.0f;
-                float sy = Mathf.Abs(transform.lossyScale.y);
-                float r = sy;
+                float sz = Mathf.Abs(transform.lossyScale.z);
+                float r = sz;
                 Vector3 apex = Vector3.zero;
 
                 // Draw base circle
                 int segments = 32;
-                Vector3 prevPt = new Vector3(Mathf.Cos(0) * r, h, Mathf.Sin(0) * r);
+                Vector3 prevPt = new Vector3(Mathf.Cos(0) * r, Mathf.Sin(0) * r, -h);
                 for (int i = 1; i <= segments; ++i)
                 {
                     float ang = (i / (float)segments) * Mathf.PI * 2;
-                    Vector3 nextPt = new Vector3(Mathf.Cos(ang) * r, h, Mathf.Sin(ang) * r);
+                    Vector3 nextPt = new Vector3(Mathf.Cos(ang) * r, Mathf.Sin(ang) * r, -h);
                     Gizmos.DrawLine(prevPt, nextPt);
                     prevPt = nextPt;
                 }
                 // Draw lines from apex to base
-                Gizmos.DrawLine(apex, new Vector3(r, h, 0));
-                Gizmos.DrawLine(apex, new Vector3(-r, h, 0));
-                Gizmos.DrawLine(apex, new Vector3(0, h, r));
-                Gizmos.DrawLine(apex, new Vector3(0, h, -r));
+                Gizmos.DrawLine(apex, new Vector3(r, 0, -h));
+                Gizmos.DrawLine(apex, new Vector3(-r, 0, -h));
+                Gizmos.DrawLine(apex, new Vector3(0, r, -h));
+                Gizmos.DrawLine(apex, new Vector3(0, -r, -h));
             }
         }
 #endif // #if UNITY_EDITOR

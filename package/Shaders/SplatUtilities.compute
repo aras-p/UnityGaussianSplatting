@@ -184,10 +184,10 @@ bool IsSplatCut(float3 pos)
         }
         if (type == SPLAT_CUTOUT_TYPE_CONE)
         {
-            if (cutoutPos.y >= 0 && cutoutPos.y <= 1)
+            if (cutoutPos.z <= 0 && cutoutPos.z >= -1)
             {
-                float r = cutoutPos.y;
-                if (dot(cutoutPos.xz, cutoutPos.xz) <= r * r) return invert;
+                float r = -cutoutPos.z;
+                if (dot(cutoutPos.xy, cutoutPos.xy) <= r * r) return invert;
             }
         }
         finalCut |= !invert;
