@@ -92,6 +92,7 @@ uint _SplatCutoutsCount;
 
 #define SPLAT_CUTOUT_TYPE_ELLIPSOID 0
 #define SPLAT_CUTOUT_TYPE_BOX 1
+#define SPLAT_CUTOUT_TYPE_CONE 2
 
 struct GaussianCutoutShaderData // match GaussianCutout.ShaderData in C#
 {
@@ -180,6 +181,14 @@ bool IsSplatCut(float3 pos)
         if (type == SPLAT_CUTOUT_TYPE_BOX)
         {
             if (all(abs(cutoutPos) <= 1)) return invert;
+        }
+        if (type == SPLAT_CUTOUT_TYPE_CONE)
+        {
+            if (cutoutPos.y >= 0 && cutoutPos.y <= 1)
+            {
+                float r = cutoutPos.y;
+                if (dot(cutoutPos.xz, cutoutPos.xz) <= r * r) return invert;
+            }
         }
         finalCut |= !invert;
     }

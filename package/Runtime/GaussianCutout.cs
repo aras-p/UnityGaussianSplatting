@@ -11,7 +11,8 @@ namespace GaussianSplatting.Runtime
         public enum Type
         {
             Ellipsoid,
-            Box
+            Box,
+            Cone
         }
 
         public Type m_Type = Type.Ellipsoid;
@@ -30,6 +31,17 @@ namespace GaussianSplatting.Runtime
             {
                 var tr = self.transform;
                 sd.matrix = tr.worldToLocalMatrix * rendererMatrix;
+                if (self.m_Type == Type.Cone)
+                {
+                    float sy = Mathf.Abs(tr.lossyScale.y);
+                    if (sy > 0.0001f)
+                    {
+                        // Scale X and Z by 1/sy to decouple FOV from Length (Y)
+                        float invSy = 1.0f / sy;
+                        Matrix4x4 coneScale = Matrix4x4.Scale(new Vector3(invSy, 1.0f, invSy));
+                        sd.matrix = coneScale * sd.matrix;
+                    }
+                }
                 sd.typeAndFlags = ((uint)self.m_Type) | (self.m_Invert ? 0x100u : 0u);
             }
             else
@@ -70,6 +82,29 @@ namespace GaussianSplatting.Runtime
             if (m_Type == Type.Box)
             {
                 Gizmos.DrawWireCube(Vector3.zero, Vector3.one * 2);
+            }
+            if (m_Type == Type.Cone)
+            {
+                float h = 1.0f;
+                float sy = Mathf.Abs(transform.lossyScale.y);
+                float r = sy;
+                Vector3 apex = Vector3.zero;
+
+                // Draw base circle
+                int segments = 32;
+                Vector3 prevPt = new Vector3(Mathf.Cos(0) * r, h, Mathf.Sin(0) * r);
+                for (int i = 1; i <= segments; ++i)
+                {
+                    float ang = (i / (float)segments) * Mathf.PI * 2;
+                    Vector3 nextPt = new Vector3(Mathf.Cos(ang) * r, h, Mathf.Sin(ang) * r);
+                    Gizmos.DrawLine(prevPt, nextPt);
+                    prevPt = nextPt;
+                }
+                // Draw lines from apex to base
+                Gizmos.DrawLine(apex, new Vector3(r, h, 0));
+                Gizmos.DrawLine(apex, new Vector3(-r, h, 0));
+                Gizmos.DrawLine(apex, new Vector3(0, h, r));
+                Gizmos.DrawLine(apex, new Vector3(0, h, -r));
             }
         }
 #endif // #if UNITY_EDITOR
