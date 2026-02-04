@@ -159,22 +159,32 @@ namespace GaussianSplatting.Editor.Utils
                 col /= 0.15f;
                 splat.dc0 = GaussianUtils.SH0ToColor(col);
 
-                int shIdx = index * shCoeffs * 3;
-                splat.sh1 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh2 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh3 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh4 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh5 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh6 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh7 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh8 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh9 = UnpackSH(shIdx); shIdx += 3;
-                splat.shA = UnpackSH(shIdx); shIdx += 3;
-                splat.shB = UnpackSH(shIdx); shIdx += 3;
-                splat.shC = UnpackSH(shIdx); shIdx += 3;
-                splat.shD = UnpackSH(shIdx); shIdx += 3;
-                splat.shE = UnpackSH(shIdx); shIdx += 3;
-                splat.shF = UnpackSH(shIdx); shIdx += 3;
+                // Only unpack SH coefficients if they exist (shCoeffs > 0)
+                if (shCoeffs > 0)
+                {
+                    int shIdx = index * shCoeffs * 3;
+                    splat.sh1 = UnpackSH(shIdx); shIdx += 3;
+                    splat.sh2 = UnpackSH(shIdx); shIdx += 3;
+                    splat.sh3 = UnpackSH(shIdx); shIdx += 3;
+                    if (shCoeffs > 3)
+                    {
+                        splat.sh4 = UnpackSH(shIdx); shIdx += 3;
+                        splat.sh5 = UnpackSH(shIdx); shIdx += 3;
+                        splat.sh6 = UnpackSH(shIdx); shIdx += 3;
+                        splat.sh7 = UnpackSH(shIdx); shIdx += 3;
+                        splat.sh8 = UnpackSH(shIdx); shIdx += 3;
+                        if (shCoeffs > 8)
+                        {
+                            splat.sh9 = UnpackSH(shIdx); shIdx += 3;
+                            splat.shA = UnpackSH(shIdx); shIdx += 3;
+                            splat.shB = UnpackSH(shIdx); shIdx += 3;
+                            splat.shC = UnpackSH(shIdx); shIdx += 3;
+                            splat.shD = UnpackSH(shIdx); shIdx += 3;
+                            splat.shE = UnpackSH(shIdx); shIdx += 3;
+                            splat.shF = UnpackSH(shIdx); shIdx += 3;
+                        }
+                    }
+                }
 
                 splats[index] = splat;
             }
