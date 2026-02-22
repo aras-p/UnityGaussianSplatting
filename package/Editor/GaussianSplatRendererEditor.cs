@@ -35,6 +35,8 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
+        SerializedProperty m_PropPrintCulledSplats;
+        SerializedProperty m_PropDebugCullReadbackEveryNFrames;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -75,6 +77,8 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            m_PropPrintCulledSplats = serializedObject.FindProperty("m_PrintCulledSplats");
+            m_PropDebugCullReadbackEveryNFrames = serializedObject.FindProperty("m_DebugCullReadbackEveryNFrames");
 
             s_AllEditors.Add(this);
         }
@@ -117,6 +121,12 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropRenderMode);
             if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
                 EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+
+            EditorGUILayout.PropertyField(m_PropPrintCulledSplats);
+            using (new EditorGUI.DisabledScope(!m_PropPrintCulledSplats.boolValue))
+            {
+                EditorGUILayout.PropertyField(m_PropDebugCullReadbackEveryNFrames);
+            }
 
             EditorGUILayout.Space();
             m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);

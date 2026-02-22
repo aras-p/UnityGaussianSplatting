@@ -52,9 +52,11 @@ void InitDeviceRadixSort(int3 id : SV_DispatchThreadID)
 inline void HistogramDigitCounts(uint gtid, uint gid)
 {
     const uint histOffset = gtid / 64 * RADIX;
-    const uint partitionEnd = gid == e_threadBlocks - 1 ?
-        e_numKeys : (gid + 1) * PART_SIZE;
-    for (uint i = gtid + gid * PART_SIZE; i < partitionEnd; i += US_DIM)
+    uint numKeys = GetActiveNumKeys();
+    uint partitionStart = gid * PART_SIZE;
+    uint partitionEnd   = min(numKeys, (gid + 1) * PART_SIZE);
+
+    for (uint i = gtid + partitionStart; i < partitionEnd; i += US_DIM)
     {
 #if defined(KEY_UINT)
         InterlockedAdd(g_us[ExtractDigit(b_sort[i]) + histOffset], 1);
@@ -184,9 +186,19 @@ void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
         GlobalHistExclusiveScanWLT16(gtid.x, waveSize);
 }
 
+// 12 bytes: uint3 { groupsX, groupsY, groupsZ }
+RWByteAddressBuffer b_dispatchArgs;
+
 //*****************************************************************************
 //SCAN KERNEL
 //*****************************************************************************
+//
+// indirect dispatch:
+// - activeBlocks = number of valid columns in b_passHist for this sort call.
+// - b_passHist layout stride remains e_threadBlocks (max), so deviceOffset uses e_threadBlocks.
+// - Only scan [0..activeBlocks) columns to avoid work when activeBlocks << e_threadBlocks.
+//
+
 inline void ExclusiveThreadBlockScanFullWGE16(
     uint gtid,
     uint laneMask,
@@ -201,14 +213,14 @@ inline void ExclusiveThreadBlockScanFullWGE16(
         g_scan[gtid] = b_passHist[i + deviceOffset];
         g_scan[gtid] += WavePrefixSum(g_scan[gtid]);
         GroupMemoryBarrierWithGroupSync();
-            
+
         if (gtid < SCAN_DIM / waveSize)
         {
             g_scan[(gtid + 1) * waveSize - 1] +=
                 WavePrefixSum(g_scan[(gtid + 1) * waveSize - 1]);
         }
         GroupMemoryBarrierWithGroupSync();
-        
+
         uint t = (WaveGetLaneIndex() != laneMask ? g_scan[gtid] : 0) + reduction;
         if (gtid >= waveSize)
             t += WaveReadLaneAt(g_scan[gtid - 1], 0);
@@ -226,23 +238,28 @@ inline void ExclusiveThreadBlockScanPartialWGE16(
     uint partEnd,
     uint deviceOffset,
     uint waveSize,
-    uint reduction)
+    uint reduction,
+    uint activeBlocks)
 {
     uint i = gtid + partEnd;
-    if (i < e_threadBlocks)
-        g_scan[gtid] = b_passHist[deviceOffset + i];
+
+    uint v = 0;
+    if (i < activeBlocks)
+        v = b_passHist[deviceOffset + i];
+
+    g_scan[gtid] = v;
     g_scan[gtid] += WavePrefixSum(g_scan[gtid]);
     GroupMemoryBarrierWithGroupSync();
-            
+
     if (gtid < SCAN_DIM / waveSize)
     {
         g_scan[(gtid + 1) * waveSize - 1] +=
             WavePrefixSum(g_scan[(gtid + 1) * waveSize - 1]);
     }
     GroupMemoryBarrierWithGroupSync();
-        
+
     const uint index = circularLaneShift + (i & ~laneMask);
-    if (index < e_threadBlocks)
+    if (index < activeBlocks)
     {
         uint t = (WaveGetLaneIndex() != laneMask ? g_scan[gtid] : 0) + reduction;
         if (gtid >= waveSize)
@@ -251,14 +268,15 @@ inline void ExclusiveThreadBlockScanPartialWGE16(
     }
 }
 
-inline void ExclusiveThreadBlockScanWGE16(uint gtid, uint gid, uint waveSize)
+inline void ExclusiveThreadBlockScanWGE16(uint gtid, uint gid, uint waveSize, uint activeBlocks)
 {
     uint reduction = 0;
     const uint laneMask = waveSize - 1;
     const uint circularLaneShift = WaveGetLaneIndex() + 1 & laneMask;
-    const uint partionsEnd = e_threadBlocks / SCAN_DIM * SCAN_DIM;
+
+    const uint partionsEnd = (activeBlocks / SCAN_DIM) * SCAN_DIM;
     const uint deviceOffset = gid * e_threadBlocks;
-    
+
     ExclusiveThreadBlockScanFullWGE16(
         gtid,
         laneMask,
@@ -268,14 +286,18 @@ inline void ExclusiveThreadBlockScanWGE16(uint gtid, uint gid, uint waveSize)
         waveSize,
         reduction);
 
-    ExclusiveThreadBlockScanPartialWGE16(
-        gtid,
-        laneMask,
-        circularLaneShift,
-        partionsEnd,
-        deviceOffset,
-        waveSize,
-        reduction);
+    if (partionsEnd < activeBlocks)
+    {
+        ExclusiveThreadBlockScanPartialWGE16(
+            gtid,
+            laneMask,
+            circularLaneShift,
+            partionsEnd,
+            deviceOffset,
+            waveSize,
+            reduction,
+            activeBlocks);
+    }
 }
 
 inline void ExclusiveThreadBlockScanFullWLT16(
@@ -297,7 +319,7 @@ inline void ExclusiveThreadBlockScanFullWLT16(
             b_passHist[circularLaneShift + k * SCAN_DIM + deviceOffset] =
                 (circularLaneShift ? g_scan[gtid] : 0) + reduction;
         }
-            
+
         uint offset = laneLog;
         uint j = waveSize;
         for (; j < (SCAN_DIM >> 1); j <<= laneLog)
@@ -308,7 +330,7 @@ inline void ExclusiveThreadBlockScanFullWLT16(
                     WavePrefixSum(g_scan[((gtid + 1) << offset) - 1]);
             }
             GroupMemoryBarrierWithGroupSync();
-            
+
             if ((gtid & ((j << laneLog) - 1)) >= j)
             {
                 if (gtid < (j << laneLog))
@@ -329,15 +351,15 @@ inline void ExclusiveThreadBlockScanFullWLT16(
             offset += laneLog;
         }
         GroupMemoryBarrierWithGroupSync();
-        
-        //If SCAN_DIM is not a power of lanecount
+
+        // If SCAN_DIM is not a power of lanecount
         for (uint i = gtid + j; i < SCAN_DIM; i += SCAN_DIM)
         {
             b_passHist[i + k * SCAN_DIM + deviceOffset] =
                 WaveReadLaneAt(g_scan[((i >> offset) << offset) - 1], 0) +
                 ((i & (j - 1)) ? g_scan[i - 1] : 0) + reduction;
         }
-            
+
         reduction += WaveReadLaneAt(g_scan[SCAN_DIM - 1], 0) +
             WaveReadLaneAt(g_scan[(((SCAN_DIM - 1) >> offset) << offset) - 1], 0);
         GroupMemoryBarrierWithGroupSync();
@@ -351,21 +373,28 @@ inline void ExclusiveThreadBlockScanParitalWLT16(
     uint laneLog,
     uint circularLaneShift,
     uint waveSize,
-    uint reduction)
+    uint reduction,
+    uint activeBlocks)
 {
-    const uint finalPartSize = e_threadBlocks - partitions * SCAN_DIM;
+    const uint finalPartSize = activeBlocks - partitions * SCAN_DIM;
+    if (finalPartSize == 0)
+        return;
+
+    // IMPORTANT: lanes outside remainder must be 0, otherwise WavePrefixSum sees garbage.
+    uint v = 0;
     if (gtid < finalPartSize)
-    {
-        g_scan[gtid] = b_passHist[gtid + partitions * SCAN_DIM + deviceOffset];
-        g_scan[gtid] += WavePrefixSum(g_scan[gtid]);
-    }
+        v = b_passHist[gtid + partitions * SCAN_DIM + deviceOffset];
+
+    g_scan[gtid] = v;
+    g_scan[gtid] += WavePrefixSum(g_scan[gtid]);
     GroupMemoryBarrierWithGroupSync();
+
     if (gtid < waveSize && circularLaneShift < finalPartSize)
     {
         b_passHist[circularLaneShift + partitions * SCAN_DIM + deviceOffset] =
             (circularLaneShift ? g_scan[gtid] : 0) + reduction;
     }
-        
+
     uint offset = laneLog;
     for (uint j = waveSize; j < finalPartSize; j <<= laneLog)
     {
@@ -375,7 +404,7 @@ inline void ExclusiveThreadBlockScanParitalWLT16(
                 WavePrefixSum(g_scan[((gtid + 1) << offset) - 1]);
         }
         GroupMemoryBarrierWithGroupSync();
-            
+
         if ((gtid & ((j << laneLog) - 1)) >= j && gtid < finalPartSize)
         {
             if (gtid < (j << laneLog))
@@ -397,14 +426,14 @@ inline void ExclusiveThreadBlockScanParitalWLT16(
     }
 }
 
-inline void ExclusiveThreadBlockScanWLT16(uint gtid, uint gid, uint waveSize)
+inline void ExclusiveThreadBlockScanWLT16(uint gtid, uint gid, uint waveSize, uint activeBlocks)
 {
     uint reduction = 0;
-    const uint partitions = e_threadBlocks / SCAN_DIM;
-    const uint deviceOffset = gid * e_threadBlocks;
+    const uint partitions = activeBlocks / SCAN_DIM;          // only full partitions we actually have
+    const uint deviceOffset = gid * e_threadBlocks;           // KEEP stride = max threadBlocks
     const uint laneLog = countbits(waveSize - 1);
     const uint circularLaneShift = WaveGetLaneIndex() + 1 & waveSize - 1;
-    
+
     ExclusiveThreadBlockScanFullWLT16(
         gtid,
         partitions,
@@ -413,28 +442,38 @@ inline void ExclusiveThreadBlockScanWLT16(uint gtid, uint gid, uint waveSize)
         circularLaneShift,
         waveSize,
         reduction);
-    
-    ExclusiveThreadBlockScanParitalWLT16(
-        gtid,
-        partitions,
-        deviceOffset,
-        laneLog,
-        circularLaneShift,
-        waveSize,
-        reduction);
+
+    // Partial partition (only if remainder exists)
+    if (partitions * SCAN_DIM < activeBlocks)
+    {
+        ExclusiveThreadBlockScanParitalWLT16(
+            gtid,
+            partitions,
+            deviceOffset,
+            laneLog,
+            circularLaneShift,
+            waveSize,
+            reduction,
+            activeBlocks);
+    }
 }
 
-//Scan does not need flattening of gids
+// Scan does not need flattening of gids
 [numthreads(SCAN_DIM, 1, 1)]
 void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
     const uint waveSize = getWaveSize();
+
+    uint activeBlocks = b_dispatchArgs.Load(0);
+    activeBlocks = min(activeBlocks, e_threadBlocks);
+
     if (waveSize >= 16)
-        ExclusiveThreadBlockScanWGE16(gtid.x, gid.x, waveSize);
+        ExclusiveThreadBlockScanWGE16(gtid.x, gid.x, waveSize, activeBlocks);
 
     if (waveSize < 16)
-        ExclusiveThreadBlockScanWLT16(gtid.x, gid.x, waveSize);
+        ExclusiveThreadBlockScanWLT16(gtid.x, gid.x, waveSize, activeBlocks);
 }
+
 
 //*****************************************************************************
 //DOWNSWEEP KERNEL
@@ -451,6 +490,15 @@ inline void LoadThreadBlockReductions(uint gtid, uint gid, uint exclusiveHistRed
 [numthreads(D_DIM, 1, 1)]
 void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
+
+    uint numKeys = GetActiveNumKeys();
+    uint activeBlocks = (numKeys + PART_SIZE - 1) / PART_SIZE;
+
+    if (gid.x >= activeBlocks)
+        return;
+
+    bool isLastActive = (gid.x == activeBlocks - 1);
+
     KeyStruct keys;
     OffsetStruct offsets;
     const uint waveSize = getWaveSize();
@@ -458,20 +506,19 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
     ClearWaveHists(gtid.x, waveSize);
     GroupMemoryBarrierWithGroupSync();
     
-    if (gid.x < e_threadBlocks - 1)
+    if (!isLastActive)
     {
         if (waveSize >= 16)
             keys = LoadKeysWGE16(gtid.x, waveSize, gid.x);
-        
+
         if (waveSize < 16)
             keys = LoadKeysWLT16(gtid.x, waveSize, gid.x, SerialIterations(waveSize));
     }
-        
-    if (gid.x == e_threadBlocks - 1)
+    else
     {
         if (waveSize >= 16)
             keys = LoadKeysPartialWGE16(gtid.x, waveSize, gid.x);
-        
+
         if (waveSize < 16)
             keys = LoadKeysPartialWLT16(gtid.x, waveSize, gid.x, SerialIterations(waveSize));
     }
@@ -523,9 +570,26 @@ void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
     LoadThreadBlockReductions(gtid.x, gid.x, exclusiveHistReduction);
     GroupMemoryBarrierWithGroupSync();
     
-    if (gid.x < e_threadBlocks - 1)
+    if (!isLastActive)
         ScatterDevice(gtid.x, waveSize, gid.x, offsets);
-        
-    if (gid.x == e_threadBlocks - 1)
+    else
         ScatterDevicePartial(gtid.x, waveSize, gid.x, offsets);
 }
+
+
+
+
+// Build dispatch args based on GPU-written key count (b_sortCount.Load(0)).
+[numthreads(1, 1, 1)]
+void BuildIndirectArgs(uint3 id : SV_DispatchThreadID)
+{
+    uint numKeys = GetActiveNumKeys();
+    uint blocks = (numKeys + PART_SIZE - 1) / PART_SIZE;
+
+    blocks = clamp(blocks, 1u, e_threadBlocks);
+
+    b_dispatchArgs.Store(0, blocks);
+    b_dispatchArgs.Store(4, 1u);
+    b_dispatchArgs.Store(8, 1u);
+}
+
