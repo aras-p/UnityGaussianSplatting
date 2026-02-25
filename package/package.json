@@ -5,7 +5,7 @@
   "displayName": "Gaussian Splatting Custom",
   "keywords": [ "unity" ],
   "license": "MIT",
-  "name": "com.asd56585452.gaussian-splatting-custom",
+  "name": "org.nesnausk.gaussian-splatting",
   "repository": "github:aras-p/UnityGaussianSplatting",
   "unity": "2022.3",
   "unityRelease": "7f1",
