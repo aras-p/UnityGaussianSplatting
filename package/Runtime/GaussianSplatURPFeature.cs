@@ -10,6 +10,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.XR;
 
 namespace GaussianSplatting.Runtime
 {
@@ -34,6 +35,7 @@ namespace GaussianSplatting.Runtime
                 internal TextureHandle SourceTexture;
                 internal TextureHandle SourceDepth;
                 internal TextureHandle GaussianSplatRT;
+                internal bool IsStereo;
             }
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -43,31 +45,102 @@ namespace GaussianSplatting.Runtime
                 var cameraData = frameData.Get<UniversalCameraData>();
                 var resourceData = frameData.Get<UniversalResourceData>();
 
-                RenderTextureDescriptor rtDesc = cameraData.cameraTargetDescriptor;
+                bool isStereo = XRSettings.enabled && cameraData.camera.stereoEnabled && 
+                                (XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassInstanced || 
+                                 XRSettings.stereoRenderingMode == XRSettings.StereoRenderingMode.SinglePassMultiview) &&
+                                !Application.isEditor;
+                RenderTextureDescriptor rtDesc = isStereo? XRSettings.eyeTextureDesc: cameraData.cameraTargetDescriptor;
                 rtDesc.depthBufferBits = 0;
                 rtDesc.msaaSamples = 1;
                 rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
-                var textureHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
+                
+                // Create render texture
+                var gaussianSplatRT = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
 
                 passData.CameraData = cameraData;
                 passData.SourceTexture = resourceData.activeColorTexture;
                 passData.SourceDepth = resourceData.activeDepthTexture;
-                passData.GaussianSplatRT = textureHandle;
+                passData.GaussianSplatRT = gaussianSplatRT;
+                passData.IsStereo = isStereo;
 
                 builder.UseTexture(resourceData.activeColorTexture, AccessFlags.ReadWrite);
                 builder.UseTexture(resourceData.activeDepthTexture);
-                builder.UseTexture(textureHandle, AccessFlags.Write);
+                builder.UseTexture(gaussianSplatRT, AccessFlags.ReadWrite);
                 builder.AllowPassCulling(false);
                 builder.SetRenderFunc(static (PassData data, UnsafeGraphContext context) =>
                 {
                     var commandBuffer = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
                     using var _ = new ProfilingScope(commandBuffer, s_profilingSampler);
-                    commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
-                    CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth, ClearFlag.Color, Color.clear);
-                    Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer);
-                    commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
-                    Blitter.BlitCameraTexture(commandBuffer, data.GaussianSplatRT, data.SourceTexture, matComposite, 0);
-                    commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+                    
+                    if (data.IsStereo)
+                    {
+                        // Check if any of the active splats require per-eye sorting
+                        bool requiresPerEyeSorting = GaussianSplatRenderSystem.instance.RequiresPerEyeSorting();
+                        Material matComposite = null;
+
+                        if (requiresPerEyeSorting)
+                        {
+                            // Per-eye sorting mode - sort and render each eye separately
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear);
+
+                            // Left eye
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 0);
+                            matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer, 0);
+
+                            // Right eye
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 1);
+                            GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer, 1);
+                        }
+                        else
+                        {
+                            // Standard stereo rendering - sort once, render twice
+                            // Clear the render target for both eyes
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear);
+
+                            // Prepare the splats once - sort them and calculate view data
+                            var renderData = GaussianSplatRenderSystem.instance.PrepareSplats(data.CameraData.camera, commandBuffer);
+                            
+                            // [Quest3] Workaround for stereo rendering. Unity is not able to correctly set unity_stereoEyeIndex when drawing to
+                            // a render texture array, so we need to do it manually. Also, we need to draw the same material twice,
+                            // once for each eye. TODO: Revisit this when Unity fixes the issue.
+
+                            // Render to left eye
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 0);
+                            GaussianSplatRenderSystem.instance.RenderPreparedSplats(commandBuffer, 0);
+
+                            // Render to right eye
+                            CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, ClearFlag.Color, Color.clear, 0, CubemapFace.Unknown, 1);
+                            GaussianSplatRenderSystem.instance.RenderPreparedSplats(commandBuffer, 1);
+                            matComposite = renderData.matComposite;
+                        }
+
+                        // Composite to the final target
+                        commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
+                        matComposite.SetTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+
+                        // [Quest3] Workaround for stereo rendering. Unity is not able to correctly set unity_stereoEyeIndex when drawing to
+                        // a render texture array, so we need to do it manually. Also, we need to draw the same material twice,
+                        // once for each eye. TODO: Revisit this when Unity fixes the issue.
+                        commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 0);
+                        commandBuffer.SetGlobalInt("_CustomStereoEyeIndex", 0); // emulate left
+                        commandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+
+                        commandBuffer.SetRenderTarget(data.SourceTexture, 0, CubemapFace.Unknown, 1);
+                        commandBuffer.SetGlobalInt("_CustomStereoEyeIndex", 1); // emulate right
+                        commandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                        commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+                    }
+                    else
+                    {
+                        // Single-eye rendering
+                        commandBuffer.SetGlobalTexture(s_gaussianSplatRT, data.GaussianSplatRT);
+                        CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth, ClearFlag.Color, Color.clear);
+                        Material matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(data.CameraData.camera, commandBuffer);
+                        
+                        commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
+                        Blitter.BlitCameraTexture(commandBuffer, data.GaussianSplatRT, data.SourceTexture, matComposite, 0);
+                        commandBuffer.EndSample(GaussianSplatRenderSystem.s_ProfCompose);
+                    }
                 });
             }
         }

@@ -9,17 +9,22 @@ gaussian splat "model" file) in Unity.
 Everything in this repository is based on that "OG" gaussian splatting paper. Towards end of 2023, there's a ton of
 [new gaussian splatting research](https://github.com/MrNeRF/awesome-3D-gaussian-splatting) coming out; _none_ of that is in this project.
 
-:warning: Status as of 2023 December: I'm not planning any significant further developments.
-
 :warning: The only platforms where this is known to work are the ones that use D3D12, Metal or Vulkan graphics APIs.
 PC (Windows on D3D12 or Vulkan), Mac (Metal), Linux (Vulkan) should work. Anything else I have not actually tested;
 it might work or it might not.
 - Some virtual reality devices work (reportedly HTC Vive, Varjo Aero, Quest 3 and Quest Pro). Some others might not
-  work, e.g. Apple Vision Pro. See [#17](https://github.com/aras-p/UnityGaussianSplatting/issues/17)
+  work, e.g. Apple Vision Pro. Multiview SPI compiles on Vulkan Quest 3. See [#17](https://github.com/aras-p/UnityGaussianSplatting/issues/17) and [VR Development State](VR_Dev_State.md) for more info.
 - Anything using OpenGL or OpenGL ES: [#26](https://github.com/aras-p/UnityGaussianSplatting/issues/26)
 - WebGPU might work someday, but seems that today it does not quite have all the required graphics features yet: [#65](https://github.com/aras-p/UnityGaussianSplatting/issues/65)
 - Mobile may or might not work. Some iOS devices definitely do not work ([#72](https://github.com/aras-p/UnityGaussianSplatting/issues/72)),
   some Androids do not work either ([#112](https://github.com/aras-p/UnityGaussianSplatting/issues/112))
+
+## Installation
+
+> **Unity Package Manager**: Add this package via the Package Manager using the git URL:
+> ```
+> https://github.com/aras-p/UnityGaussianSplatting.git?path=package
+> ```
 
 ## Usage
 
