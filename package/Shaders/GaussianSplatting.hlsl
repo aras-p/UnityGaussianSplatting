@@ -53,10 +53,22 @@ void CalcCovariance3D(float3x3 rotMat, out float3 sigma0, out float3 sigma1)
 }
 
 // from "EWA Splatting" (Zwicker et al 2002) eq. 31
+// Optimized for numerical stability at close range
 float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV, float4x4 matrixP, float4 screenParams)
 {
     float4x4 viewMatrix = matrixV;
     float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
+
+    // Clamp minimum z to prevent division instability at close range
+    // This is critical for VR where splats can be very close to the camera
+    float minZ = 0.01;
+    float z = max(abs(viewPos.z), minZ);
+    float zSign = sign(viewPos.z);
+    viewPos.z = z * (zSign != 0 ? zSign : 1.0);
+
+    // Pre-compute reciprocals to avoid repeated division and ensure consistent precision
+    float invZ = 1.0 / viewPos.z;
+    float invZ2 = invZ * invZ;
 
     // this is needed in order for splats that are visible in view but clipped "quite a lot" to work
     float aspect = matrixP._m00 / matrixP._m11;
@@ -64,15 +76,17 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     float tanFovY = rcp(matrixP._m11 * aspect);
     float limX = 1.3 * tanFovX;
     float limY = 1.3 * tanFovY;
-    viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
-    viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
+    viewPos.x = clamp(viewPos.x * invZ, -limX, limX) * viewPos.z;
+    viewPos.y = clamp(viewPos.y * invZ, -limY, limY) * viewPos.z;
 
-    float focal = screenParams.x * matrixP._m00 / 2;
+    float focal = screenParams.x * matrixP._m00 * 0.5;
 
+    // Build Jacobian with pre-computed reciprocals for stability
+    float focalInvZ = focal * invZ;
     float3x3 J = float3x3(
-        focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-        0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
-        0, 0, 0
+        focalInvZ, 0.0, -focal * viewPos.x * invZ2,
+        0.0, focalInvZ, -focal * viewPos.y * invZ2,
+        0.0, 0.0, 0.0
     );
     float3x3 W = (float3x3)viewMatrix;
     float3x3 T = mul(J, W);

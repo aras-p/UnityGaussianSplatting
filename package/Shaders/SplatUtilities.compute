@@ -81,13 +81,23 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
 }
 
+cbuffer StereoMatrices
+{
+    float4x4 _ViewProjMatrixLeft;
+    float4x4 _ViewProjMatrixRight;
+    float4x4 _ViewMatrixLeft;
+    float4x4 _ViewMatrixRight;
+    float4x4 _ProjMatrixLeft;
+    float4x4 _ProjMatrixRight;
+};
+
 RWStructuredBuffer<SplatViewData> _SplatViewData;
 
 float _SplatScale;
 float _SplatOpacityScale;
 uint _SHOrder;
 uint _SHOnly;
-
+uint _IsStereo;
 uint _SplatCutoutsCount;
 
 #define SPLAT_CUTOUT_TYPE_ELLIPSOID 0
@@ -152,8 +162,31 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
     float radius = length(float2((diag1 - diag2) / 2.0, offDiag));
     float lambda1 = mid + radius;
     float lambda2 = max(mid - radius, 0.1);
-    float2 diagVec = normalize(float2(offDiag, lambda1 - diag1));
+
+    // Stabilized eigenvector calculation
+    // When offDiag is small relative to the eigenvalue difference, use axis-aligned fallback
+    float2 diagVec;
+    float eps = 1e-4;  // Stability threshold
+    float offDiagAbs = abs(offDiag);
+    float eigDiff = abs(lambda1 - diag1);
+
+    if (offDiagAbs < eps && eigDiff < eps)
+    {
+        // Nearly circular/isotropic - use stable axis-aligned direction
+        diagVec = float2(1.0, 0.0);
+    }
+    else if (offDiagAbs < eps * max(eigDiff, 1.0))
+    {
+        // Off-diagonal negligible - eigenvectors are axis-aligned
+        diagVec = (diag1 >= diag2) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+    }
+    else
+    {
+        // Standard case - normalize is stable
+        diagVec = normalize(float2(offDiag, lambda1 - diag1));
+    }
     diagVec.y = -diagVec.y;
+
     float maxSize = 4096.0;
     v1 = min(sqrt(2.0 * lambda1), maxSize) * diagVec;
     v2 = min(sqrt(2.0 * lambda2), maxSize) * float2(diagVec.y, -diagVec.x);
@@ -186,40 +219,18 @@ bool IsSplatCut(float3 pos)
     return finalCut;
 }
 
-[numthreads(GROUP_SIZE,1,1)]
-void CSCalcViewData (uint3 id : SV_DispatchThreadID)
+SplatViewData CalculateEyeViewData(SplatData splat, float3 centerWorldPos, float4x4 viewProjMatrix, float4x4 viewMatrix, float4x4 projMatrix, bool isDeleted, bool isCut, float splatScale, half opacityScale)
 {
-    uint idx = id.x;
-    if (idx >= _SplatCount)
-        return;
-
-    SplatData splat = LoadSplatData(idx);
     SplatViewData view = (SplatViewData)0;
-    
-    float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
-    float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
-    half opacityScale = _SplatOpacityScale;
-    float splatScale = _SplatScale;
 
-    // deleted?
-    if (_SplatBitsValid)
-    {
-        uint wordIdx = idx / 32;
-        uint bitIdx = idx & 31;
-        uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
-        if (wordVal & (1 << bitIdx))
-        {
-            centerClipPos.w = 0;
-        }
-    }
-
-    // cutouts
-    if (IsSplatCut(splat.pos))
+    // Calculate projection
+    float4 centerClipPos = mul(viewProjMatrix, float4(centerWorldPos, 1));
+    if (isDeleted || isCut)
     {
         centerClipPos.w = 0;
     }
-
     view.pos = centerClipPos;
+
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
     {
@@ -233,8 +244,9 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         float splatScale2 = splatScale * splatScale;
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
-        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
-        
+        // FIX: Use eye-specific matrices for covariance calculation (was using mono _MatrixMV and UNITY_MATRIX_P)
+        float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, viewMatrix, projMatrix, _VecScreenParams);
+
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
         float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
@@ -247,8 +259,55 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
+
+    return view;
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSCalcViewData (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    SplatData splat = LoadSplatData(idx);
     
-    _SplatViewData[idx] = view;
+    // Transform to world space
+    float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
+    float splatScale = _SplatScale;
+    half opacityScale = _SplatOpacityScale;
+
+    // Check if deleted
+    bool isDeleted = false;
+    if (_SplatBitsValid)
+    {
+        uint wordIdx = idx / 32;
+        uint bitIdx = idx & 31;
+        uint wordVal = _SplatDeletedBits.Load(wordIdx * 4);
+        if (wordVal & (1 << bitIdx))
+        {
+            isDeleted = true;
+        }
+    }
+
+    // Check if cut
+    bool isCut = IsSplatCut(splat.pos);
+
+    if (_IsStereo)
+    {
+        // Calculate view data for both eyes using eye-specific matrices for correct covariance
+        SplatViewData viewLeft = CalculateEyeViewData(splat, centerWorldPos, _ViewProjMatrixLeft, _ViewMatrixLeft, _ProjMatrixLeft, isDeleted, isCut, splatScale, opacityScale);
+        SplatViewData viewRight = CalculateEyeViewData(splat, centerWorldPos, _ViewProjMatrixRight, _ViewMatrixRight, _ProjMatrixRight, isDeleted, isCut, splatScale, opacityScale);
+
+        // Store both views
+        _SplatViewData[idx * 2] = viewLeft;
+        _SplatViewData[idx * 2 + 1] = viewRight;
+    }
+    else
+    {
+        // Mono path uses the standard mono matrices
+        _SplatViewData[idx] = CalculateEyeViewData(splat, centerWorldPos, UNITY_MATRIX_VP, _MatrixMV, UNITY_MATRIX_P, isDeleted, isCut, splatScale, opacityScale);
+    }
 }
 
 
