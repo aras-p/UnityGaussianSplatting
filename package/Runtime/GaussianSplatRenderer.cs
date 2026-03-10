@@ -81,6 +81,8 @@ namespace GaussianSplatting.Runtime
                 var gs = kvp.Key;
                 if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
                     continue;
+                if ((cam.cullingMask & (1 << gs.gameObject.layer)) == 0)
+                    continue;
                 m_ActiveSplats.Add((kvp.Key, kvp.Value));
             }
             if (m_ActiveSplats.Count == 0)
