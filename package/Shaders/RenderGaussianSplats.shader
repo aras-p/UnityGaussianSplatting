@@ -31,12 +31,15 @@ struct v2f
 StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
-
+uint _EyeIndex;
+uint _IsStereo;
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
-    v2f o = (v2f)0;
-    instID = _OrderBuffer[instID];
-	SplatViewData view = _SplatViewData[instID];
+	v2f o = (v2f)0;
+	instID = _OrderBuffer[instID];
+	uint eyeIndex = _EyeIndex;
+	uint viewIndex = _IsStereo ? instID * 2 + eyeIndex : instID;
+	SplatViewData view = _SplatViewData[viewIndex];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
 	if (behindCam)
@@ -100,8 +103,7 @@ half4 frag (v2f i) : SV_Target
 		i.col.rgb = lerp(i.col.rgb, selectedColor, 0.5);
 	}
 	
-    if (alpha < 1.0/255.0)
-        discard;
+    clip(alpha - 1.0/255.0);
 
     half4 res = half4(i.col.rgb * alpha, alpha);
     return res;
