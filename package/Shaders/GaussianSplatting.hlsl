@@ -57,23 +57,37 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
 {
     float4x4 viewMatrix = matrixV;
     float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
-
-    // this is needed in order for splats that are visible in view but clipped "quite a lot" to work
-    float aspect = matrixP._m00 / matrixP._m11;
-    float tanFovX = rcp(matrixP._m00);
-    float tanFovY = rcp(matrixP._m11 * aspect);
-    float limX = 1.3 * tanFovX;
-    float limY = 1.3 * tanFovY;
-    viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
-    viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
-
+    bool isOrtho = abs(matrixP._m33 - 1.0) < 1e-5;
     float focal = screenParams.x * matrixP._m00 / 2;
 
-    float3x3 J = float3x3(
-        focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-        0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
-        0, 0, 0
-    );
+    float3x3 J;
+    if (isOrtho)
+    {
+        // Orthographic projection has no perspective divide, so projected size is depth independent.
+        J = float3x3(
+            focal, 0, 0,
+            0, focal, 0,
+            0, 0, 0
+        );
+    }
+    else
+    {
+        // Keep splats stable near frustum edges where projection derivatives become extreme.
+        float aspect = matrixP._m00 / matrixP._m11;
+        float tanFovX = rcp(matrixP._m00);
+        float tanFovY = rcp(matrixP._m11 * aspect);
+        float limX = 1.3 * tanFovX;
+        float limY = 1.3 * tanFovY;
+
+        viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
+        viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
+
+        J = float3x3(
+            focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
+            0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+            0, 0, 0
+        );
+    }
     float3x3 W = (float3x3)viewMatrix;
     float3x3 T = mul(J, W);
     float3x3 V = float3x3(
