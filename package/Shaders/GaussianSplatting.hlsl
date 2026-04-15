@@ -78,7 +78,7 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
         float tanFovY = rcp(matrixP._m11 * aspect);
         float limX = 1.3 * tanFovX;
         float limY = 1.3 * tanFovY;
-        // viewPos.z = 1.4; //experiment for orthographic mode
+
         viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
         viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
 
