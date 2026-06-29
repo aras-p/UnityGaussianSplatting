@@ -88,7 +88,15 @@ namespace GaussianSplatting.Editor.Utils
                     int got = ReadExactly(fs, rawBatch, bytesToRead);
                     if (got != bytesToRead)
                         throw new IOException($"PLY {filePath} read error, expected {bytesToRead} data bytes got {got}");
-                    ReorderPLYData(thisBatch, rawPtr, vertexStride, dstBase + (long)splatIndex * dstStride, dstStride, srcOffPtr);
+                    new ReorderPLYDataJob
+                    {
+                        src = rawPtr,
+                        dst = dstBase + (long)splatIndex * dstStride,
+                        srcOffsets = srcOffPtr,
+                        srcStride = vertexStride,
+                        dstStride = dstStride,
+                        attrCount = dstStride / 4
+                    }.Schedule(thisBatch, 8192).Complete();
                     splatIndex += thisBatch;
                 }
             }
@@ -219,18 +227,28 @@ namespace GaussianSplatting.Editor.Utils
             return srcOffsets;
         }
 
+        // Scatters one batch of raw PLY vertex records into InputSplatData layout. Implemented as a regular Burst
+        // job (not a [BurstCompile] static direct-call) so it always uses Burst's standard, synchronously-available
+        // job compilation path instead of the function-pointer path, which can fail to compile in time on first use.
         [BurstCompile]
-        static unsafe void ReorderPLYData(int splatCount, byte* src, int srcStride, byte* dst, int dstStride, int* srcOffsets)
+        struct ReorderPLYDataJob : IJobParallelFor
         {
-            for (int i = 0; i < splatCount; i++)
+            [NativeDisableUnsafePtrRestriction] public unsafe byte* src;
+            [NativeDisableUnsafePtrRestriction] public unsafe byte* dst;
+            [NativeDisableUnsafePtrRestriction] public unsafe int* srcOffsets;
+            public int srcStride;
+            public int dstStride;
+            public int attrCount;
+
+            public unsafe void Execute(int i)
             {
-                for (int attr = 0; attr < dstStride / 4; attr++)
+                byte* s = src + (long)i * srcStride;
+                byte* d = dst + (long)i * dstStride;
+                for (int attr = 0; attr < attrCount; attr++)
                 {
                     if (srcOffsets[attr] >= 0)
-                        *(int*)(dst + attr * 4) = *(int*)(src + srcOffsets[attr]);
+                        *(int*)(d + attr * 4) = *(int*)(s + srcOffsets[attr]);
                 }
-                src += srcStride;
-                dst += dstStride;
             }
         }
 
