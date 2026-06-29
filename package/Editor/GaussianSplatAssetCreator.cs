@@ -408,7 +408,7 @@ namespace GaussianSplatting.Editor
             }
         }
 
-        static void ReorderMorton(NativeArray<InputSplatData> splatData, float3 boundsMin, float3 boundsMax)
+        static unsafe void ReorderMorton(NativeArray<InputSplatData> splatData, float3 boundsMin, float3 boundsMax)
         {
             ReorderMortonJob order = new ReorderMortonJob
             {
@@ -420,9 +420,17 @@ namespace GaussianSplatting.Editor
             order.Schedule(splatData.Length, 4096).Complete();
             order.m_Order.Sort(new OrderComparer());
 
-            NativeArray<InputSplatData> copy = new(order.m_SplatData, Allocator.TempJob);
+            // Copy the source data, then gather it back in the new order. Use an explicit long-sized MemCpy
+            // instead of the NativeArray copy constructor / NativeArray.Copy: their internal size is computed as
+            // 'length * sizeof' in int, which overflows once the array exceeds 2GB (>8.6M splats * 248 bytes) and
+            // crashes inside memcpy.
+            NativeArray<InputSplatData> copy = new(splatData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            UnsafeUtility.MemCpy(copy.GetUnsafePtr(), splatData.GetUnsafeReadOnlyPtr(),
+                (long)splatData.Length * UnsafeUtility.SizeOf<InputSplatData>());
+            InputSplatData* copyPtr = (InputSplatData*)copy.GetUnsafeReadOnlyPtr();
+            InputSplatData* dstPtr = (InputSplatData*)splatData.GetUnsafePtr();
             for (int i = 0; i < copy.Length; ++i)
-                order.m_SplatData[i] = copy[order.m_Order[i].Item2];
+                dstPtr[i] = copyPtr[order.m_Order[i].Item2];
             copy.Dispose();
 
             order.m_Order.Dispose();
