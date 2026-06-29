@@ -46,15 +46,7 @@ namespace GaussianSplatting.Editor.Utils
         {
             if (isPLY(filePath))
             {
-                NativeArray<byte> plyRawData;
-                List<(string, PLYFileReader.ElementType)> attributes;
-                PLYFileReader.ReadFile(filePath, out var splatCount, out var vertexStride, out attributes, out plyRawData);
-                string attrError = CheckPLYAttributes(attributes);
-                if (!string.IsNullOrEmpty(attrError))
-                    throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
-                splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
-                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
-                LinearizeData(splats);
+                ReadPLYFile(filePath, out splats);
                 return;
             }
             if (isSPZ(filePath))
@@ -63,6 +55,80 @@ namespace GaussianSplatting.Editor.Utils
                 return;
             }
             throw new IOException($"File {filePath} is not a supported format");
+        }
+
+        static unsafe void ReadPLYFile(string filePath, out NativeArray<InputSplatData> splats)
+        {
+            using var fs = PLYFileReader.OpenAndReadHeader(filePath, out var splatCount, out var vertexStride, out var attributes);
+            string attrError = CheckPLYAttributes(attributes);
+            if (!string.IsNullOrEmpty(attrError))
+                throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
+
+            // The destination splat array can be larger than 2GB in total (its element count still fits in an int),
+            // but the raw PLY body can exceed the ~2GB NativeArray<byte> size limit. So read the body in batches into
+            // a small reusable buffer and convert each batch straight into the destination array.
+            NativeArray<int> srcOffsets = BuildSrcOffsets(attributes);
+            int dstStride = UnsafeUtility.SizeOf<InputSplatData>();
+            splats = new NativeArray<InputSplatData>(splatCount, Allocator.Persistent);
+
+            const int kBatchSplats = 1024 * 1024;
+            int batchSplats = math.min(kBatchSplats, math.max(1, splatCount));
+            NativeArray<byte> rawBatch = new(batchSplats * vertexStride, Allocator.Persistent);
+            try
+            {
+                InputSplatData* dstBase = (InputSplatData*)splats.GetUnsafePtr();
+                int* srcOffPtr = (int*)srcOffsets.GetUnsafeReadOnlyPtr();
+                byte* rawPtr = (byte*)rawBatch.GetUnsafeReadOnlyPtr();
+
+                int splatIndex = 0;
+                while (splatIndex < splatCount)
+                {
+                    int thisBatch = math.min(batchSplats, splatCount - splatIndex);
+                    int bytesToRead = thisBatch * vertexStride;
+                    int got = ReadExactly(fs, rawBatch, bytesToRead);
+                    if (got != bytesToRead)
+                        throw new IOException($"PLY {filePath} read error, expected {bytesToRead} data bytes got {got}");
+                    new ReorderPLYDataJob
+                    {
+                        src = rawPtr,
+                        dst = (byte*)(dstBase + splatIndex),
+                        srcOffsets = srcOffPtr,
+                        srcStride = vertexStride,
+                        dstStride = dstStride,
+                        attrCount = dstStride / 4
+                    }.Schedule(thisBatch, 8192).Complete();
+                    splatIndex += thisBatch;
+                }
+
+                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
+                LinearizeData(splats);
+            }
+            catch
+            {
+                // Don't leak the (potentially multi-GB) destination array if reading or converting fails partway.
+                splats.Dispose();
+                splats = default;
+                throw;
+            }
+            finally
+            {
+                rawBatch.Dispose();
+                srcOffsets.Dispose();
+            }
+        }
+
+        // Reads exactly 'count' bytes from the stream into the start of 'buffer' (Stream.Read may return short reads).
+        static int ReadExactly(Stream fs, NativeArray<byte> buffer, int count)
+        {
+            int total = 0;
+            while (total < count)
+            {
+                int n = fs.Read(buffer.GetSubArray(total, count - total));
+                if (n <= 0)
+                    break;
+                total += n;
+            }
+            return total;
         }
 
         static bool isPLY(string filePath) => filePath.EndsWith(".ply", true, CultureInfo.InvariantCulture);
@@ -77,7 +143,9 @@ namespace GaussianSplatting.Editor.Utils
             return string.Join(",", missing);
         }
 
-        static unsafe NativeArray<InputSplatData> PLYDataToSplats(NativeArray<byte> input, int count, int stride, List<(string, PLYFileReader.ElementType)> attributes)
+        // Builds, for each float field of InputSplatData, the byte offset of the matching attribute inside a PLY
+        // vertex record (or -1 if the attribute is absent). Returned array is Persistent; caller disposes it.
+        static NativeArray<int> BuildSrcOffsets(List<(string, PLYFileReader.ElementType)> attributes)
         {
             NativeArray<int> fileAttrOffsets = new NativeArray<int>(attributes.Count, Allocator.Temp);
             int offset = 0;
@@ -154,31 +222,40 @@ namespace GaussianSplatting.Editor.Utils
                 "rot_3",                
             };
             Assert.AreEqual(UnsafeUtility.SizeOf<InputSplatData>() / 4, splatAttributes.Length);
-            NativeArray<int> srcOffsets = new NativeArray<int>(splatAttributes.Length, Allocator.Temp);
+            NativeArray<int> srcOffsets = new NativeArray<int>(splatAttributes.Length, Allocator.Persistent);
             for (int ai = 0; ai < splatAttributes.Length; ai++)
             {
                 int attrIndex = attributes.IndexOf((splatAttributes[ai], PLYFileReader.ElementType.Float));
                 int attrOffset = attrIndex >= 0 ? fileAttrOffsets[attrIndex] : -1;
                 srcOffsets[ai] = attrOffset;
             }
-            
-            NativeArray<InputSplatData> dst = new NativeArray<InputSplatData>(count, Allocator.Persistent);
-            ReorderPLYData(count, (byte*)input.GetUnsafeReadOnlyPtr(), stride, (byte*)dst.GetUnsafePtr(), UnsafeUtility.SizeOf<InputSplatData>(), (int*)srcOffsets.GetUnsafeReadOnlyPtr());
-            return dst;
+
+            fileAttrOffsets.Dispose();
+            return srcOffsets;
         }
 
+        // Scatters one batch of raw PLY vertex records into InputSplatData layout. Implemented as a regular Burst
+        // job (not a [BurstCompile] static direct-call) so it always uses Burst's standard, synchronously-available
+        // job compilation path instead of the function-pointer path, which can fail to compile in time on first use.
         [BurstCompile]
-        static unsafe void ReorderPLYData(int splatCount, byte* src, int srcStride, byte* dst, int dstStride, int* srcOffsets)
+        struct ReorderPLYDataJob : IJobParallelFor
         {
-            for (int i = 0; i < splatCount; i++)
+            [NativeDisableUnsafePtrRestriction] public unsafe byte* src;
+            [NativeDisableUnsafePtrRestriction] public unsafe byte* dst;
+            [NativeDisableUnsafePtrRestriction] public unsafe int* srcOffsets;
+            public int srcStride;
+            public int dstStride;
+            public int attrCount;
+
+            public unsafe void Execute(int i)
             {
-                for (int attr = 0; attr < dstStride / 4; attr++)
+                byte* s = src + (long)i * srcStride;
+                byte* d = dst + (long)i * dstStride;
+                for (int attr = 0; attr < attrCount; attr++)
                 {
                     if (srcOffsets[attr] >= 0)
-                        *(int*)(dst + attr * 4) = *(int*)(src + srcOffsets[attr]);
+                        *(int*)(d + attr * 4) = *(int*)(s + srcOffsets[attr]);
                 }
-                src += srcStride;
-                dst += dstStride;
             }
         }
 

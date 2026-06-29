@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Unity.Collections;
 
 namespace GaussianSplatting.Editor.Utils
 {
@@ -22,12 +21,26 @@ namespace GaussianSplatting.Editor.Utils
             ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
         }
 
+        // Opens the file, parses the header, and returns the stream positioned at the start of the binary
+        // vertex data. The body is meant to be read in batches, so files larger than 2GB are supported.
+        // Caller is responsible for disposing the returned stream.
+        public static FileStream OpenAndReadHeader(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs)
+        {
+            var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+            try
+            {
+                ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
+            }
+            catch
+            {
+                fs.Dispose();
+                throw;
+            }
+            return fs;
+        }
+
         static void ReadHeaderImpl(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, FileStream fs)
         {
-            // C# arrays and NativeArrays make it hard to have a "byte" array larger than 2GB :/
-            if (fs.Length >= 2 * 1024 * 1024 * 1024L)
-                throw new IOException($"PLY {filePath} read error: currently files larger than 2GB are not supported");
-
             // read header
             vertexCount = 0;
             vertexStride = 0;
@@ -62,17 +75,6 @@ namespace GaussianSplatting.Editor.Utils
             {
                 throw new IOException($"PLY {filePath} not supported: needs to be binary, little endian PLY format");
             }
-        }
-
-        public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, out NativeArray<byte> vertices)
-        {
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
-
-            vertices = new NativeArray<byte>(vertexCount * vertexStride, Allocator.Persistent);
-            var readBytes = fs.Read(vertices);
-            if (readBytes != vertices.Length)
-                throw new IOException($"PLY {filePath} read error, expected {vertices.Length} data bytes got {readBytes}");
         }
 
         public enum ElementType
