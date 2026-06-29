@@ -76,7 +76,7 @@ namespace GaussianSplatting.Editor.Utils
             NativeArray<byte> rawBatch = new(batchSplats * vertexStride, Allocator.Persistent);
             try
             {
-                byte* dstBase = (byte*)splats.GetUnsafePtr();
+                InputSplatData* dstBase = (InputSplatData*)splats.GetUnsafePtr();
                 int* srcOffPtr = (int*)srcOffsets.GetUnsafeReadOnlyPtr();
                 byte* rawPtr = (byte*)rawBatch.GetUnsafeReadOnlyPtr();
 
@@ -91,7 +91,7 @@ namespace GaussianSplatting.Editor.Utils
                     new ReorderPLYDataJob
                     {
                         src = rawPtr,
-                        dst = dstBase + (long)splatIndex * dstStride,
+                        dst = (byte*)(dstBase + splatIndex),
                         srcOffsets = srcOffPtr,
                         srcStride = vertexStride,
                         dstStride = dstStride,
@@ -99,15 +99,22 @@ namespace GaussianSplatting.Editor.Utils
                     }.Schedule(thisBatch, 8192).Complete();
                     splatIndex += thisBatch;
                 }
+
+                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
+                LinearizeData(splats);
+            }
+            catch
+            {
+                // Don't leak the (potentially multi-GB) destination array if reading or converting fails partway.
+                splats.Dispose();
+                splats = default;
+                throw;
             }
             finally
             {
                 rawBatch.Dispose();
                 srcOffsets.Dispose();
             }
-
-            ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
-            LinearizeData(splats);
         }
 
         // Reads exactly 'count' bytes from the stream into the start of 'buffer' (Stream.Read may return short reads).
