@@ -544,7 +544,7 @@ namespace GaussianSplatting.Editor
 
                     // transform scale to be more uniformly distributed
                     s.scale = math.pow(s.scale, 1.0f / 8.0f);
-                    // transform opacity to be more unformly distributed
+                    // transform opacity to be more uniformly distributed
                     s.opacity = GaussianUtils.SquareCentered01(s.opacity);
                     splatData[i] = s;
 
