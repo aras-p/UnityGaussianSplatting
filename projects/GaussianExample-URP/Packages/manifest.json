@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.unity.ide.rider": "3.0.36",
+    "com.unity.ide.rider": "3.0.40",
     "com.unity.render-pipelines.universal": "17.0.4",
     "org.nesnausk.gaussian-splatting": "file:../../../package",
     "com.unity.modules.accessibility": "1.0.0",
