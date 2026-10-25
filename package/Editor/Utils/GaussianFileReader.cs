@@ -48,19 +48,21 @@ namespace GaussianSplatting.Editor.Utils
             {
                 NativeArray<byte> plyRawData = default;
                 int splatCount;
+                int shCount;
                 try
                 {
                     PLYFileReader.ReadFile(filePath, out splatCount, out var vertexStride, out var attributes, out plyRawData);
                     string attrError = CheckPLYAttributes(attributes);
                     if (!string.IsNullOrEmpty(attrError))
                         throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
+                    shCount = CheckPLYSHAttributes(attributes);
                     splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
                 }
                 finally
                 {
                     plyRawData.Dispose();
                 }
-                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
+                ReorderSHs(splatCount, (float*)splats.GetUnsafePtr(), shCount);
                 LinearizeData(splats);
                 return;
             }
@@ -82,6 +84,21 @@ namespace GaussianSplatting.Editor.Utils
             if (missing.Count == 0)
                 return null;
             return string.Join(",", missing);
+        }
+
+        static int CheckPLYSHAttributes(List<(string, PLYFileReader.ElementType)> attributes)
+        {
+            var restAttributes = attributes.Where(a => a.Item1.StartsWith("f_rest_", System.StringComparison.Ordinal)).ToList();
+            int restCount = restAttributes.Count;
+            // SH degrees 0..3 have 0, 3, 8 or 15 coefficients per color channel. Reject higher degrees.
+            if (restCount != 0 && restCount != 9 && restCount != 24 && restCount != 45)
+                throw new IOException($"PLY file has unsupported SH property count {restCount}; expected 0, 9, 24 or 45");
+            for (int i = 0; i < restCount; ++i)
+            {
+                if (!restAttributes.Contains(($"f_rest_{i}", PLYFileReader.ElementType.Float)))
+                    throw new IOException($"PLY file SH properties must be consecutive floats; missing float f_rest_{i}");
+            }
+            return restCount / 3;
         }
 
         static unsafe NativeArray<InputSplatData> PLYDataToSplats(NativeArray<byte> input, int count, int stride, List<(string, PLYFileReader.ElementType)> attributes)
@@ -190,10 +207,10 @@ namespace GaussianSplatting.Editor.Utils
         }
 
         [BurstCompile]
-        static unsafe void ReorderSHs(int splatCount, float* data)
+        static unsafe void ReorderSHs(int splatCount, float* data, int shCount)
         {
             int splatStride = UnsafeUtility.SizeOf<InputSplatData>() / 4;
-            int shStartOffset = 9, shCount = 15;
+            int shStartOffset = 9;
             float* tmp = stackalloc float[shCount * 3];
             int idx = shStartOffset;
             for (int i = 0; i < splatCount; ++i)
