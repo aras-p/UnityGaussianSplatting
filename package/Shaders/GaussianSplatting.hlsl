@@ -69,11 +69,22 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
 
     float focal = screenParams.x * matrixP._m00 / 2;
 
-    float3x3 J = float3x3(
-        focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-        0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
-        0, 0, 0
-    );
+    bool isIsometric = matrixP._m33 == 1.0;
+    float3x3 J;
+    if (isIsometric) {
+      J = float3x3(
+          focal, 0, 0,
+          0, focal, 0,
+          0, 0, 0
+      );
+    } else {
+      J = float3x3(
+          focal / viewPos.z, 0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
+          0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+          0, 0, 0
+      );
+    }
+    
     float3x3 W = (float3x3)viewMatrix;
     float3x3 T = mul(J, W);
     float3x3 V = float3x3(
