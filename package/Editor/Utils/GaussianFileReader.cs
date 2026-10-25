@@ -46,13 +46,20 @@ namespace GaussianSplatting.Editor.Utils
         {
             if (isPLY(filePath))
             {
-                NativeArray<byte> plyRawData;
-                List<(string, PLYFileReader.ElementType)> attributes;
-                PLYFileReader.ReadFile(filePath, out var splatCount, out var vertexStride, out attributes, out plyRawData);
-                string attrError = CheckPLYAttributes(attributes);
-                if (!string.IsNullOrEmpty(attrError))
-                    throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
-                splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
+                NativeArray<byte> plyRawData = default;
+                int splatCount;
+                try
+                {
+                    PLYFileReader.ReadFile(filePath, out splatCount, out var vertexStride, out var attributes, out plyRawData);
+                    string attrError = CheckPLYAttributes(attributes);
+                    if (!string.IsNullOrEmpty(attrError))
+                        throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
+                    splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
+                }
+                finally
+                {
+                    plyRawData.Dispose();
+                }
                 ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
                 LinearizeData(splats);
                 return;
