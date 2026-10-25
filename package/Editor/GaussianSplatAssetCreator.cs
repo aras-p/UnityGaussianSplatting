@@ -408,7 +408,7 @@ namespace GaussianSplatting.Editor
             }
         }
 
-        static void ReorderMorton(NativeArray<InputSplatData> splatData, float3 boundsMin, float3 boundsMax)
+        static unsafe void ReorderMorton(NativeArray<InputSplatData> splatData, float3 boundsMin, float3 boundsMax)
         {
             ReorderMortonJob order = new ReorderMortonJob
             {
@@ -420,7 +420,11 @@ namespace GaussianSplatting.Editor
             order.Schedule(splatData.Length, 4096).Complete();
             order.m_Order.Sort(new OrderComparer());
 
-            NativeArray<InputSplatData> copy = new(order.m_SplatData, Allocator.TempJob);
+            // Note: do not use NativeArray copy constructor; it can't copy more than 2GB data due to internal
+            // signed 32 bit int overflow. Create uninitialized array and manually copy the data :/
+            NativeArray<InputSplatData> copy = new(splatData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            UnsafeUtility.MemCpy(copy.GetUnsafePtr(), splatData.GetUnsafeReadOnlyPtr(),
+                (long)splatData.Length * UnsafeUtility.SizeOf<InputSplatData>());
             for (int i = 0; i < copy.Length; ++i)
                 order.m_SplatData[i] = copy[order.m_Order[i].Item2];
             copy.Dispose();

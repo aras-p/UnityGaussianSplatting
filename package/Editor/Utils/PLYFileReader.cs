@@ -34,6 +34,7 @@ namespace GaussianSplatting.Editor.Utils
             attrs = new List<(string, ElementType)>();
             const int kMaxHeaderLines = 9000;
             bool got_binary_le = false;
+            bool inVertex = false;
             for (int lineIdx = 0; lineIdx < kMaxHeaderLines; ++lineIdx)
             {
                 var line = ReadLine(fs);
@@ -42,9 +43,13 @@ namespace GaussianSplatting.Editor.Utils
                 var tokens = line.Split(' ');
                 if (tokens.Length == 3 && tokens[0] == "format" && tokens[1] == "binary_little_endian" && tokens[2] == "1.0")
                     got_binary_le = true;
-                if (tokens.Length == 3 && tokens[0] == "element" && tokens[1] == "vertex")
-                    vertexCount = int.Parse(tokens[2]);
-                if (tokens.Length == 3 && tokens[0] == "property")
+                if (tokens.Length == 3 && tokens[0] == "element")
+                {
+                    inVertex = tokens[1] == "vertex";
+                    if (inVertex)
+                        vertexCount = int.Parse(tokens[2]);
+                }
+                if (tokens.Length == 3 && tokens[0] == "property" && inVertex)
                 {
                     ElementType type = tokens[1] switch
                     {
