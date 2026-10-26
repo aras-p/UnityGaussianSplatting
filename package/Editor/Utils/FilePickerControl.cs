@@ -1,272 +1,149 @@
 // SPDX-License-Identifier: MIT
-
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using GaussianSplatting.Runtime;
 using UnityEditor;
-using UnityEditor.Experimental;
 using UnityEngine;
 
 namespace GaussianSplatting.Editor.Utils
 {
+    // path field + browse button + project-local recent path history
     public class FilePickerControl
     {
-        const string kLastPathPref = "nesnausk.utils.FilePickerLastPath";
-        static Texture2D s_FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
-        static Texture2D s_FileIcon => EditorGUIUtility.FindTexture(EditorResources.folderIconName);
-        static GUIStyle s_StyleTextFieldText;
-        static GUIStyle s_StyleTextFieldDropdown;
-        static readonly int kPathFieldControlID = "FilePickerPathField".GetHashCode();
-        const int kIconSize = 15;
-        const int kRecentPathsCount = 20;
+        const int kRecentCount = 20;
+        static readonly string kPreference = "nesnausk.GaussianSplatSource." + Hash128.Compute(Application.dataPath);
+        static List<string> s_RecentPaths;
+        static GUIContent[] s_RecentLabels;
 
-        public static string PathToDisplayString(string path)
+        static void LoadHistory()
         {
-            if (string.IsNullOrWhiteSpace(path))
-                return "<none>";
-            path = path.Replace('\\', '/');
-            string[] parts = path.Split('/');
-
-            // check if filename is not some super generic one
-            var baseName = Path.GetFileNameWithoutExtension(parts[^1]).ToLowerInvariant();
-            if (baseName != "point_cloud" && baseName != "splat" && baseName != "input")
-                return parts[^1];
-
-            // otherwise if filename is just some generic "point cloud" type, then take some folder names above it into account
-            if (parts.Length >= 4)
-                path = string.Join('/', parts.TakeLast(4));
-
-            path = path.Replace('/', '-');
-            return path;
-        }
-
-        class PreviousPaths
-        {
-            public PreviousPaths(List<string> paths)
-            {
-                this.paths = paths;
-                UpdateContent();
-            }
-            public void UpdateContent()
-            {
-                this.content = paths.Select(p => new GUIContent(PathToDisplayString(p))).ToArray();
-            }
-            public List<string> paths;
-            public GUIContent[] content;
-        }
-        Dictionary<string, PreviousPaths> m_PreviousPaths = new();
-
-        void PopulatePreviousPaths(string nameKey)
-        {
-            if (m_PreviousPaths.ContainsKey(nameKey))
+            if (s_RecentPaths != null)
                 return;
-
-            List<string> prevPaths = new();
-            for (int i = 0; i < kRecentPathsCount; ++i)
+            s_RecentPaths = new List<string>();
+            for (int i = 0; i < kRecentCount; ++i)
             {
-                string path = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}-{i}");
-                if (!string.IsNullOrWhiteSpace(path))
-                    prevPaths.Add(path);
+                string path = EditorPrefs.GetString($"{kPreference}.{i}", "");
+                if (!string.IsNullOrEmpty(path))
+                    s_RecentPaths.Add(path);
             }
-            m_PreviousPaths.Add(nameKey, new PreviousPaths(prevPaths));
+            UpdateLabels();
         }
 
-        void UpdatePreviousPaths(string nameKey, string path)
+        static void UpdateLabels()
         {
-            if (!m_PreviousPaths.ContainsKey(nameKey))
-            {
-                m_PreviousPaths.Add(nameKey, new PreviousPaths(new List<string>()));
-            }
-            var prevPaths = m_PreviousPaths[nameKey];
-            prevPaths.paths.Remove(path);
-            prevPaths.paths.Insert(0, path);
-            while (prevPaths.paths.Count > kRecentPathsCount)
-                prevPaths.paths.RemoveAt(prevPaths.paths.Count - 1);
-            prevPaths.UpdateContent();
-
-            for (int i = 0; i < prevPaths.paths.Count; ++i)
-            {
-                EditorPrefs.SetString($"{kLastPathPref}-{nameKey}-{i}", prevPaths.paths[i]);
-            }
+            s_RecentLabels = new GUIContent[s_RecentPaths.Count];
+            for (int i = 0; i < s_RecentPaths.Count; ++i)
+                s_RecentLabels[i] = new GUIContent(s_RecentPaths[i]);
         }
 
-        static bool CheckPath(string path, bool isFolder)
+        static void RememberPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
+                return;
+            s_RecentPaths.Remove(path);
+            s_RecentPaths.Insert(0, path);
+            if (s_RecentPaths.Count > kRecentCount)
+                s_RecentPaths.RemoveAt(kRecentCount);
+            for (int i = 0; i < s_RecentPaths.Count; ++i)
+                EditorPrefs.SetString($"{kPreference}.{i}", s_RecentPaths[i]);
+            UpdateLabels();
+        }
+
+        static bool TryRelativePath(string file, out string relative)
+        {
+            relative = null;
+            if (string.IsNullOrWhiteSpace(file))
                 return false;
-            if (isFolder)
-            {
-                if (!Directory.Exists(path))
-                    return false;
-            }
-            else
-            {
-                if (!File.Exists(path))
-                    return false;
-            }
+            string root = Path.GetFullPath(Application.streamingAssetsPath).Replace('\\', '/').TrimEnd('/') + "/";
+            string full = Path.GetFullPath(file).Replace('\\', '/');
+            if (!full.StartsWith(root, StringComparison.Ordinal) || !File.Exists(full))
+                return false;
+            string extension = Path.GetExtension(full).ToLowerInvariant();
+            if (extension != ".ply" && extension != ".spz")
+                return false;
+            relative = full.Substring(root.Length);
             return true;
         }
 
-        static string PathAbsToStorage(string path)
+        string Browse(string value)
         {
-            path = path.Replace('\\', '/');
-            var dataPath = Application.dataPath;
-            if (path.StartsWith(dataPath, StringComparison.Ordinal))
+            LoadHistory();
+            string current = string.IsNullOrEmpty(value) && s_RecentPaths.Count > 0 ? s_RecentPaths[0] : value;
+            string directory = Application.streamingAssetsPath;
+            if (!string.IsNullOrEmpty(current))
             {
-                path = Path.GetRelativePath($"{dataPath}/..", path);
-                path = path.Replace('\\', '/');
+                string candidate = Path.GetDirectoryName(Path.Combine(directory, current));
+                if (Directory.Exists(candidate))
+                    directory = candidate;
             }
-            return path;
+            string file = EditorUtility.OpenFilePanelWithFilters("Select splat file in StreamingAssets", directory, new[] { "Gaussian splats", "ply,spz" });
+            if (string.IsNullOrEmpty(file))
+                return null;
+            if (TryRelativePath(file, out string relative))
+            {
+                RememberPath(relative);
+                return relative;
+            }
+            EditorUtility.DisplayDialog("Choose a StreamingAssets file", "Choose a PLY/SPZ file inside Assets/StreamingAssets", "OK");
+            return null;
         }
 
-        bool CheckAndSetNewPath(ref string path, string nameKey, bool isFolder)
+        public string PathFieldGUI(Rect position, GUIContent label, string value)
         {
-            path = PathAbsToStorage(path);
-            if (CheckPath(path, isFolder))
-            {
-                EditorPrefs.SetString($"{kLastPathPref}-{nameKey}", path);
-                UpdatePreviousPaths(nameKey, path);
-                GUI.changed = true;
-                Event.current.Use();
-                return true;
-            }
-            return false;
-        }
+            LoadHistory();
+            Rect field = EditorGUI.PrefixLabel(position, label);
+            var dropdown = new Rect(field.xMax - 18, field.y, 18, field.height);
+            var browse = new Rect(dropdown.x - 22, field.y, 22, field.height);
+            var text = new Rect(field.x, field.y, browse.x - field.x, field.height);
 
-        string PreviousPathsDropdown(Rect position, string value, string nameKey, bool isFolder)
-        {
-            PopulatePreviousPaths(nameKey);
-
-            if (string.IsNullOrWhiteSpace(value))
-                value = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}");
-
-            m_PreviousPaths.TryGetValue(nameKey, out var prevPaths);
-
-            EditorGUI.BeginDisabledGroup(prevPaths == null || prevPaths.paths.Count == 0);
             EditorGUI.BeginChangeCheck();
-            int oldIndent = EditorGUI.indentLevel;
-            EditorGUI.indentLevel = 0;
-            int parameterIndex = EditorGUI.Popup(position, GUIContent.none, -1, prevPaths.content, s_StyleTextFieldDropdown);
-            if (EditorGUI.EndChangeCheck() && parameterIndex < prevPaths.paths.Count)
+            string typed = EditorGUI.DelayedTextField(text, value ?? "");
+            if (EditorGUI.EndChangeCheck())
             {
-                string newValue = prevPaths.paths[parameterIndex];
-                if (CheckAndSetNewPath(ref newValue, nameKey, isFolder))
-                    value = newValue;
+                value = typed.Replace('\\', '/');
+                try
+                {
+                    string full = GaussianSplatReader.ResolvePath(Application.streamingAssetsPath, value);
+                    if (File.Exists(full))
+                        RememberPath(value);
+                }
+                catch (ArgumentException) { } // inspector displays invalid/missing path messages
             }
-            EditorGUI.indentLevel = oldIndent;
-            EditorGUI.EndDisabledGroup();
-            return value;
-        }
-
-        // null extension picks folders
-        public string PathFieldGUI(Rect position, GUIContent label, string value, string extension, string nameKey)
-        {
-            s_StyleTextFieldText ??= new GUIStyle("TextFieldDropDownText");
-            s_StyleTextFieldDropdown ??= new GUIStyle("TextFieldDropdown");
-            bool isFolder = extension == null;
-
-            int controlId = GUIUtility.GetControlID(kPathFieldControlID, FocusType.Keyboard, position);
-            Rect fullRect = EditorGUI.PrefixLabel(position, controlId, label);
-            Rect textRect = new Rect(fullRect.x, fullRect.y, fullRect.width - s_StyleTextFieldDropdown.fixedWidth, fullRect.height);
-            Rect dropdownRect = new Rect(textRect.xMax, fullRect.y, s_StyleTextFieldDropdown.fixedWidth, fullRect.height);
-            Rect iconRect = new Rect(textRect.xMax - kIconSize, textRect.y, kIconSize, textRect.height);
-
-            value = PreviousPathsDropdown(dropdownRect, value, nameKey, isFolder);
-
-            string displayText = PathToDisplayString(value);
+            if (GUI.Button(browse, EditorGUIUtility.IconContent("Folder Icon", "|Choose a PLY/SPZ file"), EditorStyles.miniButton))
+            {
+                string selected = Browse(value);
+                if (selected != null)
+                {
+                    value = selected;
+                    GUI.changed = true;
+                }
+            }
+            using (new EditorGUI.DisabledScope(s_RecentPaths.Count == 0))
+            {
+                int selected = EditorGUI.Popup(dropdown, -1, s_RecentLabels, EditorStyles.popup);
+                if (selected >= 0)
+                {
+                    value = s_RecentPaths[selected];
+                    RememberPath(value);
+                    GUI.changed = true;
+                }
+            }
 
             Event evt = Event.current;
-            switch (evt.type)
+            if (field.Contains(evt.mousePosition) && GUI.enabled && evt.type is EventType.DragUpdated or EventType.DragPerform)
             {
-                case EventType.KeyDown:
-                    if (GUIUtility.keyboardControl == controlId)
-                    {
-                        if (evt.keyCode is KeyCode.Backspace or KeyCode.Delete)
-                        {
-                            value = null;
-                            EditorPrefs.SetString($"{kLastPathPref}-{nameKey}", "");
-                            GUI.changed = true;
-                            evt.Use();
-                        }
-                    }
-                    break;
-                case EventType.Repaint:
-                    s_StyleTextFieldText.Draw(textRect, new GUIContent(displayText), controlId, DragAndDrop.activeControlID == controlId);
-                    GUI.DrawTexture(iconRect, isFolder ? s_FolderIcon : s_FileIcon, ScaleMode.ScaleToFit);
-                    break;
-                case EventType.MouseDown:
-                    if (evt.button != 0 || !GUI.enabled)
-                        break;
-
-                    if (textRect.Contains(evt.mousePosition))
-                    {
-                        if (iconRect.Contains(evt.mousePosition))
-                        {
-                            if (string.IsNullOrWhiteSpace(value))
-                                value = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}");
-                            string newPath;
-                            string openToPath = string.Empty;
-                            if (isFolder)
-                            {
-                                if (Directory.Exists(value))
-                                    openToPath = value;
-                                newPath = EditorUtility.OpenFolderPanel("Select folder", openToPath, "");
-                            }
-                            else
-                            {
-                                if (File.Exists(value))
-                                    openToPath = Path.GetDirectoryName(value);
-                                newPath = EditorUtility.OpenFilePanel("Select file", openToPath, extension);
-                            }
-                            if (CheckAndSetNewPath(ref newPath, nameKey, isFolder))
-                            {
-                                value = newPath;
-                                GUI.changed = true;
-                                evt.Use();
-                            }
-                        }
-                        else if (File.Exists(value) || Directory.Exists(value))
-                        {
-                            EditorUtility.RevealInFinder(value);
-                        }
-                        GUIUtility.keyboardControl = controlId;
-                    }
-                    break;
-                case EventType.DragUpdated:
-                case EventType.DragPerform:
-                    if (textRect.Contains(evt.mousePosition) && GUI.enabled)
-                    {
-                        if (DragAndDrop.paths.Length > 0)
-                        {
-                            DragAndDrop.visualMode = DragAndDropVisualMode.Generic;
-                            string path = DragAndDrop.paths[0];
-                            path = PathAbsToStorage(path);
-                            if (CheckPath(path, isFolder))
-                            {
-                                if (evt.type == EventType.DragPerform)
-                                {
-                                    UpdatePreviousPaths(nameKey, path);
-                                    value = path;
-                                    GUI.changed = true;
-                                    DragAndDrop.AcceptDrag();
-                                    DragAndDrop.activeControlID = 0;
-                                }
-                                else
-                                    DragAndDrop.activeControlID = controlId;
-                            }
-                            else
-                                DragAndDrop.visualMode = DragAndDropVisualMode.Rejected;
-                            evt.Use();
-                        }
-                    }
-                    break;
-                case EventType.DragExited:
-                    if (GUI.enabled)
-                    {
-                        HandleUtility.Repaint();
-                    }
-                    break;
+                string relative = null;
+                bool valid = DragAndDrop.paths.Length == 1 && TryRelativePath(DragAndDrop.paths[0], out relative);
+                DragAndDrop.visualMode = valid ? DragAndDropVisualMode.Link : DragAndDropVisualMode.Rejected;
+                if (valid && evt.type == EventType.DragPerform)
+                {
+                    DragAndDrop.AcceptDrag();
+                    value = relative;
+                    RememberPath(value);
+                    GUI.changed = true;
+                }
+                evt.Use();
             }
             return value;
         }
