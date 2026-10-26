@@ -19,7 +19,7 @@ namespace GaussianSplatting.Runtime
     // Advance the loading on the main thread.
     sealed class GaussianSplatLoadOperation : IDisposable
     {
-        enum State { Downloading, Decompressing, Converting, Cameras, Complete }
+        enum State { Downloading, Decompressing, DecompressingZstd, Converting, Cameras, Complete }
         State m_State;
         readonly string m_CameraPath;
         UnityWebRequest m_Request;
@@ -28,6 +28,8 @@ namespace GaussianSplatting.Runtime
         PLYFileReader.Header m_Ply;
         SPZFileReader.Header m_Spz;
         NativeArray<byte> m_Input;
+        NativeArray<byte> m_Compressed, m_ZstdScratch;
+        NativeArray<SPZFileReader.StreamInfo> m_SpzStreams;
         NativeArray<GaussianSplatPrepareDataJob.BatchResult> m_Results;
         ReadHandle m_Read;
         JobHandle m_Job;
@@ -87,6 +89,22 @@ namespace GaussianSplatting.Runtime
                     FinishConversion();
                     if (m_State == State.Cameras) goto case State.Cameras;
                     break;
+                case State.DecompressingZstd:
+                    if (!m_Job.IsCompleted) return;
+                    m_Job.Complete();
+                    if (m_Read.IsValid())
+                    {
+                        if (m_Read.Status != ReadStatus.Complete || m_Read.GetBytesRead() != m_Compressed.Length)
+                            throw new EndOfStreamException("Could not read SPZ compressed data");
+                        m_Read.Dispose();
+                        m_Read = default;
+                    }
+                    for (int i = 0; i < m_SpzStreams.Length; ++i)
+                        if (m_SpzStreams[i].error != ZstdDecoder.Error.None)
+                            throw new InvalidDataException($"Could not decompress SPZ stream {i}: {m_SpzStreams[i].error}");
+                    DisposeZstdBuffers();
+                    StartConversion();
+                    break;
                 case State.Cameras:
                     try { ReadCameras(); }
                     catch (Exception e)
@@ -113,17 +131,23 @@ namespace GaussianSplatting.Runtime
             long start = m_Stream.Position;
             int a = m_Stream.ReadByte(), b = m_Stream.ReadByte();
             m_Stream.Position = start;
-            if (a == 0x1f && b == 0x8b) // gzip stream (SPZ)
+            bool gzip = a == 0x1f && b == 0x8b;
+            if (gzip || (a == 'N' && b == 'G')) // SPZ: gzip v1–3 or plaintext v4 header
             {
-                m_Gzip = new GZipStream(m_Stream, CompressionMode.Decompress, true);
-                m_Spz = SPZFileReader.ReadHeader(m_Gzip);
+                if (gzip) m_Gzip = new GZipStream(m_Stream, CompressionMode.Decompress, true);
+                m_Spz = SPZFileReader.ReadHeader((Stream)m_Gzip ?? m_Stream);
+                if (gzip != (m_Spz.version < 4)) throw new InvalidDataException("SPZ compression does not match its version");
                 m_Data = new GaussianSplatData(m_Spz.count, m_Spz.degree);
                 m_Input = new NativeArray<byte>(m_Spz.dataSize, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 m_Ply.properties = new NativeArray<int>(0, Allocator.Persistent);
-                var thread = new Thread(Decompress) { IsBackground = true, Name = "Splat SPZ decompression" };
-                thread.Start();
-                m_DecompressionThread = thread;
-                m_State = State.Decompressing;
+                if (m_Spz.version == 4) StartZstdDecompression();
+                else
+                {
+                    var thread = new Thread(Decompress) { IsBackground = true, Name = "Splat SPZ decompression" };
+                    thread.Start();
+                    m_DecompressionThread = thread;
+                    m_State = State.Decompressing;
+                }
             }
             else if (a == 'p' && b == 'l') // PLY
             {
@@ -133,7 +157,42 @@ namespace GaussianSplatting.Runtime
                 m_Input = new NativeArray<byte>(capacity * m_Ply.stride, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 StartConversion();
             }
-            else throw new InvalidDataException("Expected binary PLY or gzip SPZ (versions 1–3)");
+            else throw new InvalidDataException("Expected binary PLY or SPZ (versions 1–4)");
+        }
+
+        unsafe void StartZstdDecompression()
+        {
+            m_SpzStreams = SPZFileReader.ReadStreams(m_Stream, m_Spz);
+            m_Compressed = new NativeArray<byte>(checked((int)(m_Stream.Length - m_Stream.Position)), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            m_ZstdScratch = new NativeArray<byte>(m_SpzStreams.Length * ZstdDecoder.ScratchSize, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            JobHandle dependency = default;
+            if (m_Stream is FileStream file)
+            {
+                var command = new ReadCommand { Buffer = m_Compressed.GetUnsafePtr(), Offset = file.Position, Size = m_Compressed.Length };
+                m_Read = AsyncReadManager.Read(file.Name, &command, 1);
+                dependency = m_Read.JobHandle;
+            }
+            else
+            {
+                int offset = 0;
+                while (offset < m_Compressed.Length)
+                {
+                    int read = m_Stream.Read(new Span<byte>((byte*)m_Compressed.GetUnsafePtr() + offset, m_Compressed.Length - offset));
+                    if (read == 0) throw new EndOfStreamException("Truncated SPZ compressed data");
+                    offset += read;
+                }
+            }
+            m_Job = new SPZFileReader.DecompressJob { input = m_Compressed, output = m_Input, scratch = m_ZstdScratch, streams = m_SpzStreams }
+                .Schedule(m_SpzStreams.Length, 1, dependency);
+            JobHandle.ScheduleBatchedJobs();
+            m_State = State.DecompressingZstd;
+        }
+
+        void DisposeZstdBuffers()
+        {
+            if (m_Compressed.IsCreated) m_Compressed.Dispose();
+            if (m_ZstdScratch.IsCreated) m_ZstdScratch.Dispose();
+            if (m_SpzStreams.IsCreated) m_SpzStreams.Dispose();
         }
 
         unsafe void Decompress()
@@ -269,6 +328,7 @@ namespace GaussianSplatting.Runtime
             // the IsCreated checks are needed
             if (m_Input.IsCreated) m_Input.Dispose();
             if (m_Results.IsCreated) m_Results.Dispose();
+            DisposeZstdBuffers();
 
             m_Ply.Dispose();
             m_Gzip?.Dispose();

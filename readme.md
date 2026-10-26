@@ -37,7 +37,8 @@ Currently two file formats are supported:
 - PLY format from the original 3DGS paper (in the official paper models, the correct files
   are under `point_cloud/iteration_*/point_cloud.ply`). It needs to be binary PLY file,
   with all splat related properties being regular floats.
-- [Scaniverse SPZ](https://scaniverse.com/spz) format; versions 1-3 (version 4 is not supported yet).
+- [Scaniverse SPZ](https://scaniverse.com/spz) format; versions 1-4, with SH degrees 0-3.
+  Antialiased files load with a warning; SPZ extensions are not supported.
 
 Optionally there can be a `[basename].json` file next to the PLY/SPZ file (e.g. `garden.json` for `garden.ply`), describing
 cameras, in format from the original paper. The inspector's **Cameras**
@@ -84,6 +85,8 @@ per splat (for sorting, caching view dependent data etc.).
 
 The code I wrote for this is under MIT license. The project also uses several 3rd party libraries:
 
+- [WangXuan95/TinyZZZ](https://github.com/WangXuan95/TinyZZZ), MIT license, (c) 2025 WangXuan95.
+  The Zstandard decoder from there was ported to C#/Burst.
 - [zanders3/json](https://github.com/zanders3/json), MIT license, (c) 2018 Alex Parker.
 - "DeviceRadixSort" GPU sorting code contributed by Thomas Smith ([#82](https://github.com/aras-p/UnityGaussianSplatting/pull/82)).
 - Virtual Reality fixes contributed by [@ninjamode](https://github.com/ninjamode) based on
