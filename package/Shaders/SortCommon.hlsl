@@ -91,6 +91,14 @@ struct DigitStruct
 #endif
 };
 
+// number of active keys to sort in the dispatch
+ByteAddressBuffer b_sortCount;
+
+uint GetActiveNumKeys()
+{
+    return min(b_sortCount.Load(0), e_numKeys);
+}
+
 //*****************************************************************************
 //HELPER FUNCTIONS
 //*****************************************************************************
@@ -280,7 +288,7 @@ inline KeyStruct LoadKeysPartialWGE16(uint gtid, uint waveSize, uint partIndex)
         i < KEYS_PER_THREAD;
         ++i, t += waveSize)
     {
-        if (t < e_numKeys)
+        if (t < GetActiveNumKeys())
             LoadKey(keys.k[i], t);
         else
             LoadDummyKey(keys.k[i]);
@@ -296,7 +304,7 @@ inline KeyStruct LoadKeysPartialWLT16(uint gtid, uint waveSize, uint partIndex, 
         i < KEYS_PER_THREAD;
         ++i, t += waveSize * serialIterations)
     {
-        if (t < e_numKeys)
+        if (t < GetActiveNumKeys())
             LoadKey(keys.k[i], t);
         else
             LoadDummyKey(keys.k[i]);
@@ -565,7 +573,7 @@ inline void ScatterKeysShared(OffsetStruct offsets, KeyStruct keys)
 
 inline uint DescendingIndex(uint deviceIndex)
 {
-    return e_numKeys - deviceIndex - 1;
+    return GetActiveNumKeys() - deviceIndex - 1;
 }
 
 inline void WriteKey(uint deviceIndex, uint groupSharedIndex)
@@ -797,7 +805,7 @@ inline void ScatterKeysOnlyDevicePartialDescending(uint gtid, uint finalPartSize
 
 inline void ScatterKeysOnlyDevicePartial(uint gtid, uint partIndex)
 {
-    const uint finalPartSize = e_numKeys - partIndex * PART_SIZE;
+    const uint finalPartSize = GetActiveNumKeys() - partIndex * PART_SIZE;
 #if defined(SHOULD_ASCEND)
     ScatterKeysOnlyDevicePartialAscending(gtid, finalPartSize);
 #else
@@ -856,7 +864,7 @@ inline void LoadPayloadsPartialWGE16(
         i < KEYS_PER_THREAD;
         ++i, t += waveSize)
     {
-        if (t < e_numKeys)
+        if (t < GetActiveNumKeys())
             LoadPayload(payloads.k[i], t);
     }
 }
@@ -873,7 +881,7 @@ inline void LoadPayloadsPartialWLT16(
         i < KEYS_PER_THREAD;
         ++i, t += waveSize * serialIterations)
     {
-        if (t < e_numKeys)
+        if (t < GetActiveNumKeys())
             LoadPayload(payloads.k[i], t);
     }
 }
@@ -918,7 +926,7 @@ inline void ScatterPairsDevicePartial(
     OffsetStruct offsets)
 {
     DigitStruct digits;
-    const uint finalPartSize = e_numKeys - partIndex * PART_SIZE;
+    const uint finalPartSize = GetActiveNumKeys() - partIndex * PART_SIZE;
 #if defined(SHOULD_ASCEND)
     ScatterPairsKeyPhaseAscendingPartial(gtid, finalPartSize, digits);
 #else
