@@ -19,7 +19,7 @@ namespace GaussianSplatting.Runtime
         {
             public float3 position, scale, color;
             public float4 rotation;
-            public uint packedRotation; // Original SPZ v3 word, preserved without requantization.
+            public uint packedRotation; // Original SPZ v3/v4 word, preserved without requantization.
             public float opacity;
         }
 
@@ -30,7 +30,7 @@ namespace GaussianSplatting.Runtime
         // color RGB, opacity, then channel-major SH.
         [ReadOnly] public NativeArray<int> plyPropOffsets;
 
-        // spzVersion == 0 selects PLY; versions 1–3 select SPZ.
+        // spzVersion == 0 selects PLY; versions 1–4 select SPZ.
         public int spzVersion;
         public int spzTotalCount, spzFractionalBits;
 
