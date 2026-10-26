@@ -61,7 +61,6 @@ The rendering takes game object transformation matrix into account; the official
 Additional documentation:
 
 * [Render Pipeline Integration](/docs/render-pipeline-integration.md)
-* [Editing Splats](/docs/splat-editing.md)
 
 _That's it!_
 
