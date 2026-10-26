@@ -29,31 +29,23 @@ and open `GSTestScene` scene in there.
 Note that the project requires DX12 or Vulkan on Windows, i.e. **DX11 will not work**. This is **not tested at all on mobile/web**, and probably
 does not work there.
 
-<img align="right" src="docs/Images/shotAssetCreator.png" width="250px">
+Put a gaussian splat `.ply` or `.spz` file under `Assets/StreamingAssets` (for example,
+`Assets/StreamingAssets/bicycle.ply`). Have a GameObject with `GaussianSplatRenderer`
+component, and drag the file onto the **PLY / SPZ** field.
 
-Next up, **create some GaussianSplat assets**: open `Tools -> Gaussian Splats -> Create GaussianSplatAsset` menu within Unity.
-In the dialog, point `Input PLY/SPZ File` to your Gaussian Splat file. Currently two
-file formats are supported:
+Currently two file formats are supported:
 - PLY format from the original 3DGS paper (in the official paper models, the correct files
-  are under `point_cloud/iteration_*/point_cloud.ply`).
-- [Scaniverse SPZ](https://scaniverse.com/spz) format.
+  are under `point_cloud/iteration_*/point_cloud.ply`). It needs to be binary PLY file,
+  with all splat related properties being regular floats.
+- [Scaniverse SPZ](https://scaniverse.com/spz) format; versions 1-3 (version 4 is not supported yet).
 
-Optionally there can be `cameras.json` next to it or somewhere in parent folders.
-
-Pick desired compression options and output folder, and press "Create Asset" button. The compression even at "very low" quality setting is decently usable, e.g. 
-this capture at Very Low preset is under 8MB of total size (click to see the video): \
-[![Watch the video](https://img.youtube.com/vi/iccfV0YlWVI/0.jpg)](https://youtu.be/iccfV0YlWVI)
-
-If everything was fine, there should be a GaussianSplat asset that has several data files next to it.
+Optionally there can be a `[basename].json` file next to the PLY/SPZ file (e.g. `garden.json` for `garden.ply`), describing
+cameras, in format from the original paper. The inspector's **Cameras**
+selector then moves the main camera relative to the splat object.
 
 Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
 [paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
 [14GB zip](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) of their models.
-
-
-In the game object that has a `GaussianSplatRenderer` script, **point the Asset field to** one of your created assets.
-There are various controls on the script to debug/visualize the data, as well as a slider to move game camera into one of asset's camera
-locations.
 
 The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
 -160 degrees around X axis, and mirrored around Z axis, so in the sample scene the object has such a transform set up.
@@ -73,7 +65,7 @@ My own blog posts about all this:
 * [Making Gaussian Splats more smaller](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/) (2023 Sep 27)
 * [Gaussian Explosion](https://aras-p.info/blog/2023/12/08/Gaussian-explosion/) (2023 Dec 8)
 
-## Performance numbers:
+## Performance numbers (TODO: need an update):
 
 "bicycle" scene from the paper, with 6.1M splats and first camera in there, rendering at 1200x797 resolution,
 at "Medium" asset quality level (282MB asset file):
