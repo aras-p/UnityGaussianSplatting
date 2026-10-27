@@ -123,7 +123,11 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
     float radius = length(float2((diag1 - diag2) / 2.0, offDiag));
     float lambda1 = mid + radius;
     float lambda2 = max(mid - radius, 0.1);
-    float2 diagVec = normalize(float2(offDiag, lambda1 - diag1));
+
+    // diagonal covariance already has axis-aligned eigenvectors, avoid normalizing (0,0)
+    float2 diagVec = offDiag == 0
+        ? (diag1 >= diag2 ? float2(1, 0) : float2(0, 1))
+        : normalize(float2(offDiag, lambda1 - diag1));
     diagVec.y = -diagVec.y;
     float maxSize = 4096.0;
     v1 = min(sqrt(2.0 * lambda1), maxSize) * diagVec;
