@@ -45,6 +45,8 @@ namespace GaussianSplatting.Runtime
         [Header("Options")]
         [Tooltip("Gaussian splat transparency rendering algorithm")]
         public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
+        [Tooltip("Accumulate stochastic frames while camera and scene are stationary")]
+        public bool m_StochasticTemporalAccumulation;
 
         [Header("Debugging Tweaks")]
         public RenderMode m_RenderMode = RenderMode.Splats;

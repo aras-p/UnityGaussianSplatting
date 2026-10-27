@@ -42,6 +42,7 @@ cbuffer SplatGlobalUniforms // match struct SplatGlobalUniforms in C#
     uint sgu_frameOffset;
 }
 
+uint _SplatSeed;
 StructuredBuffer<SplatViewData> _SplatViewData;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -49,7 +50,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     v2f o = (v2f)0;
     if (sgu_transparencyMode == 0)
         instID = _OrderBuffer[instID];
-    o.idx = instID + sgu_frameOffset;
+    // combine local splat index with object ID
+    o.idx = (instID ^ (_SplatSeed * 0x9e3779b9u)) + sgu_frameOffset;
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
@@ -114,8 +116,8 @@ half4 frag (v2f i) : SV_Target
     {
         // "Hashed Alpha Testing", Wyman, McGuire 2017
         // https://casual-effects.com/research/Wyman2017Hashed/index.html
-        uint3 hash = pcg3d16(uint3(i.vertex.xy, i.idx));
-        half cutoff = (hash.x & 0xFFFF) / 65535.0;
+        uint3 hash = pcg3d16(uint3(uint2(i.vertex.xy), i.idx));
+        float cutoff = hash.x * (1.0 / 65536.0);
         if (alpha <= cutoff)
             discard;
         alpha = 1;

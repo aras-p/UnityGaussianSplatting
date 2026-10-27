@@ -36,6 +36,11 @@ namespace GaussianSplatting.Runtime
         Material m_MatDebugPoints;
         Material m_MatDebugBoxes;
         uint m_FrameOffset;
+        GaussianSplatTemporalAccumulator m_TemporalAccumulator;
+        int m_SceneVersion;
+#if UNITY_EDITOR
+        readonly HashSet<Camera> m_RenderedSceneViews = new();
+#endif
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 16)]
         struct SplatGlobalUniforms // match cbuffer SplatGlobalUniforms in shaders
@@ -52,9 +57,14 @@ namespace GaussianSplatting.Runtime
             {
                 if (GraphicsSettings.currentRenderPipeline == null)
                     Camera.onPreCull += OnPreCullCamera;
+#if UNITY_EDITOR
+                UnityEditor.ObjectChangeEvents.changesPublished += OnSceneChanged;
+                UnityEditor.SceneView.beforeSceneGui += OnBeforeSceneGUI;
+#endif
             }
 
             m_Splats.Add(r, new MaterialPropertyBlock());
+            InvalidateTemporalHistory();
         }
 
         public void UnregisterSplat(GaussianSplatRenderer r)
@@ -62,6 +72,7 @@ namespace GaussianSplatting.Runtime
             if (!m_Splats.ContainsKey(r))
                 return;
             m_Splats.Remove(r);
+            InvalidateTemporalHistory();
             if (m_Splats.Count == 0)
                 CleanupAfterAllSplatsDeleted();
         }
@@ -93,6 +104,39 @@ namespace GaussianSplatting.Runtime
             UnityEngine.Object.DestroyImmediate(m_MatDebugPoints);
             UnityEngine.Object.DestroyImmediate(m_MatDebugBoxes);
             Camera.onPreCull -= OnPreCullCamera;
+            m_TemporalAccumulator?.Dispose();
+            m_TemporalAccumulator = null;
+#if UNITY_EDITOR
+            UnityEditor.ObjectChangeEvents.changesPublished -= OnSceneChanged;
+            UnityEditor.SceneView.beforeSceneGui -= OnBeforeSceneGUI;
+            m_RenderedSceneViews.Clear();
+#endif
+        }
+
+        public void InvalidateTemporalHistory() => ++m_SceneVersion;
+
+#if UNITY_EDITOR
+        void OnSceneChanged(ref UnityEditor.ObjectChangeEventStream stream) => InvalidateTemporalHistory();
+        void OnBeforeSceneGUI(UnityEditor.SceneView view) => m_RenderedSceneViews.Remove(view.camera);
+#endif
+
+        int GetTemporalSceneHash()
+        {
+            var hash = new HashCode();
+            hash.Add(m_SceneVersion);
+            var options = GaussianSplatRenderOptions.instance;
+            hash.Add(options.m_SHOnly);
+            foreach (var (gs, _) in m_ActiveSplats)
+            {
+                hash.Add(gs.GetInstanceID());
+                hash.Add(gs.transform.localToWorldMatrix);
+                hash.Add(gs.m_GpuView); // changes when source data is reloaded
+                hash.Add(gs.m_RenderOrder);
+                hash.Add(gs.m_SplatScale);
+                hash.Add(gs.m_OpacityScale);
+                hash.Add(gs.m_SHOrder);
+            }
+            return hash.ToHashCode();
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
@@ -178,14 +222,19 @@ namespace GaussianSplatting.Runtime
 
             EnsureCubeIndexBuffer();
 
+            bool stochastic = settings.m_Transparency == TransparencyMode.Stochastic;
+
             m_GlobalUniforms ??= new GraphicsBuffer(GraphicsBuffer.Target.Constant, 1, UnsafeUtility.SizeOf<SplatGlobalUniforms>());
             NativeArray<SplatGlobalUniforms> sgu = new(1, Allocator.Temp);
-            sgu[0] = new SplatGlobalUniforms { transparencyMode = (uint)settings.m_Transparency, frameOffset = m_FrameOffset };
+            sgu[0] = new SplatGlobalUniforms
+            {
+                transparencyMode = (uint)settings.m_Transparency,
+                frameOffset = m_FrameOffset
+            };
             using (sgu)
                 cmb.SetBufferData(m_GlobalUniforms, sgu);
             m_FrameOffset++;
 
-            bool stochastic = settings.m_Transparency == TransparencyMode.Stochastic;
             m_MatSplats.SetInt(GaussianSplatRenderer.Props.SrcBlend, (int)(stochastic ? BlendMode.One : BlendMode.OneMinusDstAlpha));
             m_MatSplats.SetInt(GaussianSplatRenderer.Props.DstBlend, (int)(stochastic ? BlendMode.Zero : BlendMode.One));
             m_MatSplats.SetInt(GaussianSplatRenderer.Props.ZWrite, stochastic ? 1 : 0);
@@ -211,6 +260,7 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, settings.m_SHOnly ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, settings.m_RenderMode == RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetConstantBuffer(GaussianSplatRenderer.Props.SplatGlobalUniforms, m_GlobalUniforms, 0, m_GlobalUniforms.stride);
+                mpb.SetInteger(GaussianSplatRenderer.Props.SplatSeed, gs.GetInstanceID());
 
                 int indexCount = 6;
                 int instanceCount = gs.splatCount;
@@ -279,9 +329,17 @@ namespace GaussianSplatting.Runtime
 
         void OnPreCullCamera(Camera cam)
         {
+#if UNITY_EDITOR
+            // camera callbacks are also invoked for outline passes etc.; only advance
+            // temporal history once per actual repaint
+            if (cam.cameraType == CameraType.SceneView &&
+                GaussianSplatRenderOptions.instance.m_StochasticTemporalAccumulation && !m_RenderedSceneViews.Add(cam))
+                return;
+#endif
             if (!GatherSplatsForCamera(cam))
             {
                 m_CommandBuffer?.Clear();
+                m_TemporalAccumulator?.Reset(cam);
                 return;
             }
 
@@ -300,8 +358,21 @@ namespace GaussianSplatting.Runtime
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
-            m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+            var options = GaussianSplatRenderOptions.instance;
+            // TODO: support temporal accumulation in URP/HDRP too.
+            if (options.m_StochasticTemporalAccumulation && options.m_Transparency == TransparencyMode.Stochastic &&
+                options.m_RenderMode == RenderMode.Splats)
+            {
+                m_TemporalAccumulator ??= new GaussianSplatTemporalAccumulator();
+                m_TemporalAccumulator.Render(m_CommandBuffer, cam, matComposite, GetTemporalSceneHash());
+            }
+            else
+            {
+                m_TemporalAccumulator?.Dispose();
+                m_TemporalAccumulator = null;
+                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+            }
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
@@ -312,6 +383,9 @@ namespace GaussianSplatting.Runtime
     {
         [Tooltip("PLY/SPZ path relative to Assets/StreamingAssets") ]
         public string m_SourcePath;
+
+        // Call after any runtime changes that affect splat visibility / history
+        public void InvalidateTemporalHistory() => GaussianSplatRenderSystem.instance.InvalidateTemporalHistory();
 
         [Tooltip("Rendering order compared to other splats. Within same order splats are sorted by distance. Higher order splats render 'on top of' lower order splats.")]
         public int m_RenderOrder;
@@ -354,6 +428,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int DstBlend = Shader.PropertyToID("_DstBlend");
             public static readonly int ZWrite = Shader.PropertyToID("_ZWrite");
             public static readonly int SplatGlobalUniforms = Shader.PropertyToID("SplatGlobalUniforms");
+            public static readonly int SplatSeed = Shader.PropertyToID("_SplatSeed");
             public static readonly int SplatPos = Shader.PropertyToID("_SplatPos");
             public static readonly int SplatOther = Shader.PropertyToID("_SplatOther");
             public static readonly int SplatSH = Shader.PropertyToID("_SplatSH");
