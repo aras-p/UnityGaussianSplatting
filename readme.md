@@ -33,6 +33,9 @@ Put a gaussian splat `.ply` or `.spz` file under `Assets/StreamingAssets` (for e
 `Assets/StreamingAssets/bicycle.ply`). Have a GameObject with `GaussianSplatRenderer`
 component, and drag the file onto the **PLY / SPZ** field.
 
+Add a `GaussianSplatRenderOptions` component to any GameObject to change global rendering options
+(render mode, point display size, SH-only display and sort frequency). Without it, defaults are used.
+
 Currently two file formats are supported:
 - PLY format from the original 3DGS paper (in the official paper models, the correct files
   are under `point_cloud/iteration_*/point_cloud.ply`). It needs to be binary PLY file,
