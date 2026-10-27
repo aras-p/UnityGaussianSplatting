@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MIT
 Shader "Gaussian Splatting/Render Splats"
 {
+    Properties
+    {
+        _SrcBlend("Src Blend", Float) = 8 // OneMinusDstAlpha
+        _DstBlend("Dst Blend", Float) = 1 // One
+        _ZWrite("ZWrite", Float) = 0 // Off
+    }
     SubShader
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
 
         Pass
         {
-            ZWrite Off
-            Blend OneMinusDstAlpha One
+            ZWrite [_ZWrite]
+            Blend [_SrcBlend] [_DstBlend]
             Cull Off
             
 CGPROGRAM
@@ -25,15 +31,25 @@ struct v2f
 {
     half4 col : COLOR0;
     float2 pos : TEXCOORD0;
+    nointerpolation uint idx : TEXCOORD1;
     float4 vertex : SV_POSITION;
 };
+
+// Separate constant buffer avoids Unity's DX12 stale-uniform bug (IN-99220).
+cbuffer SplatGlobalUniforms // match struct SplatGlobalUniforms in C#
+{
+    uint sgu_transparencyMode;
+    uint sgu_frameOffset;
+}
 
 StructuredBuffer<SplatViewData> _SplatViewData;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
     v2f o = (v2f)0;
-    instID = _OrderBuffer[instID];
+    if (sgu_transparencyMode == 0)
+        instID = _OrderBuffer[instID];
+    o.idx = instID + sgu_frameOffset;
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
@@ -63,6 +79,24 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     return o;
 }
 
+// Hash Functions for GPU Rendering
+// https://jcgt.org/published/0009/03/02/
+uint3 pcg3d16(uint3 v)
+{
+    v = v * 12829u + 47989u;
+
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+
+	v >>= 16u;
+    return v;
+}
+
 half4 frag (v2f i) : SV_Target
 {
 	float power = -dot(i.pos, i.pos);
@@ -72,7 +106,21 @@ half4 frag (v2f i) : SV_Target
     if (alpha < 1.0/255.0)
         discard;
 
-    half4 res = half4(i.col.rgb * alpha, alpha);
+    if (sgu_transparencyMode == 0)
+    {
+        i.col.rgb *= alpha;
+    }
+    else
+    {
+        // "Hashed Alpha Testing", Wyman, McGuire 2017
+        // https://casual-effects.com/research/Wyman2017Hashed/index.html
+        uint3 hash = pcg3d16(uint3(i.vertex.xy, i.idx));
+        half cutoff = (hash.x & 0xFFFF) / 65535.0;
+        if (alpha <= cutoff)
+            discard;
+        alpha = 1;
+    }
+    half4 res = half4(i.col.rgb, alpha);
     return res;
 }
 ENDCG

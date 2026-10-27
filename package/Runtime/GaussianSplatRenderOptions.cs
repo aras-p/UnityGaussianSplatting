@@ -4,6 +4,12 @@ using UnityEngine;
 
 namespace GaussianSplatting.Runtime
 {
+    public enum TransparencyMode
+    {
+        SortedBlended,
+        Stochastic,
+    }
+
     public enum RenderMode
     {
         Splats,
@@ -36,6 +42,10 @@ namespace GaussianSplatting.Runtime
         }
         static GaussianSplatRenderOptions ms_Instance;
 
+        [Header("Options")]
+        [Tooltip("Gaussian splat transparency rendering algorithm")]
+        public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
+
         [Header("Debugging Tweaks")]
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
@@ -43,6 +53,8 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
+
+        internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended || m_RenderMode == RenderMode.DebugBoxes;
 
         internal bool resourcesFound { get; private set; }
         bool resourcesLoadAttempted;

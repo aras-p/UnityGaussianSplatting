@@ -55,7 +55,7 @@ namespace GaussianSplatting.Runtime
                 passData.GaussianSplatRT = textureHandle;
 
                 builder.UseTexture(resourceData.activeColorTexture, AccessFlags.ReadWrite);
-                builder.UseTexture(resourceData.activeDepthTexture);
+                builder.UseTexture(resourceData.activeDepthTexture, AccessFlags.ReadWrite);
                 builder.UseTexture(textureHandle, AccessFlags.Write);
                 builder.AllowPassCulling(false);
                 builder.SetRenderFunc(static (PassData data, UnsafeGraphContext context) =>

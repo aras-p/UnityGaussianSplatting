@@ -34,7 +34,9 @@ Put a gaussian splat `.ply` or `.spz` file under `Assets/StreamingAssets` (for e
 component, and drag the file onto the **PLY / SPZ** field.
 
 Add a `GaussianSplatRenderOptions` component to any GameObject to change global rendering options
-(render mode, point display size, SH-only display and sort frequency). Without it, defaults are used.
+(transparency method, debug render mode, point display size, SH-only display and sort frequency).
+**Sorted Blended** is the default. **Stochastic** uses noisy alpha testing and depth writes without sorting;
+its noise changes each render. Without an options component, defaults are used.
 
 Currently two file formats are supported:
 - PLY format from the original 3DGS paper (in the official paper models, the correct files
