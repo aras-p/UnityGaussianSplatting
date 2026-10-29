@@ -27,6 +27,11 @@ namespace GaussianSplatting.Runtime
         readonly Dictionary<GaussianSplatRenderer, MaterialPropertyBlock> m_Splats = new();
         readonly HashSet<Camera> m_CameraCommandBuffersDone = new();
         readonly List<(GaussianSplatRenderer, MaterialPropertyBlock)> m_ActiveSplats = new();
+        readonly RenderTargetIdentifier[] m_ReprojectionTargets =
+        {
+            new(GaussianSplatRenderer.Props.GaussianSplatRT),
+            new(GaussianSplatRenderer.Props.GaussianSplatDepthRT)
+        };
 
         CommandBuffer m_CommandBuffer;
         GraphicsBuffer m_CubeIndexBuffer;
@@ -116,7 +121,24 @@ namespace GaussianSplatting.Runtime
         public void InvalidateTemporalHistory() => ++m_SceneVersion;
 
 #if UNITY_EDITOR
-        void OnSceneChanged(ref UnityEditor.ObjectChangeEventStream stream) => InvalidateTemporalHistory();
+        // Invalidate temporal history upon scene edits. Ignore camera changes,
+        // since e.g. reprojected temporal filtering can handle camera movement; for
+        // non-reprojected case this will be handled elsewhere.
+        void OnSceneChanged(ref UnityEditor.ObjectChangeEventStream stream)
+        {
+            for (int i = 0; i < stream.length; ++i)
+            {
+                if (stream.GetEventType(i) == UnityEditor.ObjectChangeKind.ChangeGameObjectOrComponentProperties)
+                {
+                    stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var change);
+                    var obj = UnityEditor.EditorUtility.InstanceIDToObject(change.instanceId);
+                    if (obj is Camera || obj is Transform tr && tr.GetComponent<Camera>() != null)
+                        continue;
+                }
+                InvalidateTemporalHistory();
+                break;
+            }
+        }
         void OnBeforeSceneGUI(UnityEditor.SceneView view) => m_RenderedSceneViews.Remove(view.camera);
 #endif
 
@@ -223,6 +245,11 @@ namespace GaussianSplatting.Runtime
             EnsureCubeIndexBuffer();
 
             bool stochastic = settings.m_Transparency == TransparencyMode.Stochastic;
+            bool reprojected = stochastic && settings.m_RenderMode == RenderMode.Splats &&
+                               settings.m_StochasticTemporalMode == StochasticTemporalMode.Reprojected &&
+                               GraphicsSettings.currentRenderPipeline == null;
+            if (reprojected) m_MatSplats.EnableKeyword("SPLAT_REPROJECTED");
+            else m_MatSplats.DisableKeyword("SPLAT_REPROJECTED");
 
             m_GlobalUniforms ??= new GraphicsBuffer(GraphicsBuffer.Target.Constant, 1, UnsafeUtility.SizeOf<SplatGlobalUniforms>());
             NativeArray<SplatGlobalUniforms> sgu = new(1, Allocator.Temp);
@@ -333,7 +360,8 @@ namespace GaussianSplatting.Runtime
             // camera callbacks are also invoked for outline passes etc.; only advance
             // temporal history once per actual repaint
             if (cam.cameraType == CameraType.SceneView &&
-                GaussianSplatRenderOptions.instance.m_StochasticTemporalAccumulation && !m_RenderedSceneViews.Add(cam))
+                GaussianSplatRenderOptions.instance.m_StochasticTemporalMode != StochasticTemporalMode.None &&
+                !m_RenderedSceneViews.Add(cam))
                 return;
 #endif
             if (!GatherSplatsForCamera(cam))
@@ -345,8 +373,19 @@ namespace GaussianSplatting.Runtime
 
             InitialClearCmdBuffer(cam);
 
+            var options = GaussianSplatRenderOptions.instance;
+            bool temporal = options.m_StochasticTemporalMode != StochasticTemporalMode.None &&
+                            options.m_Transparency == TransparencyMode.Stochastic && options.m_RenderMode == RenderMode.Splats;
+            bool reprojected = temporal && options.m_StochasticTemporalMode == StochasticTemporalMode.Reprojected;
             m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
-            m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
+            if (reprojected)
+            {
+                // reprojection also writes splat's depth into another MRT target
+                m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatDepthRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R32_SFloat);
+                m_CommandBuffer.SetRenderTarget(m_ReprojectionTargets, BuiltinRenderTextureType.CurrentActive);
+            }
+            else
+                m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CurrentActive);
             m_CommandBuffer.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
 
             // We only need this to determine whether we're rendering into backbuffer or not. However, detection this
@@ -358,13 +397,11 @@ namespace GaussianSplatting.Runtime
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
-            var options = GaussianSplatRenderOptions.instance;
             // TODO: support temporal accumulation in URP/HDRP too.
-            if (options.m_StochasticTemporalAccumulation && options.m_Transparency == TransparencyMode.Stochastic &&
-                options.m_RenderMode == RenderMode.Splats)
+            if (temporal)
             {
                 m_TemporalAccumulator ??= new GaussianSplatTemporalAccumulator();
-                m_TemporalAccumulator.Render(m_CommandBuffer, cam, matComposite, GetTemporalSceneHash());
+                m_TemporalAccumulator.Render(m_CommandBuffer, cam, matComposite, GetTemporalSceneHash(), options.m_StochasticTemporalMode);
             }
             else
             {
@@ -375,6 +412,8 @@ namespace GaussianSplatting.Runtime
             }
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
+            if (reprojected)
+                m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatDepthRT);
         }
     }
 
@@ -444,6 +483,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int SHOnly = Shader.PropertyToID("_SHOnly");
             public static readonly int DisplayIndex = Shader.PropertyToID("_DisplayIndex");
             public static readonly int GaussianSplatRT = Shader.PropertyToID("_GaussianSplatRT");
+            public static readonly int GaussianSplatDepthRT = Shader.PropertyToID("_GaussianSplatDepthRT");
             public static readonly int SplatSortKeys = Shader.PropertyToID("_SplatSortKeys");
             public static readonly int SplatSortDistances = Shader.PropertyToID("_SplatSortDistances");
             public static readonly int MatrixMV = Shader.PropertyToID("_MatrixMV");

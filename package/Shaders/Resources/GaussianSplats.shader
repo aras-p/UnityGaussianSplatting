@@ -22,6 +22,7 @@ CGPROGRAM
 #pragma fragment frag
 #pragma require compute
 #pragma use_dxc
+#pragma multi_compile_local __ SPLAT_REPROJECTED
 
 #include "GaussianSplatting.hlsl"
 
@@ -99,7 +100,15 @@ uint3 pcg3d16(uint3 v)
     return v;
 }
 
-half4 frag (v2f i) : SV_Target
+struct FragOutput
+{
+    half4 color : SV_Target0;
+#if SPLAT_REPROJECTED
+    float depth : SV_Target1;
+#endif
+};
+
+FragOutput frag (v2f i)
 {
 	float power = -dot(i.pos, i.pos);
 	half alpha = exp(power);
@@ -122,7 +131,11 @@ half4 frag (v2f i) : SV_Target
             discard;
         alpha = 1;
     }
-    half4 res = half4(i.col.rgb, alpha);
+    FragOutput res;
+    res.color = half4(i.col.rgb, alpha);
+#if SPLAT_REPROJECTED
+    res.depth = i.vertex.z;
+#endif
     return res;
 }
 ENDCG

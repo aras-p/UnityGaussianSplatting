@@ -18,6 +18,13 @@ namespace GaussianSplatting.Runtime
         DebugBoxes,
     }
 
+    public enum StochasticTemporalMode
+    {
+        None,
+        SimpleAccumulation,
+        Reprojected,
+    }
+
     [ExecuteInEditMode] // so that Awake is called in edit mode
     [DefaultExecutionOrder(-100)]
     public class GaussianSplatRenderOptions : MonoBehaviour
@@ -45,8 +52,8 @@ namespace GaussianSplatting.Runtime
         [Header("Options")]
         [Tooltip("Gaussian splat transparency rendering algorithm")]
         public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
-        [Tooltip("Accumulate stochastic frames while camera and scene are stationary")]
-        public bool m_StochasticTemporalAccumulation;
+        [Tooltip("Stochastic temporal filtering")]
+        public StochasticTemporalMode m_StochasticTemporalMode;
 
         [Header("Debugging Tweaks")]
         public RenderMode m_RenderMode = RenderMode.Splats;
