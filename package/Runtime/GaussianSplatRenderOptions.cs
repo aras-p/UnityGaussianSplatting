@@ -14,11 +14,9 @@ namespace GaussianSplatting.Runtime
     {
         Splats,
         DebugPoints,
-        DebugPointIndices,
-        DebugBoxes,
     }
 
-    public enum StochasticTemporalMode
+    public enum StochasticTemporalFilter
     {
         None,
         SimpleAccumulation,
@@ -53,24 +51,21 @@ namespace GaussianSplatting.Runtime
         [Tooltip("Gaussian splat transparency rendering algorithm")]
         public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
         [Tooltip("Stochastic temporal filtering")]
-        public StochasticTemporalMode m_StochasticTemporalMode = StochasticTemporalMode.Reprojected;
+        public StochasticTemporalFilter m_TemporalFilter = StochasticTemporalFilter.Reprojected;
 
         [Header("Debugging Tweaks")]
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
         public bool m_SHOnly;
-        [Range(1,30)] [Tooltip("Sort splats only every N frames")]
-        public int m_SortNthFrame = 1;
 
-        internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended || m_RenderMode == RenderMode.DebugBoxes;
+        internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended && m_RenderMode == RenderMode.Splats;
 
         internal bool resourcesFound { get; private set; }
         bool resourcesLoadAttempted;
         internal Shader shaderSplats { get; private set; }
         internal Shader shaderComposite { get; private set; }
         internal Shader shaderDebugPoints { get; private set; }
-        internal Shader shaderDebugBoxes { get; private set; }
         internal ComputeShader csUtilities { get; private set; }
 
         void Awake()
@@ -90,11 +85,10 @@ namespace GaussianSplatting.Runtime
             shaderSplats = Resources.Load<Shader>("GaussianSplats");
             shaderComposite = Resources.Load<Shader>("GaussianComposite");
             shaderDebugPoints = Resources.Load<Shader>("GaussianDebugRenderPoints");
-            shaderDebugBoxes = Resources.Load<Shader>("GaussianDebugRenderBoxes");
             csUtilities = Resources.Load<ComputeShader>("GaussianSplatUtilities");
 
             resourcesFound = shaderSplats != null && shaderComposite != null && shaderDebugPoints != null &&
-                             shaderDebugBoxes != null && csUtilities != null && SystemInfo.supportsComputeShaders;
+                             csUtilities != null && SystemInfo.supportsComputeShaders;
         }
 
         void OnDestroy()
