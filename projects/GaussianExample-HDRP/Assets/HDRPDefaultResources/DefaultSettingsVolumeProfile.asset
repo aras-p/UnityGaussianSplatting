@@ -16,27 +16,9 @@ MonoBehaviour:
   enable:
     m_OverrideState: 1
     m_Value: 1
-  minGridSize:
+  triangleSize:
     m_OverrideState: 0
-    m_Value: 50
-  maxGridSize:
-    m_OverrideState: 0
-    m_Value: 2500
-  elevationTransition:
-    m_OverrideState: 0
-    m_Value: 1000
-  numLevelOfDetails:
-    m_OverrideState: 0
-    m_Value: 2
-  maxTessellationFactor:
-    m_OverrideState: 0
-    m_Value: 10
-  tessellationFactorFadeStart:
-    m_OverrideState: 0
-    m_Value: 150
-  tessellationFactorFadeRange:
-    m_OverrideState: 0
-    m_Value: 1850
+    m_Value: 30
   ambientProbeDimmer:
     m_OverrideState: 0
     m_Value: 1
@@ -238,6 +220,19 @@ MonoBehaviour:
   includeSunInBaking:
     m_OverrideState: 0
     m_Value: 0
+  m_SkyVersion: 1
+  enableDistortion:
+    m_OverrideState: 0
+    m_Value: 0
+  procedural:
+    m_OverrideState: 0
+    m_Value: 1
+  scrollDirection:
+    m_OverrideState: 0
+    m_Value: 0
+  m_ObsoleteScrollSpeed:
+    m_OverrideState: 0
+    m_Value: 1
   hdriSky:
     m_OverrideState: 1
     m_Value: {fileID: 8900000, guid: 8253d41e6e8b11a4cbe77a4f8f82934d, type: 3}
@@ -264,6 +259,12 @@ MonoBehaviour:
       customValue: 100
       additiveValue: 0
       multiplyValue: 1
+  sunInitialRotation:
+    m_OverrideState: 0
+    m_Value: -Infinity
+  lockSun:
+    m_OverrideState: 0
+    m_Value: 0
   enableBackplate:
     m_OverrideState: 0
     m_Value: 0
@@ -303,19 +304,6 @@ MonoBehaviour:
   rectLightShadow:
     m_OverrideState: 0
     m_Value: 0
-  m_SkyVersion: 1
-  enableDistortion:
-    m_OverrideState: 0
-    m_Value: 0
-  procedural:
-    m_OverrideState: 0
-    m_Value: 1
-  scrollDirection:
-    m_OverrideState: 0
-    m_Value: 0
-  m_ObsoleteScrollSpeed:
-    m_OverrideState: 0
-    m_Value: 1
 --- !u!114 &1501199423866068322
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -375,6 +363,7 @@ MonoBehaviour:
   m_Name: VisualEnvironment
   m_EditorClassIdentifier: 
   active: 1
+  m_Version: 1
   skyType:
     m_OverrideState: 1
     m_Value: 1
@@ -384,6 +373,18 @@ MonoBehaviour:
   skyAmbientMode:
     m_OverrideState: 0
     m_Value: 0
+  planetRadius:
+    m_OverrideState: 0
+    m_Value: 6378.1
+  renderingSpace:
+    m_OverrideState: 0
+    m_Value: 1
+  centerMode:
+    m_OverrideState: 0
+    m_Value: 0
+  planetCenter:
+    m_OverrideState: 0
+    m_Value: {x: 0, y: -6378.1, z: 0}
   windOrientation:
     m_OverrideState: 0
     m_Value: 0
@@ -708,6 +709,7 @@ MonoBehaviour:
   m_Name: HDShadowSettings
   m_EditorClassIdentifier: 
   active: 1
+  interCascadeBorders: 1
   maxShadowDistance:
     m_OverrideState: 1
     m_Value: 150
@@ -728,10 +730,10 @@ MonoBehaviour:
     m_Value: 0.3
   cascadeShadowBorder0:
     m_OverrideState: 1
-    m_Value: 0.13333334
+    m_Value: 0.06905067
   cascadeShadowBorder1:
     m_OverrideState: 1
-    m_Value: 0.06666666
+    m_Value: 0.05086228
   cascadeShadowBorder2:
     m_OverrideState: 0
     m_Value: 0
