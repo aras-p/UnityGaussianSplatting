@@ -9,9 +9,8 @@ using Object = UnityEngine.Object;
 
 namespace GaussianSplatting.Runtime
 {
-    // Very simple temporal accumulator: just blend in new frames.
-    // Whenever scene or camera changes, restart the blending.
-    // There's no reprojection or any similar cleverness.
+    // Simple temporal filtering: average stationary frames,
+    // optionally reproject history during camera motion
     class GaussianSplatTemporalAccumulator : IDisposable
     {
         const int k_MaxFrames = 64;
@@ -19,7 +18,9 @@ namespace GaussianSplatting.Runtime
         class History : IDisposable
         {
             public RenderTexture previous, next;
-            public int sceneHash, frames;
+            public int sceneHash, viewHash, frames;
+            public bool orthographic;
+            public Matrix4x4 viewProjection;
 
             public void Dispose()
             {
@@ -30,6 +31,10 @@ namespace GaussianSplatting.Runtime
 
         static readonly int s_History = Shader.PropertyToID("_SplatHistory");
         static readonly int s_FrameWeight = Shader.PropertyToID("_SplatFrameWeight");
+        static readonly int s_InvViewProjection = Shader.PropertyToID("_SplatInvViewProjection");
+        static readonly int s_PreviousViewProjection = Shader.PropertyToID("_SplatPreviousViewProjection");
+        static readonly int s_CameraPosition = Shader.PropertyToID("_SplatCameraPosition");
+        static readonly int s_Orthographic = Shader.PropertyToID("_SplatOrthographic");
         readonly Dictionary<Camera, History> m_Histories = new();
         readonly List<Camera> m_DeadCameras = new();
         readonly MaterialPropertyBlock m_Properties = new();
@@ -47,7 +52,7 @@ namespace GaussianSplatting.Runtime
                 history.Dispose();
         }
 
-        public void Render(CommandBuffer cmb, Camera camera, Material material, int sceneHash)
+        public void Render(CommandBuffer cmb, Camera camera, Material material, int sceneHash, StochasticTemporalMode mode)
         {
             // handle potentially gone cameras
             foreach (var cam in m_Histories.Keys)
@@ -77,23 +82,38 @@ namespace GaussianSplatting.Runtime
                 m_Histories.Add(camera, history);
             }
 
-            int hash = HashCode.Combine(sceneHash, camera.worldToCameraMatrix, camera.projectionMatrix,
-                camera.pixelRect, camera.cullingMask, camera.targetTexture);
-            if (history.sceneHash != hash)
-            {
+            int hash = HashCode.Combine(sceneHash, mode, camera.pixelRect, camera.cullingMask, camera.targetTexture);
+            int viewHash = HashCode.Combine(camera.worldToCameraMatrix, camera.projectionMatrix);
+            bool valid = history.frames > 0 && history.sceneHash == hash && history.orthographic == camera.orthographic;
+            bool moved = history.viewHash != viewHash;
+            bool reproject = valid && moved && mode == StochasticTemporalMode.Reprojected;
+            // after motion, the reprojected result starts a fresh stationary accumulation
+            if (!valid || moved)
                 history.frames = 0;
-                history.sceneHash = hash;
-            }
+
+            Matrix4x4 viewProjection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, true) * camera.worldToCameraMatrix;
 
             if (history.frames < k_MaxFrames)
             {
                 m_Properties.Clear();
                 m_Properties.SetTexture(s_History, history.previous);
                 m_Properties.SetFloat(s_FrameWeight, 1.0f / ++history.frames);
+                if (reproject)
+                {
+                    m_Properties.SetMatrix(s_InvViewProjection, viewProjection.inverse);
+                    m_Properties.SetMatrix(s_PreviousViewProjection, history.viewProjection);
+                    m_Properties.SetVector(s_CameraPosition, camera.transform.position);
+                    m_Properties.SetInteger(s_Orthographic, camera.orthographic ? 1 : 0);
+                }
                 cmb.SetRenderTarget(history.next);
+                cmb.SetKeyword(material, new LocalKeyword(material.shader, "SPLAT_REPROJECTED"), reproject);
                 cmb.DrawProcedural(Matrix4x4.identity, material, 1, MeshTopology.Triangles, 3, 1, m_Properties);
                 (history.previous, history.next) = (history.next, history.previous);
             }
+            history.sceneHash = hash;
+            history.viewHash = viewHash;
+            history.orthographic = camera.orthographic;
+            history.viewProjection = viewProjection;
 
             m_Properties.Clear();
             m_Properties.SetTexture(GaussianSplatRenderer.Props.GaussianSplatRT, history.previous);
