@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
 
-#pragma kernel CSSetIndices
 #pragma kernel CSCalcDistances
 #pragma kernel CSCalcViewData
 
@@ -34,6 +33,8 @@ float4 _VecWorldSpaceCameraPos;
 RWStructuredBuffer<uint> _SplatSortDistances;
 RWStructuredBuffer<uint> _SplatSortKeys;
 uint _SplatCount;
+uint _SplatOffset;
+uint _WriteSortKeys;
 
 // radix sort etc. friendly, see http://stereopsis.com/radix.html
 uint FloatToSortableUint(float f)
@@ -44,28 +45,17 @@ uint FloatToSortableUint(float f)
 }
 
 [numthreads(GROUP_SIZE,1,1)]
-void CSSetIndices (uint3 id : SV_DispatchThreadID)
-{
-    uint idx = id.x;
-    if (idx >= _SplatCount)
-        return;
-
-    _SplatSortKeys[idx] = idx;
-}
-
-[numthreads(GROUP_SIZE,1,1)]
 void CSCalcDistances (uint3 id : SV_DispatchThreadID)
 {
     uint idx = id.x;
     if (idx >= _SplatCount)
         return;
 
-    uint origIdx = _SplatSortKeys[idx];
-
-    float3 pos = LoadSplatPos(origIdx);
+    float3 pos = LoadSplatPos(idx);
     pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
 
-    _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
+    _SplatSortDistances[idx] = FloatToSortableUint(-pos.z);
+    _SplatSortKeys[idx] = idx;
 }
 
 RWStructuredBuffer<SplatViewData> _SplatViewData;
@@ -180,5 +170,12 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
     
-    _SplatViewData[idx] = view;
+    uint outputIndex = _SplatOffset + idx;
+    _SplatViewData[outputIndex] = view;
+    if (_WriteSortKeys != 0)
+    {
+        float depth = -mul(_MatrixMV, float4(splat.pos, 1)).z;
+        _SplatSortDistances[outputIndex] = FloatToSortableUint(depth);
+        _SplatSortKeys[outputIndex] = outputIndex;
+    }
 }

@@ -82,7 +82,7 @@ at "Medium" asset quality level (282MB asset file):
 * Mac (Apple M1 Max):
   * Unity, Metal: 21.5ms (46FPS).
 
-Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 48 bytes of GPU memory
+Besides the gaussian splat asset that is loaded into GPU memory, currently this also needs about 56 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).
 
 
