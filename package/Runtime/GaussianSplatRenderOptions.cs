@@ -53,7 +53,7 @@ namespace GaussianSplatting.Runtime
         [Tooltip("Gaussian splat transparency rendering algorithm")]
         public TransparencyMode m_Transparency = TransparencyMode.SortedBlended;
         [Tooltip("Stochastic temporal filtering")]
-        public StochasticTemporalMode m_StochasticTemporalMode;
+        public StochasticTemporalMode m_StochasticTemporalMode = StochasticTemporalMode.Reprojected;
 
         [Header("Debugging Tweaks")]
         public RenderMode m_RenderMode = RenderMode.Splats;
