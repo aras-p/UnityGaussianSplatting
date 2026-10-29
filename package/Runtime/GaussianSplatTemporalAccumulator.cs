@@ -52,7 +52,7 @@ namespace GaussianSplatting.Runtime
                 history.Dispose();
         }
 
-        public void Render(CommandBuffer cmb, Camera camera, Material material, int sceneHash, StochasticTemporalMode mode)
+        public void Render(CommandBuffer cmb, Camera camera, Material material, int sceneHash, StochasticTemporalFilter filter)
         {
             // handle potentially gone cameras
             foreach (var cam in m_Histories.Keys)
@@ -82,11 +82,11 @@ namespace GaussianSplatting.Runtime
                 m_Histories.Add(camera, history);
             }
 
-            int hash = HashCode.Combine(sceneHash, mode, camera.pixelRect, camera.cullingMask, camera.targetTexture);
+            int hash = HashCode.Combine(sceneHash, filter, camera.pixelRect, camera.cullingMask, camera.targetTexture);
             int viewHash = HashCode.Combine(camera.worldToCameraMatrix, camera.projectionMatrix);
             bool valid = history.frames > 0 && history.sceneHash == hash && history.orthographic == camera.orthographic;
             bool moved = history.viewHash != viewHash;
-            bool reproject = valid && moved && mode == StochasticTemporalMode.Reprojected;
+            bool reproject = valid && moved && filter == StochasticTemporalFilter.Reprojected;
             // after motion, the reprojected result starts a fresh stationary accumulation
             if (!valid || moved)
                 history.frames = 0;

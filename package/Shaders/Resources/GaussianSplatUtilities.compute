@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #define GROUP_SIZE 1024
 
-#pragma kernel CSCalcDistances
 #pragma kernel CSCalcViewData
 
 // DeviceRadixSort
@@ -42,20 +41,6 @@ uint FloatToSortableUint(float f)
     uint fu = asuint(f);
     uint mask = -((int)(fu >> 31)) | 0x80000000;
     return fu ^ mask;
-}
-
-[numthreads(GROUP_SIZE,1,1)]
-void CSCalcDistances (uint3 id : SV_DispatchThreadID)
-{
-    uint idx = id.x;
-    if (idx >= _SplatCount)
-        return;
-
-    float3 pos = LoadSplatPos(idx);
-    pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
-
-    _SplatSortDistances[idx] = FloatToSortableUint(-pos.z);
-    _SplatSortKeys[idx] = idx;
 }
 
 RWStructuredBuffer<SplatViewData> _SplatViewData;

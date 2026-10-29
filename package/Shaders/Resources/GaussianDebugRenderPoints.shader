@@ -25,8 +25,6 @@ struct v2f
 };
 
 float _SplatSize;
-bool _DisplayIndex;
-int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -46,13 +44,6 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     o.vertex.xy += (quadPos * _SplatSize / _ScreenParams.xy) * o.vertex.w;
 
     o.color.rgb = saturate(splat.sh.col);
-    if (_DisplayIndex)
-    {
-        o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);
-        o.color.g = frac((float)splatIndex / (float)_SplatCount * 10);
-        o.color.b = (float)splatIndex / (float)_SplatCount;
-    }
-
     FlipProjectionIfBackbuffer(o.vertex);
     return o;
 }
