@@ -38,7 +38,6 @@ namespace GaussianSplatting.Runtime
             CoreUtils.SetRenderTarget(ctx.cmd, m_RenderTarget, ctx.cameraDepthBuffer, ClearFlag.Color,
                 new Color(0, 0, 0, 0));
 
-            // add sorting, view calc and drawing commands for each splat object
             Material matComposite =
                 GaussianSplatRenderSystem.instance.SortAndRenderSplats(ctx.hdCamera.camera, ctx.cmd);
 

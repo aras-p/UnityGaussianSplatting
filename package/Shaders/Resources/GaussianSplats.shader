@@ -43,7 +43,6 @@ cbuffer SplatGlobalUniforms // match struct SplatGlobalUniforms in C#
     uint sgu_frameOffset;
 }
 
-uint _SplatSeed;
 StructuredBuffer<SplatViewData> _SplatViewData;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -51,8 +50,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     v2f o = (v2f)0;
     if (sgu_transparencyMode == 0)
         instID = _OrderBuffer[instID];
-    // combine local splat index with object ID
-    o.idx = (instID ^ (_SplatSeed * 0x9e3779b9u)) + sgu_frameOffset;
+    o.idx = instID + sgu_frameOffset;
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
