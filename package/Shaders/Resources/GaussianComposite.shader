@@ -62,6 +62,7 @@ float4x4 _SplatInvViewProjection;
 float4x4 _SplatPreviousViewProjection;
 float3 _SplatCameraPosition;
 uint _SplatOrthographic;
+float2 _SplatRenderSize; // need externally passed RT size; in URP/HDRP RTHandle backing texture can be larger
 
 // use YCoCg for history rejection, similar to SteadySplats
 float4 HistoryColor(float4 color)
@@ -72,8 +73,7 @@ float4 HistoryColor(float4 color)
 
 half4 ReprojectHistory(float2 pixel, half4 current)
 {
-    uint width, height;
-    _GaussianSplatRT.GetDimensions(width, height);
+    uint width = (uint)_SplatRenderSize.x, height = (uint)_SplatRenderSize.y;
     float2 size = float2(width, height);
     float2 clipXY = pixel / size * 2.0 - 1.0;
     clipXY.y = -clipXY.y;

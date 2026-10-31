@@ -25,6 +25,8 @@ struct v2f
 };
 
 float _SplatSize;
+float4x4 _SplatMatrixVP;
+float2 _SplatScreenSize;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -36,12 +38,12 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     float3 centerWorldPos = splat.pos;
     centerWorldPos = mul(unity_ObjectToWorld, float4(centerWorldPos,1)).xyz;
 
-    float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
+    float4 centerClipPos = mul(_SplatMatrixVP, float4(centerWorldPos, 1));
 
     o.vertex = centerClipPos;
 	uint idx = vtxID;
     float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
-    o.vertex.xy += (quadPos * _SplatSize / _ScreenParams.xy) * o.vertex.w;
+    o.vertex.xy += (quadPos * _SplatSize / _SplatScreenSize) * o.vertex.w;
 
     o.color.rgb = saturate(splat.sh.col);
     FlipProjectionIfBackbuffer(o.vertex);
