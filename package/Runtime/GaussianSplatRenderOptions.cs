@@ -59,6 +59,9 @@ namespace GaussianSplatting.Runtime
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
         public bool m_SHOnly;
 
+        internal StochasticTemporalFilter temporalFilter => m_Transparency == TransparencyMode.Stochastic && m_RenderMode == RenderMode.Splats
+            ? m_TemporalFilter : StochasticTemporalFilter.None;
+
         internal bool needSorting => m_Transparency == TransparencyMode.SortedBlended && m_RenderMode == RenderMode.Splats;
 
         internal bool resourcesFound { get; private set; }

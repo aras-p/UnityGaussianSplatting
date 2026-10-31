@@ -182,7 +182,7 @@ namespace GaussianSplatting.Runtime
         void OnBeforeSceneGUI(UnityEditor.SceneView view) => m_RenderedSceneViews.Remove(view.camera);
 #endif
 
-        int GetTemporalSceneHash()
+        internal int GetTemporalSceneHash()
         {
             var hash = new HashCode();
             hash.Add(m_SceneVersion);
@@ -270,7 +270,7 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public void CacheViewDataForAllSplats(Camera cam, CommandBuffer cmb)
+        public void CacheViewDataForAllSplats(Camera cam, CommandBuffer cmb, Matrix4x4 projection, Matrix4x4 view, int width, int height)
         {
             var options = GaussianSplatRenderOptions.instance;
             if (options.m_RenderMode == RenderMode.DebugPoints)
@@ -279,14 +279,14 @@ namespace GaussianSplatting.Runtime
             foreach (var (gs, _) in m_ActiveSplats)
             {
                 cmb.BeginSample(s_ProfCalcView);
-                gs.CalcViewData(cmb, cam, m_GpuView, m_GpuSortDistances, m_GpuSortKeys, offset, options.needSorting);
+                gs.CalcViewData(cmb, cam, m_GpuView, m_GpuSortDistances, m_GpuSortKeys, offset, options.needSorting, projection, view, width, height);
                 cmb.EndSample(s_ProfCalcView);
                 offset += gs.splatCount;
             }
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public void RenderAllSplats(Camera cam, CommandBuffer cmb)
+        public void RenderAllSplats(Camera cam, CommandBuffer cmb, Matrix4x4 projection, Matrix4x4 view, int width, int height)
         {
             EnsureMaterials();
             GaussianSplatRenderOptions settings = GaussianSplatRenderOptions.instance;
@@ -296,14 +296,13 @@ namespace GaussianSplatting.Runtime
             EnsureQuadIndexBuffer();
             if (settings.m_RenderMode == RenderMode.DebugPoints)
             {
-                RenderDebugPoints(cmb, settings);
+                RenderDebugPoints(cmb, settings, projection * view, width, height);
                 return;
             }
 
             bool stochastic = settings.m_Transparency == TransparencyMode.Stochastic;
             bool reprojected = stochastic && settings.m_RenderMode == RenderMode.Splats &&
-                               settings.m_TemporalFilter == StochasticTemporalFilter.Reprojected &&
-                               GraphicsSettings.currentRenderPipeline == null;
+                               settings.m_TemporalFilter == StochasticTemporalFilter.Reprojected;
             if (reprojected) m_MatSplats.EnableKeyword("SPLAT_REPROJECTED");
             else m_MatSplats.DisableKeyword("SPLAT_REPROJECTED");
 
@@ -324,6 +323,7 @@ namespace GaussianSplatting.Runtime
 
             var mpb = m_DrawProperties;
             mpb.Clear();
+            mpb.SetVector(GaussianSplatRenderer.Props.SplatScreenSize, new Vector4(width, height, 0, 0));
             mpb.SetBuffer(GaussianSplatRenderer.Props.SplatViewData, m_GpuView);
             mpb.SetBuffer(GaussianSplatRenderer.Props.OrderBuffer, m_GpuSortKeys);
             mpb.SetConstantBuffer(GaussianSplatRenderer.Props.SplatGlobalUniforms, m_GlobalUniforms, 0, m_GlobalUniforms.stride);
@@ -332,12 +332,14 @@ namespace GaussianSplatting.Runtime
             cmb.EndSample(s_ProfDraw);
         }
 
-        void RenderDebugPoints(CommandBuffer cmb, GaussianSplatRenderOptions settings)
+        void RenderDebugPoints(CommandBuffer cmb, GaussianSplatRenderOptions settings, Matrix4x4 viewProjection, int width, int height)
         {
             foreach (var (gs, mpb) in m_ActiveSplats)
             {
                 mpb.Clear();
                 gs.SetDataOnMaterial(mpb);
+                mpb.SetMatrix(GaussianSplatRenderer.Props.SplatMatrixVP, viewProjection);
+                mpb.SetVector(GaussianSplatRenderer.Props.SplatScreenSize, new Vector4(width, height, 0, 0));
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, settings.m_PointDisplaySize);
                 cmb.BeginSample(s_ProfDraw);
                 cmb.DrawProcedural(m_QuadIndexBuffer, gs.transform.localToWorldMatrix, m_MatDebugPoints, 0,
@@ -346,11 +348,15 @@ namespace GaussianSplatting.Runtime
             }
         }
 
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, Matrix4x4? projection = null, int width = 0, int height = 0, Matrix4x4? view = null)
         {
-            CacheViewDataForAllSplats(cam, cmb);
+            Matrix4x4 gpuProjection = projection ?? GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
+            Matrix4x4 viewMatrix = view ?? cam.worldToCameraMatrix;
+            width = width > 0 ? width : (XRSettings.eyeTextureWidth != 0 ? XRSettings.eyeTextureWidth : cam.pixelWidth);
+            height = height > 0 ? height : (XRSettings.eyeTextureHeight != 0 ? XRSettings.eyeTextureHeight : cam.pixelHeight);
+            CacheViewDataForAllSplats(cam, cmb, gpuProjection, viewMatrix, width, height);
             SortAllSplats(cam, cmb);
-            RenderAllSplats(cam, cmb);
+            RenderAllSplats(cam, cmb, gpuProjection, viewMatrix, width, height);
             return m_MatComposite;
         }
 
@@ -432,11 +438,15 @@ namespace GaussianSplatting.Runtime
 
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
-            // TODO: support temporal accumulation in URP/HDRP too.
             if (temporal)
             {
                 m_TemporalAccumulator ??= new GaussianSplatTemporalAccumulator();
-                m_TemporalAccumulator.Render(m_CommandBuffer, cam, matComposite, GetTemporalSceneHash(), options.m_TemporalFilter);
+                var filtered = m_TemporalAccumulator.Accumulate(m_CommandBuffer, cam, matComposite, GetTemporalSceneHash(),
+                    options.m_TemporalFilter, cam.pixelWidth, cam.pixelHeight,
+                    GL.GetGPUProjectionMatrix(cam.projectionMatrix, true) * cam.worldToCameraMatrix);
+                m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.GaussianSplatRT, filtered);
+                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
             }
             else
             {
@@ -511,6 +521,11 @@ namespace GaussianSplatting.Runtime
             public static readonly int GaussianSplatDepthRT = Shader.PropertyToID("_GaussianSplatDepthRT");
             public static readonly int SplatSortKeys = Shader.PropertyToID("_SplatSortKeys");
             public static readonly int SplatSortDistances = Shader.PropertyToID("_SplatSortDistances");
+            public static readonly int SplatScreenSize = Shader.PropertyToID("_SplatScreenSize");
+            public static readonly int SplatMatrixVP = Shader.PropertyToID("_SplatMatrixVP");
+            public static readonly int CameraTargetTextureTexelSize = Shader.PropertyToID("_CameraTargetTexture_TexelSize");
+            public static readonly int MatrixP = Shader.PropertyToID("_MatrixP");
+            public static readonly int MatrixVP = Shader.PropertyToID("_MatrixVP");
             public static readonly int MatrixMV = Shader.PropertyToID("_MatrixMV");
             public static readonly int MatrixObjectToWorld = Shader.PropertyToID("_MatrixObjectToWorld");
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
@@ -655,20 +670,17 @@ namespace GaussianSplatting.Runtime
         }
 
         internal void CalcViewData(CommandBuffer cmb, Camera cam, GraphicsBuffer view, GraphicsBuffer distances,
-            GraphicsBuffer indices, int offset, bool writeSortKeys)
+            GraphicsBuffer indices, int offset, bool writeSortKeys, Matrix4x4 projection, Matrix4x4 matView, int width, int height)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
 
             var tr = transform;
 
-            Matrix4x4 matView = cam.worldToCameraMatrix;
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
-            int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
-            int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
-            Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
-            Vector4 camPos = cam.transform.position;
+            Vector4 screenPar = new Vector4(width, height, 0, 0);
+            Vector4 camPos = matView.inverse.GetColumn(3);
 
             // calculate view dependent data for each splat
             SetDataOnCS(cmb);
@@ -681,6 +693,8 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(cs, Props.SplatOffset, offset);
             cmb.SetComputeIntParam(cs, Props.WriteSortKeys, writeSortKeys ? 1 : 0);
             cmb.SetComputeMatrixParam(cs, Props.MatrixMV, matView * matO2W);
+            cmb.SetComputeMatrixParam(cs, Props.MatrixP, projection);
+            cmb.SetComputeMatrixParam(cs, Props.MatrixVP, projection * matView);
             cmb.SetComputeMatrixParam(cs, Props.MatrixObjectToWorld, matO2W);
             cmb.SetComputeMatrixParam(cs, Props.MatrixWorldToObject, matW2O);
 

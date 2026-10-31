@@ -27,6 +27,7 @@ CGPROGRAM
 #include "GaussianSplatting.hlsl"
 
 StructuredBuffer<uint> _OrderBuffer;
+float2 _SplatScreenSize;
 
 struct v2f
 {
@@ -71,7 +72,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		o.pos = quadPos;
 
-		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _ScreenParams.xy;
+		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _SplatScreenSize;
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;
 

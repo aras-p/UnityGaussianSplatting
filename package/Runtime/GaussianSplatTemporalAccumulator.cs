@@ -15,28 +15,36 @@ namespace GaussianSplatting.Runtime
     {
         const int k_MaxFrames = 64;
 
-        class History : IDisposable
+        internal class History : IDisposable
         {
             public RenderTexture previous, next;
             public int sceneHash, viewHash, frames;
             public bool orthographic;
             public Matrix4x4 viewProjection;
+#if GS_ENABLE_URP
+            public RTHandle previousHandle, nextHandle;
+#endif
 
             public void Dispose()
             {
+#if GS_ENABLE_URP
+                previousHandle?.Release();
+                nextHandle?.Release();
+#endif
                 Object.DestroyImmediate(previous);
                 Object.DestroyImmediate(next);
             }
         }
 
+        static readonly int s_RenderSize = Shader.PropertyToID("_SplatRenderSize");
         static readonly int s_History = Shader.PropertyToID("_SplatHistory");
         static readonly int s_FrameWeight = Shader.PropertyToID("_SplatFrameWeight");
         static readonly int s_InvViewProjection = Shader.PropertyToID("_SplatInvViewProjection");
         static readonly int s_PreviousViewProjection = Shader.PropertyToID("_SplatPreviousViewProjection");
         static readonly int s_CameraPosition = Shader.PropertyToID("_SplatCameraPosition");
         static readonly int s_Orthographic = Shader.PropertyToID("_SplatOrthographic");
-        readonly Dictionary<Camera, History> m_Histories = new();
-        readonly List<Camera> m_DeadCameras = new();
+        readonly Dictionary<(Camera camera, int eye), History> m_Histories = new();
+        readonly List<(Camera camera, int eye)> m_DeadCameras = new();
         readonly MaterialPropertyBlock m_Properties = new();
 
         public void Dispose()
@@ -48,27 +56,40 @@ namespace GaussianSplatting.Runtime
 
         public void Reset(Camera camera)
         {
-            if (m_Histories.Remove(camera, out var history))
+            foreach (var key in m_Histories.Keys)
+            {
+                if (key.camera == camera)
+                    m_DeadCameras.Add(key);
+            }
+            foreach (var key in m_DeadCameras)
+                Reset(key);
+            m_DeadCameras.Clear();
+        }
+
+        void Reset((Camera camera, int eye) key)
+        {
+            if (m_Histories.Remove(key, out var history))
                 history.Dispose();
         }
 
-        public void Render(CommandBuffer cmb, Camera camera, Material material, int sceneHash, StochasticTemporalFilter filter)
+        // regular non-XR rendering uses eye 0
+        internal History Prepare(Camera camera, int width, int height, int eye = 0)
         {
             // handle potentially gone cameras
-            foreach (var cam in m_Histories.Keys)
+            foreach (var key in m_Histories.Keys)
             {
-                if (!cam)
-                    m_DeadCameras.Add(cam);
+                if (!key.camera)
+                    m_DeadCameras.Add(key);
             }
-            foreach (var cam in m_DeadCameras)
-                Reset(cam);
+            foreach (var key in m_DeadCameras)
+                Reset(key);
             m_DeadCameras.Clear();
 
-            int width = camera.pixelWidth, height = camera.pixelHeight;
-            if (m_Histories.TryGetValue(camera, out var history) &&
+            var cameraEye = (camera, eye);
+            if (m_Histories.TryGetValue(cameraEye, out var history) &&
                 (history.previous.width != width || history.previous.height != height))
             {
-                Reset(camera);
+                Reset(cameraEye);
                 history = null;
             }
             if (history == null)
@@ -79,19 +100,31 @@ namespace GaussianSplatting.Runtime
                 history.next = new RenderTexture(desc) {name = "Splat accumulation", hideFlags = HideFlags.HideAndDontSave};
                 history.previous.Create();
                 history.next.Create();
-                m_Histories.Add(camera, history);
+#if GS_ENABLE_URP
+                history.previousHandle = RTHandles.Alloc(history.previous);
+                history.nextHandle = RTHandles.Alloc(history.next);
+#endif
+                m_Histories.Add(cameraEye, history);
             }
 
+            return history;
+        }
+
+        public RenderTexture Accumulate(CommandBuffer cmb, Camera camera, Material material, int sceneHash,
+            StochasticTemporalFilter filter, int width, int height, Matrix4x4 viewProjection, int eye = 0, Matrix4x4? view = null)
+        {
+            var history = Prepare(camera, width, height, eye);
+            Matrix4x4 viewMatrix = view ?? camera.worldToCameraMatrix;
             int hash = HashCode.Combine(sceneHash, filter, camera.pixelRect, camera.cullingMask, camera.targetTexture);
-            int viewHash = HashCode.Combine(camera.worldToCameraMatrix, camera.projectionMatrix);
+            // note: use non-jittered camera projection; jitter should not
+            // reset our history
+            int viewHash = HashCode.Combine(viewMatrix, camera.nonJitteredProjectionMatrix);
             bool valid = history.frames > 0 && history.sceneHash == hash && history.orthographic == camera.orthographic;
             bool moved = history.viewHash != viewHash;
-            bool reproject = valid && moved && filter == StochasticTemporalFilter.Reprojected;
+            bool reproject = valid && history.viewProjection != viewProjection && filter == StochasticTemporalFilter.Reprojected;
             // after motion, the reprojected result starts a fresh stationary accumulation
-            if (!valid || moved)
+            if (!valid || moved || reproject)
                 history.frames = 0;
-
-            Matrix4x4 viewProjection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, true) * camera.worldToCameraMatrix;
 
             if (history.frames < k_MaxFrames)
             {
@@ -100,30 +133,32 @@ namespace GaussianSplatting.Runtime
                 m_Properties.SetFloat(s_FrameWeight, 1.0f / ++history.frames);
                 if (reproject)
                 {
+                    m_Properties.SetVector(s_RenderSize, new Vector4(width, height, 0, 0));
                     m_Properties.SetMatrix(s_InvViewProjection, viewProjection.inverse);
                     m_Properties.SetMatrix(s_PreviousViewProjection, history.viewProjection);
-                    m_Properties.SetVector(s_CameraPosition, camera.transform.position);
+                    m_Properties.SetVector(s_CameraPosition, viewMatrix.inverse.GetColumn(3));
                     m_Properties.SetInteger(s_Orthographic, camera.orthographic ? 1 : 0);
                 }
                 cmb.SetRenderTarget(history.next);
+                cmb.SetViewport(new Rect(0, 0, width, height));
                 cmb.SetKeyword(material, new LocalKeyword(material.shader, "SPLAT_REPROJECTED"), reproject);
                 cmb.DrawProcedural(Matrix4x4.identity, material, 1, MeshTopology.Triangles, 3, 1, m_Properties);
                 (history.previous, history.next) = (history.next, history.previous);
+#if GS_ENABLE_URP
+                (history.previousHandle, history.nextHandle) = (history.nextHandle, history.previousHandle);
+#endif
             }
             history.sceneHash = hash;
             history.viewHash = viewHash;
             history.orthographic = camera.orthographic;
             history.viewProjection = viewProjection;
 
-            m_Properties.Clear();
-            m_Properties.SetTexture(GaussianSplatRenderer.Props.GaussianSplatRT, history.previous);
-            cmb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            cmb.DrawProcedural(Matrix4x4.identity, material, 0, MeshTopology.Triangles, 3, 1, m_Properties);
 #if UNITY_EDITOR
             // in scene view, keep on repainting it, until converges to maximum # of frames
             if (!Application.isPlaying && camera.cameraType == CameraType.SceneView && history.frames < k_MaxFrames)
                 UnityEditor.SceneView.RepaintAll();
 #endif
+            return history.previous;
         }
     }
 }
