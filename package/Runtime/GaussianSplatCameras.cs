@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -14,7 +13,6 @@ namespace GaussianSplatting.Runtime
             public Quaternion rotation;
         }
 
-        [Serializable]
         class JsonCamera
         {
             public float[] position;

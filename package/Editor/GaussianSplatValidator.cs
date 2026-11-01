@@ -42,7 +42,7 @@ namespace GaussianSplatting.Editor
         {
             if (s_Run != null)
                 return;
-            var gaussians = Object.FindFirstObjectByType<GaussianSplatRenderer>();
+            var gaussians = Object.FindAnyObjectByType<GaussianSplatRenderer>();
             if (gaussians == null || !gaussians.isActiveAndEnabled || Camera.main == null)
             {
                 Debug.LogError("Validation needs an active GaussianSplatRenderer and a main camera");
