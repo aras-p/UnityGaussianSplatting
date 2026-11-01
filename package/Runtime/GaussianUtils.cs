@@ -36,11 +36,15 @@ namespace GaussianSplatting.Runtime
             return packed;
         }
 
-        // Pack one RGB SH coefficient into signed 11.10.11 bits, using the per-splat maximum absolute value
+        // FP16 range followed by RGB bytes, padded to a whole uint
+        public static int GetSHDataSize(int coefficients) => coefficients == 0 ? 0 : ((2 + coefficients * 3 + 3) / 4) * 4;
+
+        // Pack one RGB SH coefficient into signed 8.8.8 bits, using per-splat range
         public static uint PackSHCoefficient(float3 sh, float range)
         {
-            int3 v = (int3)math.round((range > 0 ? sh / range : 0) * new float3(1023, 511, 1023));
-            return ((uint)v.x & 2047) | (((uint)v.y & 1023) << 11) | (((uint)v.z & 2047) << 21);
+            float3 normalized = math.clamp(range > 0 ? sh / range : 0, -1, 1);
+            int3 v = (int3)math.round(normalized * 127);
+            return ((uint)v.x & 255) | (((uint)v.y & 255) << 8) | (((uint)v.z & 255) << 16);
         }
     }
 }

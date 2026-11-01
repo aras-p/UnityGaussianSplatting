@@ -85,10 +85,22 @@ namespace GaussianSplatting.Runtime
                 colors[index * 2 + 1] = Half2(splat.color.z, splat.opacity);
                 if (shCoefficients > 0)
                 {
-                    int offset = index * (shCoefficients + 1);
-                    this.sh[offset] = math.asuint(range);
+                    int size = GaussianUtils.GetSHDataSize(shCoefficients);
+                    byte* dst = (byte*)this.sh.GetUnsafePtr() + index * size;
+                    uint packedRange = math.f32tof16(range);
+                    range = math.f16tof32(packedRange);
+                    // first half is the range
+                    *(ushort*)dst = (ushort)packedRange;
+                    // then three signed bytes per RGB coefficient
                     for (int c = 0; c < shCoefficients; ++c)
-                        this.sh[offset + c + 1] = GaussianUtils.PackSHCoefficient(sh[c], range);
+                    {
+                        uint packed = GaussianUtils.PackSHCoefficient(sh[c], range);
+                        dst[2 + c * 3] = (byte)packed;
+                        dst[3 + c * 3] = (byte)(packed >> 8);
+                        dst[4 + c * 3] = (byte)(packed >> 16);
+                    }
+                    for (int c = 2 + shCoefficients * 3; c < size; ++c)
+                        dst[c] = 0;
                 }
             }
             results[batch] = result;
