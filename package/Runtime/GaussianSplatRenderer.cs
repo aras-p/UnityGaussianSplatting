@@ -171,7 +171,9 @@ namespace GaussianSplatting.Runtime
                 if (stream.GetEventType(i) == UnityEditor.ObjectChangeKind.ChangeGameObjectOrComponentProperties)
                 {
                     stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var change);
-#if UNITY_6000_3_OR_NEWER
+#if UNITY_6000_6_OR_NEWER
+                    var obj = UnityEditor.EditorUtility.EntityIdToObject(change.entityId);
+#elif UNITY_6000_3_OR_NEWER
                     var obj = UnityEditor.EditorUtility.EntityIdToObject(change.instanceId);
 #else
                     var obj = UnityEditor.EditorUtility.InstanceIDToObject(change.instanceId);
@@ -194,7 +196,7 @@ namespace GaussianSplatting.Runtime
             hash.Add(options.m_SHOnly);
             foreach (var (gs, _) in m_ActiveSplats)
             {
-                hash.Add(gs.GetInstanceID());
+                hash.Add(gs);
                 hash.Add(gs.transform.localToWorldMatrix);
                 hash.Add(gs.m_SplatScale);
                 hash.Add(gs.m_OpacityScale);
