@@ -20,6 +20,9 @@ namespace GaussianSplatting.Runtime
     // ReSharper disable once InconsistentNaming
     class GaussianSplatURPFeature : ScriptableRendererFeature
     {
+#if UNITY_6000_5_OR_NEWER
+        [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
         class GSRenderPass : ScriptableRenderPass
         {
             const string GaussianSplatRTName = "_GaussianSplatRT";

@@ -9,6 +9,9 @@ using UnityEngine;
 namespace GaussianSplatting.Editor.Utils
 {
     // path field + browse button + project-local recent path history
+#if UNITY_6000_5_OR_NEWER
+    [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
     public class FilePickerControl
     {
         const int kRecentCount = 20;

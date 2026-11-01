@@ -13,6 +13,9 @@ using UnityEngine.XR;
 
 namespace GaussianSplatting.Runtime
 {
+#if UNITY_6000_5_OR_NEWER
+    [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
     class GaussianSplatRenderSystem
     {
         // ReSharper disable MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
