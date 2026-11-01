@@ -474,7 +474,7 @@ namespace GaussianSplatting.Runtime
     [ExecuteInEditMode]
     public class GaussianSplatRenderer : MonoBehaviour
     {
-        [Tooltip("PLY/SPZ path relative to Assets/StreamingAssets") ]
+        [Tooltip("Path relative to StreamingAssets or current directory, an absolute path, or a URL") ]
         public string m_SourcePath;
 
         // Call after any runtime changes that affect splat visibility / history
