@@ -28,7 +28,7 @@ namespace GaussianSplatting.Runtime
                 positions = Allocate(count * 3); // float3
                 geometry = Allocate(count * 3); // quat, half2 scaleXY, half scaleZ + unused
                 colors = Allocate(count * 2); // half4 RGBA
-                sh = Allocate(shCoefficients == 0 ? 1 : count * (shCoefficients + 1));
+                sh = Allocate(shCoefficients == 0 ? 1 : count * (GaussianUtils.GetSHDataSize(shCoefficients) / 4));
                 if (shCoefficients == 0) sh[0] = 0;
             }
             catch { Dispose(); throw; }

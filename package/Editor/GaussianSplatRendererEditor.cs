@@ -95,7 +95,7 @@ namespace GaussianSplatting.Editor
                     EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
                     EditorGUILayout.LabelField("SH Degree", gs.sourceSHDegree.ToString());
                     int coefficients = (gs.sourceSHDegree + 1) * (gs.sourceSHDegree + 1) - 1;
-                    int stride = 32 + (coefficients == 0 ? 0 : 4 + coefficients * 4);
+                    int stride = 32 + GaussianUtils.GetSHDataSize(coefficients);
                     EditorGUILayout.LabelField("Splat Data", $"{stride} bytes/splat ({(long)stride * gs.splatCount / (1024.0 * 1024):N1} MiB)");
                 }
             }
