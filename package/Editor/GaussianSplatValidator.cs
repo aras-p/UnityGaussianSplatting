@@ -13,6 +13,9 @@ using UnityEngine.Experimental.Rendering;
 
 namespace GaussianSplatting.Editor
 {
+#if UNITY_6000_5_OR_NEWER
+    [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
     [BurstCompile]
     public static class GaussianSplatValidator
     {

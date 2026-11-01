@@ -23,6 +23,9 @@ namespace GaussianSplatting.Runtime
         Reprojected,
     }
 
+#if UNITY_6000_5_OR_NEWER
+    [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
     [ExecuteInEditMode] // so that Awake is called in edit mode
     [DefaultExecutionOrder(-100)]
     public class GaussianSplatRenderOptions : MonoBehaviour

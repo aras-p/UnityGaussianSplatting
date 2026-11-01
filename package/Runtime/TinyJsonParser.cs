@@ -50,6 +50,9 @@ namespace GaussianSplatting.Runtime
     // - No JIT Emit support to parse structures quickly
     // - Limited to parsing <2GB JSON files (due to int.MaxValue)
     // - Parsing of abstract classes or interfaces is NOT supported and will throw an exception.
+#if UNITY_6000_5_OR_NEWER
+    [Unity.Scripting.LifecycleManagement.NoAutoStaticsCleanup]
+#endif
     public static class JSONParser
     {
         [ThreadStatic] static Stack<List<string>> splitArrayPool;
