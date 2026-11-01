@@ -37,7 +37,13 @@ namespace GaussianSplatting.Editor.Utils
         {
             s_RecentLabels = new GUIContent[s_RecentPaths.Count];
             for (int i = 0; i < s_RecentPaths.Count; ++i)
-                s_RecentLabels[i] = new GUIContent(s_RecentPaths[i]);
+            {
+                string path = s_RecentPaths[i];
+                string file = GaussianSplatPaths.IsUrl(path) ? new Uri(path).AbsolutePath : path;
+                // note: relative paths or URLs often have "/", which when displayed
+                // as a menu, will cause it to have sub-menus. So just display the filename only.
+                s_RecentLabels[i] = new GUIContent(Path.GetFileName(file), path);
+            }
         }
 
         static void RememberPath(string path)
