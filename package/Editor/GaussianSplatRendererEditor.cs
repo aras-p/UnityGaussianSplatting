@@ -42,7 +42,7 @@ namespace GaussianSplatting.Editor
             serializedObject.Update();
             var source = m_PropSourcePath;
             string sourcePath = source.stringValue;
-            GUILayout.Label("StreamingAssets Source File", EditorStyles.boldLabel);
+            GUILayout.Label("Source File", EditorStyles.boldLabel);
             Rect rect = EditorGUILayout.GetControlRect();
             EditorGUI.showMixedValue = source.hasMultipleDifferentValues;
             string path = m_FilePicker.PathFieldGUI(rect, new GUIContent("PLY / SPZ"), sourcePath);
@@ -59,7 +59,7 @@ namespace GaussianSplatting.Editor
                 try
                 {
                     string full = GaussianSplatReader.ResolvePath(Application.streamingAssetsPath, sourcePath);
-                    if (!File.Exists(full)) EditorGUILayout.HelpBox("Source file is missing: " + full, MessageType.Warning);
+                    if (!GaussianSplatPaths.IsUrl(full) && !File.Exists(full)) EditorGUILayout.HelpBox("Source file is missing: " + full, MessageType.Warning);
                 }
                 catch (Exception e) { EditorGUILayout.HelpBox(e.Message, MessageType.Error); }
             }

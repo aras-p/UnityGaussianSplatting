@@ -21,7 +21,8 @@ namespace GaussianSplatting.Runtime
     {
         enum State { Downloading, Decompressing, DecompressingZstd, Converting, Cameras, Complete }
         State m_State;
-        readonly string m_CameraPath;
+        string m_CameraPath;
+        readonly string m_FallbackPath;
         UnityWebRequest m_Request;
         Stream m_Stream;
         GZipStream m_Gzip;
@@ -49,20 +50,26 @@ namespace GaussianSplatting.Runtime
             try
             {
                 string path = GaussianSplatReader.ResolvePath(rootFolder, sourceFile);
-                m_CameraPath = Path.ChangeExtension(path, ".json");
                 if (GaussianSplatPaths.IsUrl(path))
                 {
+                    m_CameraPath = GaussianSplatPaths.ChangeExtension(path, ".json");
+                    if (!GaussianSplatPaths.IsUrl(sourceFile) && !Path.IsPathRooted(sourceFile))
+                        m_FallbackPath = Path.GetFullPath(GaussianSplatPaths.ToForwardSlashes(sourceFile));
                     m_Request = UnityWebRequest.Get(path);
                     m_Request.SendWebRequest();
                     m_State = State.Downloading;
                 }
                 else
-                {
-                    m_Stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-                    ReadHeader();
-                }
+                    OpenLocalFile(path);
             }
             catch { Dispose(); throw; }
+        }
+
+        void OpenLocalFile(string path)
+        {
+            m_CameraPath = GaussianSplatPaths.ChangeExtension(path, ".json");
+            m_Stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+            ReadHeader();
         }
 
         public void Update()
@@ -71,7 +78,14 @@ namespace GaussianSplatting.Runtime
             {
                 case State.Downloading:
                     if (!m_Request.isDone) return;
-                    if (m_Request.result != UnityWebRequest.Result.Success) throw new IOException(m_Request.error);
+                    if (m_Request.result != UnityWebRequest.Result.Success)
+                    {
+                        if (m_FallbackPath == null || !File.Exists(m_FallbackPath)) throw new IOException(m_Request.error);
+                        m_Request.Dispose();
+                        m_Request = null;
+                        OpenLocalFile(m_FallbackPath);
+                        break;
+                    }
                     m_Stream = DownloadStream(m_Request.downloadHandler);
                     ReadHeader();
                     break;
