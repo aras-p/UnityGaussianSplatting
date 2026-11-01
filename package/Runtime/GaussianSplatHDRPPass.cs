@@ -10,6 +10,7 @@ namespace GaussianSplatting.Runtime
 {
     // Note: I have no idea what is the proper usage of CustomPass.
     // Code below "seems to work" but I'm just fumbling along, without understanding any of it.
+    [System.Serializable]
     class GaussianSplatHDRPPass : CustomPass
     {
         RTHandle m_RenderTarget;

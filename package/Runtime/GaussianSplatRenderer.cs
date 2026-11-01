@@ -171,7 +171,11 @@ namespace GaussianSplatting.Runtime
                 if (stream.GetEventType(i) == UnityEditor.ObjectChangeKind.ChangeGameObjectOrComponentProperties)
                 {
                     stream.GetChangeGameObjectOrComponentPropertiesEvent(i, out var change);
+#if UNITY_6000_3_OR_NEWER
+                    var obj = UnityEditor.EditorUtility.EntityIdToObject(change.instanceId);
+#else
                     var obj = UnityEditor.EditorUtility.InstanceIDToObject(change.instanceId);
+#endif
                     if (obj is Camera || obj is Transform tr && tr.GetComponent<Camera>() != null)
                         continue;
                 }
