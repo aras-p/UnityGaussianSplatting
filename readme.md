@@ -1,20 +1,19 @@
 # Gaussian Splatting playground in Unity
 
 SIGGRAPH 2023 had a paper "[**3D Gaussian Splatting for Real-Time Radiance Field Rendering**](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)" by Kerbl, Kopanas, Leimkühler, Drettakis
-that is really cool! Check out their website, source code repository, data sets and so on. I've decided to try to implement the realtime visualization part (i.e. the one that takes already-produced
-gaussian splat "model" file) in Unity.
+that is really cool! Here's my visualizer / renderer of 3DGS for Unity.
 
 ![Screenshot](/docs/Images/shotOverview.jpg?raw=true "Screenshot")
 
-Everything in this repository is based on that "OG" gaussian splatting paper. Towards end of 2023, there's a ton of
+Everything in this repository is based on that original gaussian splatting paper. Towards end of 2023, there's a ton of
 [new gaussian splatting research](https://github.com/MrNeRF/awesome-3D-gaussian-splatting) coming out; _none_ of that is in this project.
 
-:warning: Status as of 2023 December: I'm not planning any significant further developments.
+:warning: Status as of 2026 November: I'm not planning any significant further development.
 
 :warning: The only platforms where this is known to work are the ones that use D3D12, Metal or Vulkan graphics APIs.
 PC (Windows on D3D12 or Vulkan), Mac (Metal), Linux (Vulkan) should work. Anything else I have not actually tested;
 it might work or it might not.
-- Some virtual reality devices work (reportedly HTC Vive, Varjo Aero, Quest 3 and Quest Pro). Some others might not
+- Some virtual reality devices reportedly work (reportedly HTC Vive, Varjo Aero, Quest 3 and Quest Pro). Some others might not
   work, e.g. Apple Vision Pro. See [#17](https://github.com/aras-p/UnityGaussianSplatting/issues/17)
 - Anything using OpenGL or OpenGL ES: [#26](https://github.com/aras-p/UnityGaussianSplatting/issues/26)
 - WebGPU might work someday, but seems that today it does not quite have all the required graphics features yet: [#65](https://github.com/aras-p/UnityGaussianSplatting/issues/65)
@@ -23,11 +22,12 @@ it might work or it might not.
 
 ## Usage
 
-Download or clone this repository, open `projects/GaussianExample` as a Unity project (I use Unity 2022.3, other versions might also work),
-and open `GSTestScene` scene in there.
+Download or clone this repository, open `projects/GaussianExample` (BiRP, 2022.3), `projects/GaussianExample-URP`
+(URP, 6000.0) or `projects/GaussianExample-HDRP` (HDRP, 6000.0) as a Unity project, and open `GSTestScene` scene in there.
+These should also work in Unity versions 6000.3, 6000.6 and 7000.0; perhaps some others too.
 
-Note that the project requires DX12 or Vulkan on Windows, i.e. **DX11 will not work**. This is **not tested at all on mobile/web**, and probably
-does not work there.
+Note that the project requires DX12 or Vulkan on Windows, i.e. **DX11 will not work**. This is
+**not tested at all on mobile/web**, and probably does not work there.
 
 Put a gaussian splat `.ply` or `.spz` file under `Assets/StreamingAssets` (for example,
 `Assets/StreamingAssets/bicycle.ply`). Have a GameObject with `GaussianSplatRenderer`
@@ -51,13 +51,6 @@ Currently two file formats are supported:
 Optionally there can be a `[basename].json` file next to the PLY/SPZ file (e.g. `garden.json` for `garden.ply`), describing
 cameras, in format from the original paper. The inspector's **Cameras**
 selector then moves the main camera relative to the splat object.
-
-Since the gaussian splat models are quite large, I have not included any in this Github repo. The original
-[paper github page](https://github.com/graphdeco-inria/gaussian-splatting) has a a link to
-[14GB zip](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) of their models.
-
-The rendering takes game object transformation matrix into account; the official gaussian splat models seem to be all rotated by about
--160 degrees around X axis, and mirrored around Z axis, so in the sample scene the object has such a transform set up.
 
 Additional documentation:
 
