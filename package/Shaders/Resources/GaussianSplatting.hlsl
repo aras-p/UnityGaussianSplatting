@@ -293,9 +293,10 @@ SplatData LoadSplatData(uint idx)
     uint3 geometry = _SplatOther.Load3(idx * 12);
     s.rot = DecodeSpzSmallest3Rotation(geometry.x);
     s.scale = float3(f16tof32(geometry.y), f16tof32(geometry.y >> 16), f16tof32(geometry.z));
-    uint2 color = _SplatColor.Load2(idx * 8);
-    s.sh.col = float3(f16tof32(color.x), f16tof32(color.x >> 16), f16tof32(color.y));
-    s.opacity = f16tof32(color.y >> 16);
+    uint color = _SplatColor.Load(idx * 4);
+    float colorScale = asfloat(((color >> 30) + 116u) << 23); // 2^(exponent - 11)
+    s.sh.col = float3(color & 1023u, (color >> 10) & 1023u, (color >> 20) & 1023u) * colorScale - 0.3125;
+    s.opacity = f16tof32(geometry.z >> 16);
     if (_SHCoefficients > 0)
     {
         uint offset = idx * ((_SHCoefficients * 2 + 5) / 4) * 4;

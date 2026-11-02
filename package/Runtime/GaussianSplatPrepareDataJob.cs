@@ -56,7 +56,7 @@ namespace GaussianSplatting.Runtime
                 bool valid =
                     math.all(math.isfinite(splat.position)) &&
                     FitsHalf(splat.scale) &&
-                    FitsHalf(splat.color) &&
+                    math.all(math.isfinite(splat.color)) &&
                     math.isfinite(splat.opacity) &&
                     (spzVersion >= 3 || (math.all(math.isfinite(splat.rotation)) &&
                         math.lengthsq(splat.rotation) >= 1e-20f));
@@ -80,9 +80,8 @@ namespace GaussianSplatting.Runtime
                     ? splat.packedRotation
                     : GaussianUtils.EncodeSpzSmallest3Rotation(math.normalize(splat.rotation));
                 geometry[index * 3 + 1] = Half2(splat.scale.x, splat.scale.y);
-                geometry[index * 3 + 2] = Half2(splat.scale.z, 0);
-                colors[index * 2 + 0] = Half2(splat.color.x, splat.color.y);
-                colors[index * 2 + 1] = Half2(splat.color.z, splat.opacity);
+                geometry[index * 3 + 2] = Half2(splat.scale.z, splat.opacity);
+                colors[index] = GaussianUtils.PackColorRGB10E2(splat.color);
                 if (shCoefficients > 0)
                 {
                     int size = GaussianUtils.GetSHDataSize(shCoefficients);

@@ -85,7 +85,7 @@ at "Medium" asset quality level (282MB asset file):
 * Mac (Apple M1 Max):
   * Unity, Metal: 21.5ms (46FPS).
 
-At runtime, memory usage is 32 bytes per splat without SH, or 40/52/64 bytes for SH
+At runtime, memory usage is 28 bytes per splat without SH, or 36/48/60 bytes for SH
 degrees 1/2/3 respectively.
 Besides this source data, currently this also needs about 56 bytes of GPU memory
 per splat (for sorting, caching view dependent data etc.).

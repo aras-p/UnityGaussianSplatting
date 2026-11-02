@@ -17,6 +17,24 @@ namespace GaussianSplatting.Runtime
             return dc0 * kSH_C0 + 0.5f;
         }
 
+        // RGB10E2 with a 0.3125 bias: decoded range [-0.3125, 3.68359375].
+        // Non-finite colors are rejected before encoding.
+        public static uint PackColorRGB10E2(float3 color)
+        {
+            color = math.clamp(color + 0.3125f, 0, 3.99609375f);
+            float maxColor = math.cmax(color);
+            int exponent = math.max(0, (int)(math.asuint(maxColor) >> 23) - 125);
+            float scale = math.asfloat((uint)(exponent + 116) << 23); // 2^(exponent - 11)
+            // rounding the largest mantissa can carry into the shared exponent.
+            if (math.floor(maxColor / scale + 0.5f) >= 1024)
+            {
+                ++exponent;
+                scale *= 2;
+            }
+            uint3 mantissa = (uint3)math.floor(color / scale + 0.5f);
+            return mantissa.x | (mantissa.y << 10) | (mantissa.z << 20) | ((uint)exponent << 30);
+        }
+
         // Encode a normalized XYZW quaternion using SPZ v3's smallest-three format.
         public static uint EncodeSpzSmallest3Rotation(float4 rotation)
         {

@@ -269,7 +269,7 @@ namespace GaussianSplatting.Editor
 
             public unsafe void Execute()
             {
-                const int kDiffScale = 30;
+                const int kDiffScale = 20;
                 const int kDiffThreshold = 3 * kDiffScale;
                 *difPixCount = 0;
                 double sumSqDif = 0;
