@@ -52,14 +52,20 @@ namespace GaussianSplatting.Runtime
                 uint reducedScratchBufferSize = DEVICE_RADIX_SORT_RADIX * DEVICE_RADIX_SORT_PASSES;
 
                 var target = GraphicsBuffer.Target.Structured;
-                var resources = new SupportResources
+                var resources = new SupportResources();
+                try
                 {
-                    altBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAlt" },
-                    altPayloadBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAltPayload" },
-                    passHistBuffer = new GraphicsBuffer(target, (int)scratchBufferSize, 4) { name = "DeviceRadixPassHistogram" },
-                    globalHistBuffer = new GraphicsBuffer(target, (int)reducedScratchBufferSize, 4) { name = "DeviceRadixGlobalHistogram" },
-                };
-                return resources;
+                    resources.altBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAlt" };
+                    resources.altPayloadBuffer = new GraphicsBuffer(target, (int)count, 4) { name = "DeviceRadixAltPayload" };
+                    resources.passHistBuffer = new GraphicsBuffer(target, (int)scratchBufferSize, 4) { name = "DeviceRadixPassHistogram" };
+                    resources.globalHistBuffer = new GraphicsBuffer(target, (int)reducedScratchBufferSize, 4) { name = "DeviceRadixGlobalHistogram" };
+                    return resources;
+                }
+                catch
+                {
+                    resources.Dispose();
+                    throw;
+                }
             }
 
             public void Dispose()
