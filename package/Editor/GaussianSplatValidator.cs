@@ -26,17 +26,22 @@ namespace GaussianSplatting.Editor
             public float fov;
         }
 
-        // currently on RTX 3080Ti: 43.76, 39.36, 43.50 PSNR
+        // v1 (full precision) on Apple M4 Max: 37.92, 34.27, 37.31 PSNR.
+        // The results are low because SBIR does compositing against background
+        // in sRGB space, whereas we blend in linear. Feels like not worth
+        // jumping through hoops to fully match theirs, especially since arguably
+        // blending in linear is "more correct".
         [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against SBIR")]
         public static void ValidateSBIR()
         {
             ValidateImpl("SBIR");
         }
-        // currently on RTX 3080Ti: matches
-        [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against D3D12")]
-        public static void ValidateD3D12()
+        
+        // v2 (80 bytes/splat) on Apple M4 Max: 57.20, 56.16, 57.46 PSNR.
+        [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against Full Precision Metal")]
+        public static void ValidateFullPrecMetal()
         {
-            ValidateImpl("D3D12");
+            ValidateImpl("MetalFullPrec");
         }
 
         static ValidationRun s_Run;
@@ -263,7 +268,7 @@ namespace GaussianSplatting.Editor
 
             public unsafe void Execute()
             {
-                const int kDiffScale = 5;
+                const int kDiffScale = 30;
                 const int kDiffThreshold = 3 * kDiffScale;
                 *difPixCount = 0;
                 double sumSqDif = 0;
