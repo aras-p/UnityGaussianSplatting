@@ -36,7 +36,7 @@ because files under that will automatically get included into player builds; the
 `GaussianSplatRenderer` source file path can be relative to streaming assets, current working
 directory, absolute filesystem path, or a URL.
 
-Add a `GaussianSplatRenderOptions` component to any GameObject to change global rendering options
+Add a `GaussianSplatRenderingOptions` component to any GameObject to change global rendering options
 (transparency method, temporal filtering, debug render mode and SH-only display).
 **Sorted Blended** is the default. **Stochastic** uses noisy alpha testing and depth writes without sorting;
 and can use several temporal filtering methods. Without an options component, defaults are used.

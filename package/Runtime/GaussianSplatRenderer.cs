@@ -139,7 +139,7 @@ namespace GaussianSplatting.Runtime
 
         void EnsureSplatBuffers()
         {
-            bool sorting = GaussianSplatRenderOptions.instance.needSorting;
+            bool sorting = GaussianSplatRenderingOptions.instance.needSorting;
             // note: view compute kernel still needs valid bindings,
             // even when it does not write sort keys
             int sortCount = sorting ? m_SplatCount : 1;
@@ -154,7 +154,7 @@ namespace GaussianSplatting.Runtime
                 m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, sortCount, 4) {name = "GaussianSplatSortIndices"};
                 if (!sorting)
                     return;
-                m_Sorter ??= new GpuSorting(GaussianSplatRenderOptions.instance.csUtilities);
+                m_Sorter ??= new GpuSorting(GaussianSplatRenderingOptions.instance.csUtilities);
                 m_SorterArgs = new GpuSorting.Args
                 {
                     count = (uint)m_SplatCount,
@@ -202,7 +202,7 @@ namespace GaussianSplatting.Runtime
         {
             var hash = new HashCode();
             hash.Add(m_SceneVersion);
-            var options = GaussianSplatRenderOptions.instance;
+            var options = GaussianSplatRenderingOptions.instance;
             hash.Add(options.m_SHOnly);
             foreach (var (gs, _) in m_ActiveSplats)
             {
@@ -233,7 +233,7 @@ namespace GaussianSplatting.Runtime
                 return false;
 
             // points read source buffers directly; no need for shared view/sort buffers
-            if (GaussianSplatRenderOptions.instance.m_RenderMode == RenderMode.DebugPoints)
+            if (GaussianSplatRenderingOptions.instance.m_RenderMode == RenderMode.DebugPoints)
                 return true;
 
             long count = 0;
@@ -255,7 +255,7 @@ namespace GaussianSplatting.Runtime
                 error = $"Cannot render all {count:N0} splats: shared view buffer needs {bytes:N0} bytes (max graphics buffer size {limit:N0})";
             
             // radix sort dispatches one group per 3840 keys
-            var options = GaussianSplatRenderOptions.instance;
+            var options = GaussianSplatRenderingOptions.instance;
             int sortLimit = 65535 * 3840;
             if (options.m_RenderMode == RenderMode.Splats && options.needSorting && count > sortLimit)
                 error = $"Cannot sort all {count:N0} splats: we support at most {sortLimit:N0} splats";
@@ -277,7 +277,7 @@ namespace GaussianSplatting.Runtime
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
-            if (!GaussianSplatRenderOptions.instance.needSorting)
+            if (!GaussianSplatRenderingOptions.instance.needSorting)
                 return;
             cmb.BeginSample(GaussianSplatRenderer.s_ProfSort);
             m_SorterArgs.count = (uint)m_SplatCount;
@@ -288,7 +288,7 @@ namespace GaussianSplatting.Runtime
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
         public void CacheViewDataForAllSplats(Camera cam, CommandBuffer cmb, Matrix4x4 projection, Matrix4x4 view, int width, int height)
         {
-            var options = GaussianSplatRenderOptions.instance;
+            var options = GaussianSplatRenderingOptions.instance;
             if (options.m_RenderMode == RenderMode.DebugPoints)
                 return;
             int offset = 0;
@@ -305,7 +305,7 @@ namespace GaussianSplatting.Runtime
         public void RenderAllSplats(Camera cam, CommandBuffer cmb, Matrix4x4 projection, Matrix4x4 view, int width, int height)
         {
             EnsureMaterials();
-            GaussianSplatRenderOptions settings = GaussianSplatRenderOptions.instance;
+            GaussianSplatRenderingOptions settings = GaussianSplatRenderingOptions.instance;
             if (m_MatSplats == null)
                 return;
 
@@ -348,7 +348,7 @@ namespace GaussianSplatting.Runtime
             cmb.EndSample(s_ProfDraw);
         }
 
-        void RenderDebugPoints(CommandBuffer cmb, GaussianSplatRenderOptions settings, Matrix4x4 viewProjection, int width, int height)
+        void RenderDebugPoints(CommandBuffer cmb, GaussianSplatRenderingOptions settings, Matrix4x4 viewProjection, int width, int height)
         {
             foreach (var (gs, mpb) in m_ActiveSplats)
             {
@@ -386,7 +386,7 @@ namespace GaussianSplatting.Runtime
 
         void EnsureMaterials()
         {
-            GaussianSplatRenderOptions settings = GaussianSplatRenderOptions.instance;
+            GaussianSplatRenderingOptions settings = GaussianSplatRenderingOptions.instance;
             if (m_MatSplats == null && settings.resourcesFound)
             {
                 m_MatSplats = new Material(settings.shaderSplats) {name = "GaussianSplats"};
@@ -417,7 +417,7 @@ namespace GaussianSplatting.Runtime
             // camera callbacks are also invoked for outline passes etc.; only advance
             // temporal history once per actual repaint
             if (cam.cameraType == CameraType.SceneView &&
-                GaussianSplatRenderOptions.instance.temporalFilter != StochasticTemporalFilter.None &&
+                GaussianSplatRenderingOptions.instance.temporalFilter != StochasticTemporalFilter.None &&
                 !m_RenderedSceneViews.Add(cam))
                 return;
 #endif
@@ -430,7 +430,7 @@ namespace GaussianSplatting.Runtime
 
             InitialClearCmdBuffer(cam);
 
-            var options = GaussianSplatRenderOptions.instance;
+            var options = GaussianSplatRenderingOptions.instance;
             bool temporal = options.temporalFilter != StochasticTemporalFilter.None;
             bool reprojected = options.temporalFilter == StochasticTemporalFilter.Reprojected;
             m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
@@ -575,7 +575,7 @@ namespace GaussianSplatting.Runtime
             GaussianSplatRenderSystem.instance.InvalidateTemporalHistory();
         }
 
-        bool resourcesAreSetUp => GaussianSplatRenderOptions.instance.resourcesFound;
+        bool resourcesAreSetUp => GaussianSplatRenderingOptions.instance.resourcesFound;
 
         public void EnsureRegistered()
         {
@@ -636,7 +636,7 @@ namespace GaussianSplatting.Runtime
 
         void SetDataOnCS(CommandBuffer cmb)
         {
-            ComputeShader cs = GaussianSplatRenderOptions.instance.csUtilities;
+            ComputeShader cs = GaussianSplatRenderingOptions.instance.csUtilities;
             int kernelIndex = kKernelCalcViewData;
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatPos, m_GpuPosData);
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatOther, m_GpuOtherData);
@@ -698,7 +698,7 @@ namespace GaussianSplatting.Runtime
             // calculate view dependent data for each splat
             SetDataOnCS(cmb);
 
-            GaussianSplatRenderOptions options = GaussianSplatRenderOptions.instance;
+            GaussianSplatRenderingOptions options = GaussianSplatRenderingOptions.instance;
             ComputeShader cs = options.csUtilities;
             cmb.SetComputeBufferParam(cs, kKernelCalcViewData, Props.SplatViewData, view);
             cmb.SetComputeBufferParam(cs, kKernelCalcViewData, Props.SplatSortDistances, distances);

@@ -28,27 +28,27 @@ namespace GaussianSplatting.Runtime
 #endif
     [ExecuteInEditMode] // so that Awake is called in edit mode
     [DefaultExecutionOrder(-100)]
-    public class GaussianSplatRenderOptions : MonoBehaviour
+    public class GaussianSplatRenderingOptions : MonoBehaviour
     {
-        public static GaussianSplatRenderOptions instance
+        public static GaussianSplatRenderingOptions instance
         {
             get
             {
                 if (ms_Instance == null)
-                    ms_Instance = FindAnyObjectByType<GaussianSplatRenderOptions>();
+                    ms_Instance = FindAnyObjectByType<GaussianSplatRenderingOptions>();
                 if (ms_Instance == null)
                 {
-                    var go = new GameObject($"{nameof(GaussianSplatRenderOptions)} (Defaults)")
+                    var go = new GameObject($"{nameof(GaussianSplatRenderingOptions)} (Defaults)")
                     {
                         hideFlags = HideFlags.HideAndDontSave
                     };
-                    ms_Instance = go.AddComponent<GaussianSplatRenderOptions>();
+                    ms_Instance = go.AddComponent<GaussianSplatRenderingOptions>();
                 }
                 ms_Instance.EnsureResources();
                 return ms_Instance;
             }
         }
-        static GaussianSplatRenderOptions ms_Instance;
+        static GaussianSplatRenderingOptions ms_Instance;
 
         [Header("Options")]
         [Tooltip("Gaussian splat transparency rendering algorithm")]

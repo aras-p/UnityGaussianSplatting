@@ -5,9 +5,9 @@ using UnityEditor;
 
 namespace GaussianSplatting.Editor
 {
-    [CustomEditor(typeof(GaussianSplatRenderOptions))]
+    [CustomEditor(typeof(GaussianSplatRenderingOptions))]
     [CanEditMultipleObjects]
-    public class GaussianSplatRenderOptionsEditor : UnityEditor.Editor
+    public class GaussianSplatRenderingOptionsEditor : UnityEditor.Editor
     {
         SerializedProperty m_PropScript;
         SerializedProperty m_PropTransparency;

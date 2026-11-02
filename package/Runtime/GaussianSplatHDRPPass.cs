@@ -45,7 +45,7 @@ namespace GaussianSplatting.Runtime
                 return;
             }
 
-            var filter = GaussianSplatRenderOptions.instance.temporalFilter;
+            var filter = GaussianSplatRenderingOptions.instance.temporalFilter;
             int width = ctx.hdCamera.actualWidth, height = ctx.hdCamera.actualHeight;
             Matrix4x4 projection = ctx.hdCamera.mainViewConstants.projMatrix;
 
