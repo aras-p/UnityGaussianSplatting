@@ -144,17 +144,20 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         cov3d1 *= splatScale2;
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, _MatrixP, _VecScreenParams);
         
-        DecomposeCovariance(cov2d, view.axis1, view.axis2);
+        float2 axis1, axis2;
+        DecomposeCovariance(cov2d, axis1, axis2);
 
         // frustum culling:
         // quad corners are +/-2 along each axis, then
         // pixels are converted to clip space by 2 / screen size * w
-        float2 extentClip = 4 * (abs(view.axis1) + abs(view.axis2)) / _VecScreenParams.xy * centerClipPos.w;
+        float2 extentClip = 4 * (abs(axis1) + abs(axis2)) / _VecScreenParams.xy * centerClipPos.w;
         bool outsideView = any(abs(centerClipPos.xy) > centerClipPos.w + extentClip);
         if (outsideView)
             view.pos.w = 0; // vertex shader will reject the quad
         else
         {
+            view.axis1 = f32tof16(axis1.x) | (f32tof16(axis1.y) << 16);
+            view.axis2 = f32tof16(axis2.x) | (f32tof16(axis2.y) << 16);
             // load color / SH only for splats that passed frustum culling
             LoadSplatColor(idx, splat);
             float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
