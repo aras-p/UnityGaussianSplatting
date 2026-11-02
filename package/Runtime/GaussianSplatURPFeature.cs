@@ -68,7 +68,7 @@ namespace GaussianSplatting.Runtime
                 rtDesc.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
                 var textureHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, rtDesc, GaussianSplatRTName, true);
 
-                var filter = GaussianSplatRenderOptions.instance.temporalFilter;
+                var filter = GaussianSplatRenderingOptions.instance.temporalFilter;
                 passData.Pass = this;
                 passData.Filter = filter;
                 passData.Projection = GL.GetGPUProjectionMatrix(cameraData.GetProjectionMatrix(), true);
