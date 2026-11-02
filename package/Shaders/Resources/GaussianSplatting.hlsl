@@ -286,17 +286,22 @@ float3 LoadSplatSH(uint baseOffset, uint coefficient, float range)
     return signedValue * (range / float3(15, 31, 15));
 }
 
-SplatData LoadSplatData(uint idx)
+SplatData LoadSplatGeometry(uint idx)
 {
     SplatData s = (SplatData)0;
     s.pos = LoadSplatPos(idx);
     uint3 geometry = _SplatOther.Load3(idx * 12);
     s.rot = DecodeSpzSmallest3Rotation(geometry.x);
     s.scale = float3(f16tof32(geometry.y), f16tof32(geometry.y >> 16), f16tof32(geometry.z));
+    s.opacity = f16tof32(geometry.z >> 16);
+    return s;
+}
+
+void LoadSplatColor(uint idx, inout SplatData s)
+{
     uint color = _SplatColor.Load(idx * 4);
     float colorScale = asfloat(((color >> 30) + 116u) << 23); // 2^(exponent - 11)
     s.sh.col = float3(color & 1023u, (color >> 10) & 1023u, (color >> 20) & 1023u) * colorScale - 0.3125;
-    s.opacity = f16tof32(geometry.z >> 16);
     if (_SHCoefficients > 0)
     {
         uint offset = idx * ((_SHCoefficients * 2 + 5) / 4) * 4;
@@ -326,6 +331,12 @@ SplatData LoadSplatData(uint idx)
             s.sh.sh15 = LoadSplatSH(offset, 14, range);
         }
     }
+}
+
+SplatData LoadSplatData(uint idx)
+{
+    SplatData s = LoadSplatGeometry(idx);
+    LoadSplatColor(idx, s);
     return s;
 }
 

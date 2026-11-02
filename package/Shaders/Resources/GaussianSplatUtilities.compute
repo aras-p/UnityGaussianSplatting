@@ -120,7 +120,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     if (idx >= _SplatCount)
         return;
 
-    SplatData splat = LoadSplatData(idx);
+    SplatData splat = LoadSplatGeometry(idx);
     SplatViewData view = (SplatViewData)0;
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
@@ -146,15 +146,27 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
-        float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
-        float3 objViewDir = mul((float3x3)_MatrixWorldToObject, worldViewDir);
-        objViewDir = normalize(objViewDir);
+        // frustum culling:
+        // quad corners are +/-2 along each axis, then
+        // pixels are converted to clip space by 2 / screen size * w
+        float2 extentClip = 4 * (abs(view.axis1) + abs(view.axis2)) / _VecScreenParams.xy * centerClipPos.w;
+        bool outsideView = any(abs(centerClipPos.xy) > centerClipPos.w + extentClip);
+        if (outsideView)
+            view.pos.w = 0; // vertex shader will reject the quad
+        else
+        {
+            // load color / SH only for splats that passed frustum culling
+            LoadSplatColor(idx, splat);
+            float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
+            float3 objViewDir = mul((float3x3)_MatrixWorldToObject, worldViewDir);
+            objViewDir = normalize(objViewDir);
 
-        half4 col;
-        col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0);
-        col.a = min(splat.opacity * opacityScale, 65000);
-        view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
-        view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
+            half4 col;
+            col.rgb = ShadeSH(splat.sh, objViewDir, _SHOrder, _SHOnly != 0);
+            col.a = min(splat.opacity * opacityScale, 65000);
+            view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
+            view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
+        }
     }
     
     uint outputIndex = _SplatOffset + idx;
