@@ -47,7 +47,7 @@ namespace GaussianSplatting.Runtime
         readonly MaterialPropertyBlock m_DrawProperties = new();
         int m_SplatCount;
         string m_BufferError;
-        const int kGpuViewDataSize = 40;
+        const int kGpuViewDataSize = 32;
         GaussianSplatTemporalAccumulator m_TemporalAccumulator;
         int m_SceneVersion;
 #if UNITY_EDITOR
