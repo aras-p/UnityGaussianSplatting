@@ -74,21 +74,20 @@ My own blog posts about all this:
 * [Making Gaussian Splats more smaller](https://aras-p.info/blog/2023/09/27/Making-Gaussian-Splats-more-smaller/) (2023 Sep 27)
 * [Gaussian Explosion](https://aras-p.info/blog/2023/12/08/Gaussian-explosion/) (2023 Dec 8)
 
-## Performance numbers (TODO: need an update):
+## Performance numbers:
 
-"bicycle" scene from the paper, with 6.1M splats and first camera in there, rendering at 1200x797 resolution,
-at "Medium" asset quality level (282MB asset file):
+"bicycle" scene from the paper, with 6.1M splats and first camera, rendering at 1200x797 resolution:
 
 * Windows (NVIDIA RTX 3080 Ti):
   * Official SBIR viewer: 7.4ms (135FPS). 4.8GB VRAM usage.
-  * Unity, DX12 or Vulkan: 6.8ms (147FPS) - 4.5ms rendering, 1.1ms sorting, 0.8ms splat view calc. 1.3GB VRAM usage.
-* Mac (Apple M1 Max):
-  * Unity, Metal: 21.5ms (46FPS).
+  * Unity, DX12 or Vulkan: 6.3ms (158FPS) - 4.5ms rendering, 0.9ms sorting, 0.5ms splat view calc.
+* Mac (Apple M4 Max):
+  * Unity, Metal: 12.8ms (78FPS).
 
 At runtime, memory usage is 28 bytes per splat without SH, or 36/48/60 bytes for SH
 degrees 1/2/3 respectively.
-Besides this source data, rendering needs about 44 bytes of GPU memory per splat in
-sorted blended mode, or 28 bytes in stochastic mode (for caching view dependent data).
+Besides this source data, rendering needs 44 bytes of GPU memory per splat in
+sorted blended mode, or 28 bytes in stochastic mode.
 
 
 ## License and External Code Used
