@@ -37,7 +37,8 @@ namespace GaussianSplatting.Editor
             ValidateImpl("SBIR");
         }
         
-        // v2 (80 bytes/splat) on Apple M4 Max: 57.20, 56.16, 57.46 PSNR.
+        // v2 (80 bytes/splat: each SH in 8 bits) on Apple M4 Max: 57.20, 56.16, 57.46 PSNR.
+        // v2 (64 bytes/splat: SH in 5.6.5) on Apple M4 Max: 54.34, 54.44, 54.53 PSNR.
         [MenuItem("Tools/Gaussian Splats/Debug/Validate Render against Full Precision Metal")]
         public static void ValidateFullPrecMetal()
         {

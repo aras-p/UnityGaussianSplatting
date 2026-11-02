@@ -91,15 +91,13 @@ namespace GaussianSplatting.Runtime
                     range = math.f16tof32(packedRange);
                     // first half is the range
                     *(ushort*)dst = (ushort)packedRange;
-                    // then three signed bytes per RGB coefficient
+                    // then one signed RGB565 ushort per coefficient
                     for (int c = 0; c < shCoefficients; ++c)
                     {
                         uint packed = GaussianUtils.PackSHCoefficient(sh[c], range);
-                        dst[2 + c * 3] = (byte)packed;
-                        dst[3 + c * 3] = (byte)(packed >> 8);
-                        dst[4 + c * 3] = (byte)(packed >> 16);
+                        ((ushort*)dst)[1 + c] = (ushort)packed;
                     }
-                    for (int c = 2 + shCoefficients * 3; c < size; ++c)
+                    for (int c = 2 + shCoefficients * 2; c < size; ++c)
                         dst[c] = 0;
                 }
             }
