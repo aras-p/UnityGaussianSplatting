@@ -128,7 +128,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     half opacityScale = _SplatOpacityScale;
     float splatScale = _SplatScale;
 
-    view.pos = centerClipPos;
+    view.pos.x = asfloat(0x7f800000u); // culled unless a visible center is written below
     bool behindCam = centerClipPos.w <= 0;
     if (!behindCam)
     {
@@ -152,10 +152,9 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         // pixels are converted to clip space by 2 / screen size * w
         float2 extentClip = 4 * (abs(axis1) + abs(axis2)) / _VecScreenParams.xy * centerClipPos.w;
         bool outsideView = any(abs(centerClipPos.xy) > centerClipPos.w + extentClip);
-        if (outsideView)
-            view.pos.w = 0; // vertex shader will reject the quad
-        else
+        if (!outsideView)
         {
+            view.pos = centerClipPos.xyz / centerClipPos.w;
             view.axis1 = f32tof16(axis1.x) | (f32tof16(axis1.y) << 16);
             view.axis2 = f32tof16(axis2.x) | (f32tof16(axis2.y) << 16);
             // load color / SH only for splats that passed frustum culling

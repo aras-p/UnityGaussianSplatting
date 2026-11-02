@@ -53,9 +53,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         instID = _OrderBuffer[instID];
     o.idx = instID + sgu_frameOffset;
 	SplatViewData view = _SplatViewData[instID];
-	float4 centerClipPos = view.pos;
-	bool behindCam = centerClipPos.w <= 0;
-	if (behindCam)
+	// test "is this +inf" sentinel bits exactly
+	bool culled = asuint(view.pos.x) == 0x7f800000u;
+	if (culled)
 	{
 		o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
 	}
@@ -75,9 +75,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		float2 axis1 = float2(f16tof32(view.axis1), f16tof32(view.axis1 >> 16));
 		float2 axis2 = float2(f16tof32(view.axis2), f16tof32(view.axis2 >> 16));
 		float2 deltaScreenPos = (quadPos.x * axis1 + quadPos.y * axis2) * 2 / _SplatScreenSize;
-		o.vertex = centerClipPos;
-		o.vertex.xy += deltaScreenPos * centerClipPos.w;
-
+		o.vertex = float4(view.pos, 1);
+		o.vertex.xy += deltaScreenPos;
 	}
 	FlipProjectionIfBackbuffer(o.vertex);
     return o;

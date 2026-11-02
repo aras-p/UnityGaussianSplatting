@@ -342,7 +342,7 @@ SplatData LoadSplatData(uint idx)
 
 struct SplatViewData
 {
-    float4 pos;
+    float3 pos; // NDC center; +infinity in x marks a culled splat
     uint axis1, axis2; // each axis is FP16 .x in low bits, .y in high bits
     uint2 color; // 4xFP16
 };
