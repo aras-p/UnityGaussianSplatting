@@ -2,30 +2,6 @@
 #ifndef GAUSSIAN_SPLATTING_HLSL
 #define GAUSSIAN_SPLATTING_HLSL
 
-float InvSquareCentered01(float x)
-{
-    x -= 0.5;
-    x *= 0.5;
-    x = sqrt(abs(x)) * sign(x);
-    return x + 0.5;
-}
-
-float3 QuatRotateVector(float3 v, float4 r)
-{
-    float3 t = 2 * cross(r.xyz, v);
-    return v + r.w * t + cross(r.xyz, t);
-}
-
-float4 QuatMul(float4 a, float4 b)
-{
-    return float4(a.wwww * b + (a.xyzx * b.wwwx + a.yzxy * b.zxyy) * float4(1,1,1,-1) - a.zxyz * b.yzxz);
-}
-
-float4 QuatInverse(float4 q)
-{
-    return rcp(dot(q, q)) * q * float4(-1,-1,-1,1);
-}
-
 float3x3 CalcMatrixFromRotationScale(float4 rot, float3 scale)
 {
     float3x3 ms = float3x3(
@@ -101,24 +77,6 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     cov._m00 += 0.3;
     cov._m11 += 0.3;
     return float3(cov._m00, cov._m01, cov._m11);
-}
-
-float3 CalcConic(float3 cov2d)
-{
-    float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
-    return float3(cov2d.z, -cov2d.y, cov2d.x) * rcp(det);
-}
-
-float2 CalcScreenSpaceDelta(float2 svPositionXY, float2 centerXY, float4 projectionParams)
-{
-    float2 d = svPositionXY - centerXY;
-    d.y *= projectionParams.x;
-    return d;
-}
-
-float CalcPowerFromConic(float3 conic, float2 d)
-{
-    return -0.5 * (conic.x * d.x*d.x + conic.z * d.y*d.y) + conic.y * d.x*d.y;
 }
 
 static const float SH_C1 = 0.4886025;
@@ -197,46 +155,6 @@ float4 DecodeSpzSmallest3Rotation(uint packed)
     return q;
 }
 
-half3 DecodePacked_6_5_5(uint enc)
-{
-    return half3(
-        (enc & 63) / 63.0,
-        ((enc >> 6) & 31) / 31.0,
-        ((enc >> 11) & 31) / 31.0);
-}
-
-half3 DecodePacked_5_6_5(uint enc)
-{
-    return half3(
-        (enc & 31) / 31.0,
-        ((enc >> 5) & 63) / 63.0,
-        ((enc >> 11) & 31) / 31.0);
-}
-
-half3 DecodePacked_11_10_11(uint enc)
-{
-    return half3(
-        (enc & 2047) / 2047.0,
-        ((enc >> 11) & 1023) / 1023.0,
-        ((enc >> 21) & 2047) / 2047.0);
-}
-
-float3 DecodePacked_16_16_16(uint2 enc)
-{
-    return float3(
-        (enc.x & 65535) / 65535.0,
-        ((enc.x >> 16) & 65535) / 65535.0,
-        (enc.y & 65535) / 65535.0);
-}
-
-float4 DecodePacked_10_10_10_2(uint enc)
-{
-    return float4(
-        (enc & 1023) / 1023.0,
-        ((enc >> 10) & 1023) / 1023.0,
-        ((enc >> 20) & 1023) / 1023.0,
-        ((enc >> 30) & 3) / 3.0);
-}
 #ifdef SHADER_STAGE_COMPUTE
 #define SplatBufferDataType RWByteAddressBuffer
 #else
@@ -248,27 +166,6 @@ SplatBufferDataType _SplatOther;
 SplatBufferDataType _SplatSH;
 SplatBufferDataType _SplatColor;
 uint _SHCoefficients;
-
-uint LoadUShort(SplatBufferDataType dataBuffer, uint addrU)
-{
-    uint addrA = addrU & ~0x3;
-    uint val = dataBuffer.Load(addrA);
-    if (addrU != addrA)
-        val >>= 16;
-    return val & 0xFFFF;
-}
-
-uint LoadUInt(SplatBufferDataType dataBuffer, uint addrU)
-{
-    uint addrA = addrU & ~0x3;
-    uint val = dataBuffer.Load(addrA);
-    if (addrU != addrA)
-    {
-        uint val1 = dataBuffer.Load(addrA + 4);
-        val = (val >> 16) | ((val1 & 0xFFFF) << 16);
-    }
-    return val;
-}
 
 float3 LoadSplatPos(uint idx)
 {
