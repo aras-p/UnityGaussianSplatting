@@ -63,6 +63,7 @@ float4x4 _SplatPreviousViewProjection;
 float3 _SplatCameraPosition;
 uint _SplatOrthographic;
 float2 _SplatRenderSize; // need externally passed RT size; in URP/HDRP RTHandle backing texture can be larger
+float4 _CameraTargetTexture_TexelSize;
 
 // use YCoCg for history rejection, similar to SteadySplats
 float4 HistoryColor(float4 color)
@@ -76,7 +77,10 @@ half4 ReprojectHistory(float2 pixel, half4 current)
     uint width = (uint)_SplatRenderSize.x, height = (uint)_SplatRenderSize.y;
     float2 size = float2(width, height);
     float2 clipXY = pixel / size * 2.0 - 1.0;
-    clipXY.y = -clipXY.y;
+    // match FlipProjectionIfBackbuffer in the splat vertex shader: BiRP
+    // direct-to-backbuffer path flips the supplied GPU projection once more
+    float projectionY = _CameraTargetTexture_TexelSize.z == 1.0 ? 1.0 : -1.0;
+    clipXY.y *= projectionY;
 
     float depth = _GaussianSplatDepthRT.Load(int3(pixel, 0)).r;
     float4 world;
@@ -97,8 +101,9 @@ half4 ReprojectHistory(float2 pixel, half4 current)
     float4 previousClip = mul(_SplatPreviousViewProjection, world);
     if (previousClip.w <= 0)
         return current; // no usable history for perspective samples behind old camera
-    float2 uv = previousClip.xy / previousClip.w * 0.5 + 0.5;
-    uv.y = 1.0 - uv.y;
+    float2 uv = previousClip.xy / previousClip.w;
+    uv.y *= projectionY;
+    uv = uv * 0.5 + 0.5;
 
     // keep bilinear footprint inside history instead of clamping edge texels
     if (any(uv < 0.5 / size) || any(uv > 1.0 - 0.5 / size))

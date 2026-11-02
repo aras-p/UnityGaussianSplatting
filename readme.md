@@ -87,8 +87,8 @@ at "Medium" asset quality level (282MB asset file):
 
 At runtime, memory usage is 28 bytes per splat without SH, or 36/48/60 bytes for SH
 degrees 1/2/3 respectively.
-Besides this source data, currently this also needs about 44 bytes of GPU memory
-per splat (for sorting, caching view dependent data etc.).
+Besides this source data, rendering needs about 44 bytes of GPU memory per splat in
+sorted blended mode, or 28 bytes in stochastic mode (for caching view dependent data).
 
 
 ## License and External Code Used

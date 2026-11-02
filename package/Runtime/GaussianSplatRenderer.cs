@@ -139,14 +139,21 @@ namespace GaussianSplatting.Runtime
 
         void EnsureSplatBuffers()
         {
-            if (m_GpuView != null && m_GpuView.count == m_SplatCount)
+            bool sorting = GaussianSplatRenderOptions.instance.needSorting;
+            // note: view compute kernel still needs valid bindings,
+            // even when it does not write sort keys
+            int sortCount = sorting ? m_SplatCount : 1;
+            if (m_GpuView != null && m_GpuView.count == m_SplatCount &&
+                m_GpuSortKeys.count == sortCount && (m_SorterArgs.resources.altBuffer != null) == sorting)
                 return;
             DisposeSplatBuffers();
             try
             {
                 m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, kGpuViewDataSize) {name = "GaussianSplatViewData"};
-                m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4) {name = "GaussianSplatSortDistances"};
-                m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, 4) {name = "GaussianSplatSortIndices"};
+                m_GpuSortDistances = new GraphicsBuffer(GraphicsBuffer.Target.Structured, sortCount, 4) {name = "GaussianSplatSortDistances"};
+                m_GpuSortKeys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, sortCount, 4) {name = "GaussianSplatSortIndices"};
+                if (!sorting)
+                    return;
                 m_Sorter ??= new GpuSorting(GaussianSplatRenderOptions.instance.csUtilities);
                 m_SorterArgs = new GpuSorting.Args
                 {
@@ -410,7 +417,7 @@ namespace GaussianSplatting.Runtime
             // camera callbacks are also invoked for outline passes etc.; only advance
             // temporal history once per actual repaint
             if (cam.cameraType == CameraType.SceneView &&
-                GaussianSplatRenderOptions.instance.m_TemporalFilter != StochasticTemporalFilter.None &&
+                GaussianSplatRenderOptions.instance.temporalFilter != StochasticTemporalFilter.None &&
                 !m_RenderedSceneViews.Add(cam))
                 return;
 #endif
@@ -424,9 +431,8 @@ namespace GaussianSplatting.Runtime
             InitialClearCmdBuffer(cam);
 
             var options = GaussianSplatRenderOptions.instance;
-            bool temporal = options.m_TemporalFilter != StochasticTemporalFilter.None &&
-                            options.m_Transparency == TransparencyMode.Stochastic && options.m_RenderMode == RenderMode.Splats;
-            bool reprojected = temporal && options.m_TemporalFilter == StochasticTemporalFilter.Reprojected;
+            bool temporal = options.temporalFilter != StochasticTemporalFilter.None;
+            bool reprojected = options.temporalFilter == StochasticTemporalFilter.Reprojected;
             m_CommandBuffer.GetTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
             if (reprojected)
             {
@@ -454,16 +460,14 @@ namespace GaussianSplatting.Runtime
                     options.m_TemporalFilter, cam.pixelWidth, cam.pixelHeight,
                     GL.GetGPUProjectionMatrix(cam.projectionMatrix, true) * cam.worldToCameraMatrix);
                 m_CommandBuffer.SetGlobalTexture(GaussianSplatRenderer.Props.GaussianSplatRT, filtered);
-                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
             }
             else
             {
                 m_TemporalAccumulator?.Dispose();
                 m_TemporalAccumulator = null;
-                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
             }
+            m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
             m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
             if (reprojected)

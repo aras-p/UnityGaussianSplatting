@@ -38,10 +38,10 @@ namespace GaussianSplatting.Runtime
 
         public void Dispose()
         {
-            positions.Dispose();
-            geometry.Dispose();
-            colors.Dispose();
-            sh.Dispose();
+            if (positions.IsCreated) positions.Dispose();
+            if (geometry.IsCreated) geometry.Dispose();
+            if (colors.IsCreated) colors.Dispose();
+            if (sh.IsCreated) sh.Dispose();
         }
     }
 }
