@@ -277,16 +277,13 @@ float3 LoadSplatPos(uint idx)
 
 float3 LoadSplatSH(uint baseOffset, uint coefficient, float range)
 {
-    // SH is packed into RGB triplet bytes, loading them is a bit cumbersome
-    // since we can only load 4 byte words and a triplet can straddle that
-    uint address = baseOffset + 2 + coefficient * 3;
+    // Each signed RGB565 coefficient occupies an aligned half-word.
+    uint address = baseOffset + 2 + coefficient * 2;
     uint shift = (address & 3) * 8;
     address &= ~3u;
     uint v = _SplatSH.Load(address) >> shift;
-    if (shift > 8)
-        v |= _SplatSH.Load(address + 4) << (32 - shift);
-    int3 signedValue = int3((int)(v << 24) >> 24, (int)(v << 16) >> 24, (int)(v << 8) >> 24);
-    return signedValue * (range / 127.0);
+    int3 signedValue = int3((int)(v << 27) >> 27, (int)(v << 21) >> 26, (int)(v << 16) >> 27);
+    return signedValue * (range / float3(15, 31, 15));
 }
 
 SplatData LoadSplatData(uint idx)
@@ -301,7 +298,7 @@ SplatData LoadSplatData(uint idx)
     s.opacity = f16tof32(color.y >> 16);
     if (_SHCoefficients > 0)
     {
-        uint offset = idx * ((_SHCoefficients * 3 + 5) / 4) * 4;
+        uint offset = idx * ((_SHCoefficients * 2 + 5) / 4) * 4;
         float range = f16tof32(_SplatSH.Load(offset));
         if (_SHCoefficients >= 3)
         {
